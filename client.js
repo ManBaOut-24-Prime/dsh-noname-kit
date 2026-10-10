@@ -1479,6 +1479,7 @@ window.__ModuleLoader__.load({
 
       function renderManifestCard(evs, hostFlow) {
         var diffEv = onlinePickEvent(evs, 'manifest_diff');
+        var pauseHint = e('div', 'nnk-err', '⚠️ 补传已暂停：旧协议缺少客人逐请求授权与整批完整性／回滚保障，不接受 legacy 降级。正常联机及包体检仍可使用；缺包可能影响对局兼容性。已运行的旧内核须另行升级并重启，才会应用此止损。');
         /* 重置按钮常驻:隔离名单持久化在游戏配置里,清它不能依赖会话内的事件记录 */
         var resetBtn = (function () {
           var qEv = onlinePickEvent(evs, 'ext_quarantined');
@@ -1489,7 +1490,8 @@ window.__ModuleLoader__.load({
         if (!diffEv || !diffEv.data) {
           return h('div', { className: 'nnk-card' },
             e('div', null, h('b', null, '📦 包体检')),
-            e('div', 'nnk-hint', '客人进房后自动对比双方扩展清单,缺什么这里会列出来,一键补传。'),
+            e('div', 'nnk-hint', '客人进房后自动对比双方扩展清单,缺什么这里会列出来。'),
+            pauseHint,
             resetBtn);
         }
         var d = diffEv.data;
@@ -1498,50 +1500,40 @@ window.__ModuleLoader__.load({
         var missPacks = Array.isArray(d.packs && d.packs.missing) ? d.packs.missing : [];
         /* P2P 连接识别 v1:身份随清单交换,主机看客人、客人看房主 */
         var peer = hostFlow ? (d.guestIdentity || null) : (d.hostIdentity || null);
-        /* 补传完成的从缺失列表摘出来:体检快照是进房时的,传完不刷新,
-         * 不摘的话传完了还挂着「补传」按钮,看着像白传(实测反馈) */
-        var transferred = {};
-        evs.forEach(function (ev) {
-          if (ev && ev.type === 'transfer_done' && ev.data && ev.data.name) {
-            transferred[ev.data.name] = true;
-          }
-        });
-        var stillMissing = missing.filter(function (n) { return !transferred[n]; });
-        var doneList = missing.filter(function (n) { return transferred[n]; });
+        /* 旧版成功事件不证明当前内容完整,不能据此隐藏体检中的缺包。 */
+        var stillMissing = missing;
         var txEv = null;
         for (var i = evs.length - 1; i >= 0; i--) {
-          if (evs[i] && (evs[i].type === 'transfer_begin' || evs[i].type === 'transfer_progress' || evs[i].type === 'transfer_done' || evs[i].type === 'transfer_failed')) {
+          if (evs[i] && evs[i].type === 'transfer_failed') {
             txEv = evs[i];
             break;
           }
         }
-        /* 两端内核版本不一致是混装故障的头号线索:房号门(主题指纹,0.3.67 起)与自动
-         * 补传都要求两端同为 0.3.67+,否则客人侧只会看到"房主可能已关闭游戏";版本随
-         * 清单互报(hostKernel/guestKernel),这里明说并给出唯一有效动作 */
+        /* 保留联机混装提示,但版本相同也不能恢复已暂停的补传。 */
         var peerKernel = hostFlow ? (d.guestKernel || null) : (d.hostKernel || null);
         var mineKernel = (bridge && bridge.kernelVersion) || null;
         return h('div', { className: 'nnk-card' },
           e('div', null, h('b', null, '📦 包体检')),
+          pauseHint,
           e('div', 'nnk-hint', (bridge.cfg && bridge.cfg.root === false)
             ? '⚠️ 本机无法定位游戏目录,扩展分类已跳过(全部扩展会参与联机加载)。'
             : '联机只加载带武将/卡牌的扩展。'),
           (peerKernel && mineKernel && peerKernel !== mineKernel)
-            ? e('div', 'nnk-err', '⚠️ 对方内核 v' + peerKernel + ',与本机 v' + mineKernel + ' 不一致——联机(房号门/自动补传)要求两端内核同为 0.3.67+;让对面在工坊「🌐 联机」页点「升级内核」并重启游戏。')
+            ? e('div', 'nnk-err', '⚠️ 对方内核 v' + peerKernel + ',与本机 v' + mineKernel + ' 不一致——房号门要求两端内核同为 0.3.67+;升级并重启后再核对。补传仍保持暂停。')
             : null,
           peer && peer.name ? e('div', 'nnk-ok', '👤 对方(' + (hostFlow ? '客人' : '房主') + '):「' + peer.name + '」' + (peer.avatar ? '(头像:' + peer.avatar + ')' : '')) : null,
           stillMissing.length
             ? h('div', {},
               e('div', 'nnk-hint', hostFlow
-                ? '客人缺以下扩展,点「补传」传给他(传完客人重开游戏):'
-                : '你缺以下扩展,请房主点「补传」传给你(传完重开游戏):'),
+                ? '客人缺以下扩展，补传暂停，缺包可能影响对局兼容性:'
+                : '你缺以下扩展，补传暂停，缺包可能影响对局兼容性:'),
               stillMissing.map(function (name) {
                 return h('div', { key: name, style: { marginTop: '6px' } },
                   h('span', null, name + ' '),
-                  hostFlow ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('transfer_pack', { name: name }) } }, '📦 补传') : null);
+                  hostFlow ? h('button', { className: 'nnk-copy', disabled: true, title: 'B0 安全止损：自动及手动补传均已暂停' }, '📦 补传已暂停') : null);
               }))
             : e('div', 'nnk-ok', '✅ 双方扩展一致。'),
-          doneList.length ? e('div', 'nnk-ok', '✅ 已补传,客人重启游戏后生效:' + doneList.join('、')) : null,
-          missPacks.length ? e('div', 'nnk-hint', '少的武将包随扩展一起补:' + missPacks.join('、')) : null,
+          missPacks.length ? e('div', 'nnk-hint', '缺少的武将包(当前不会补传):' + missPacks.join('、')) : null,
           extra.length ? e('div', 'nnk-hint', '对方多出的扩展(不影响联机):' + extra.join('、')) : null,
           h('label', { style: { display: 'block', marginTop: '8px' } },
             h('input', { type: 'checkbox', checked: !!(bridge.cfg && bridge.cfg.unlockUIExtensions), onChange: function (ev2) { setNote('开关已发送,下次建房重载后生效'); sendCmd('set_config', { key: 'unlockUIExtensions', value: ev2.target.checked }); } }),
@@ -1759,6 +1751,11 @@ window.__ModuleLoader__.load({
                 kernel.state === 'missing' ? e('div', 'nnk-hint', '内核未安装,点下面按钮安装。')
                   : kernel.state === 'stale' ? e('div', 'nnk-hint', '插件更新过,内核也该升级了。')
                     : e('div', 'nnk-ok', '✅ 内核已安装' + (bridge.kernelVersion ? '(v' + bridge.kernelVersion + ')' : '')),
+                status.runtimeStatus === 'restart_required'
+                  ? e('div', 'nnk-err', '⚠️ B0 暂停尚未确认生效：运行内核或磁盘内容不是当前版本，或暂停处理器未就绪。请升级内核并完全重启游戏。')
+                  : status.runtimeStatus === 'b0_active'
+                    ? e('div', 'nnk-ok', '🛡 B0 补传暂停已生效(运行标识:' + bridge.kernelBuild + ')')
+                    : null,
                 h('div', { className: 'nnk-row' },
                   kernel.state !== 'ok'
                     ? h('button', { className: 'nnk-submit', style: { marginTop: '0' }, disabled: installBusy, onClick: installKernel }, kernel.state === 'stale' ? '⬆️ 升级内核' : '📦 安装内核')

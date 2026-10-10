@@ -1,11 +1,11 @@
 /**
- * 守卫:保护游戏 `extension/` 目录不被通用工具(AI 的 bash / write / edit)直接改写。
+ * 守卫:尽力拦截通用工具(AI 的 bash / pwsh / write / edit)对游戏 extension/ 的直接改写。
  *
  * 为什么需要:扩展代码必须走 noname_write_extension(校验门禁 + 覆盖前备份 +
  * 防丢护栏)。历史教训:早期版本是纯字符串包含比对,四类写法全部绕过(正斜杠 /
  * git-bash 盘符 / cd 后相对写 / 会话 cwd 与进程 cwd 不一致的相对路径)。
  *
- * 本模块是**尽力而为的安全边界**:宁可误拦(用户确认后手动执行即可)也不漏拦。
+ * 本模块是静态命令检查,不是 OS 级隔离;优先保守拦截可识别的路径/写法。
  * 覆盖范围(bash 侧):
  *   - 重定向写入 `>` / `>>` / `2>`(带不带空格都算);
  *   - 改文件命令 rm/mv/cp/tee/truncate/dd/install/touch/mkdir…(允许 sudo/xargs 前缀);
@@ -13,9 +13,8 @@
  *   - 解释器一行式(node -e / python -c / pwsh -Command …):命令里出现保护路径即拦;
  *   - 先 cd/pushd 进保护目录后,命令行里出现任何写动作(含子壳 `bash -c "cd … && echo > f"`)。
  *
- * 已知边界(静态不可解,记档):Windows 8.3 短名(EXTENS~1)与 `\\?\` 前缀路径
- * 不参与归一;只拦名字在 GUARDED_TOOLS 里的工具,其它具备写盘能力的工具
- * (MCP 文件系统类)不在覆盖内。
+ * 已知边界:8.3 短名、链接别名、变量/动态拼接路径、被调用脚本无法全面静态解析。
+ * UNC 与 `\\?\` 形态保守拦截;只检查 GUARDED_TOOLS 中的工具,其它写盘工具不在覆盖内。
  */
 
 import { isAbsolute, normalize, resolve } from 'node:path'
@@ -286,6 +285,40 @@ export function bashGuardReason(command, protectRoot, baseDirs) {
     }
   }
 
+  return null
+}
+
+/** pwsh 工具交付的是脚本正文,不带 `pwsh -Command` 外壳,不能只复用 bash 解释器匹配。
+ * B0 覆盖常见文件 cmdlet/别名、.NET 文件写入和字面量工作目录切换;
+ * 保留只读命令。不是 PowerShell 解释器,动态脚本仍属于上述尽力而为边界。 */
+export function powershellGuardReason(command, protectRoot, baseDirs) {
+  const cmd = String(command ?? '')
+  const bases = (baseDirs || []).filter(Boolean).slice()
+  let locationBases = bases.slice()
+  const location = /(?:^|[\s;&|()])(?:Set-Location|Push-Location|cd|chdir|sl|pushd)\s+(?:(?:-Path|-LiteralPath)\s+)?("([^"]+)"|'([^']+)'|([^\s;|&()]+))/gi
+  let m
+  while ((m = location.exec(cmd)) !== null) {
+    const dir = msysToNative(m[2] ?? m[3] ?? m[4]).replace(/\//g, '\\')
+    // 累积候选目录(不假装能精确执行分支/子作用域),避免相对路径遗漏。
+    const next = isAbsolute(dir) ? [dir] : locationBases.map((base) => resolve(base, dir))
+    locationBases = [...new Set(next)]
+    bases.push(...next.filter((base) => !bases.includes(base)))
+  }
+  const bashReason = bashGuardReason(cmd, protectRoot, bases)
+  if (bashReason) return `pwsh 脚本:${bashReason}`
+  const mutation = /(?:^|[\s;&|()])(?:Set-Content|Add-Content|Out-File|Tee-Object|(?:Set|New|Remove|Clear|Copy|Move|Rename)-Item(?:Property)?|sc|ac|ni|ri|ci|mi|si|sp)\b([^\n;|&]*)/gi
+  const fragments = []
+  while ((m = mutation.exec(cmd)) !== null) fragments.push(m[1])
+  if (/\[(?:System\.)?IO\.(?:File|Directory)\]\s*::\s*(?:Write\w*|Append\w*|OpenWrite|Create\w*|Delete|Move|Copy|Replace)\s*\(/i.test(cmd)) fragments.push(cmd)
+  for (const fragment of fragments) {
+    const tokens = new RegExp(PATH_TOKEN_RE.source, 'g')
+    while ((m = tokens.exec(fragment)) !== null) {
+      const token = (m[1] ?? m[2] ?? m[3]).trim()
+      if (token && !token.startsWith('-') && pathHitsProtected(token, protectRoot, bases)) {
+        return `pwsh 的文件写入命令涉及游戏 extension 目录(${token})`
+      }
+    }
+  }
   return null
 }
 

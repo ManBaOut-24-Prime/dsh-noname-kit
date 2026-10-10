@@ -1,6 +1,6 @@
 /*
  * 包清单体检(M3):双方内核经引擎消息通道交换本机清单,房主算差集,两边
- * 工坊各显示一份差异。0.3.26 起差集不用手点——缺什么自动排队补传,且清单
+ * 工坊各显示一份差异。B0 暂停自动/手动补传,仅保留体检和差集回发;清单
  * 只列主机已启用的扩展(0.3.31 口径,未启用扩展不加载不传)。不新增传输层
  * ——复用引擎 ws 消息分发:客人 game.send → 房主 lib.message.server;
  * 房主 → 客人的回发**必须走隧道定向直发**(transfer.sendDirect),不能走
@@ -129,22 +129,18 @@ function onGuestManifest(manifest) {
 	}
 	var result = diff(collect(), manifest);
 	bridgeApi().emit("manifest_diff", result);
-	var reporterId = null;
 	try {
 		if (nnk.modules.transfer) {
-			reporterId = nnk.modules.transfer.clientId(this);
 			nnk.modules.transfer.sendDirect(this, "nnk_manifest_diff", result);
 		}
 	} catch (e) { /* 定向失败:客人侧看不到差集,不影响房主侧展示 */ }
 	var guestName = result.guestIdentity && result.guestIdentity.name ? result.guestIdentity.name : "?";
 	console.log("[联机助手] 包体检完成:客人「" + guestName + "」缺扩展 " + result.exts.missing.length + " 个、缺武将包 " + result.packs.missing.length + " 个");
-	/* 自动补传:缺什么传什么(排队逐个),传完客人重启游戏重新加入。
-	 * 清单已是「主机已启用」口径,未启用的不传;**只发给上报的那位客人**——
-	 * 发给全体会把 A 缺的扩展强推给没缺包的 B、覆盖 B 本地同名文件(审计实证) */
+	/* B0:缺包仍如实报告,重连/重检也不再自动入补传队列。 */
 	var missing = result.exts.missing || [];
-	if (missing.length && nnk.modules.transfer) {
-		bridgeApi().emit("info", { message: "客人缺 " + missing.length + " 个已启用扩展,自动补传开始(传完请客人重启游戏后重新加入)" });
-		nnk.modules.transfer.start(missing, reporterId);
+	if (missing.length) {
+		bridgeApi().emit("info", { message: "客人缺 " + missing.length + " 个已启用扩展。" +
+			(nnk.modules.transfer ? nnk.modules.transfer.pauseReason : "补传已暂停，缺包可能影响对局兼容性。") });
 	}
 }
 

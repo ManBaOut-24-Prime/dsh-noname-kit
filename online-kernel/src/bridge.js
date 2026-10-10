@@ -164,7 +164,7 @@
 								role = "host";
 							}
 						} catch (e2) { /* 忽略 */ }
-						return { version: nnk.version, stage: nnk.state.bootStage || "booting", role: role };
+						return { version: nnk.version, build: nnk.build || null, transferPaused: nnk.state.transferPaused === true, stage: nnk.state.bootStage || "booting", role: role };
 					})(),
 					/* 邀请码列表的元数据(id/状态/生成时刻/客人名,不含码正文——正文走
 					 * 事件流,不给 0.7 秒一轮的心跳塞几 KB 的 SDP)。并进 state 下发:

@@ -1,4 +1,6 @@
 /*
+ * B0:以下为保留的 legacy 实现背景;自动/手动发送与内容接收入口当前全部暂停。
+ * 旧计数/校验/提交缺陷并未修复,不能据下述历史说明重新开启补传。
  * 自动补包(M4):房主把客人缺少的扩展自动传过去。
  * 流程:客人进房 → 清单交换(manifest)→ 房主算差集 → 自动排队补传全部缺失
  * → 客人落盘 → 提示客人重启游戏、重新输房号加入(重启后清单复查,缺的续传)。
@@ -28,6 +30,25 @@
  */
 (function() {
 	var nnk = window.__nnk__;
+	/* B0 安全止损:不可由配置、版本字段或 ready/done 回执解除。
+	 * 旧实现保留但入口全部关闭;这不是授权/事务修复,不得提前重新启用。 */
+	var TRANSFER_PAUSED = true;
+	var PAUSE_CODE = "TRANSFER_PAUSED";
+	var PAUSE_REASON = "补传已暂停：旧协议缺少客人逐请求授权与整批完整性／回滚保障。正常联机及扩展体检仍可使用，缺包可能影响对局兼容性；安全补传协议完成前不允许 legacy 降级。";
+	var rejectedIds = []; /* 有界去重:旧房主继续灌块时不逐块刷屏/回执。 */
+	function reportPaused(name) {
+		try { bridgeApi().emit("transfer_failed", { name: name, code: PAUSE_CODE, message: PAUSE_REASON }); } catch (e) { /* 不影响对局派发 */ }
+	}
+	function rejectIncoming(msg, force) {
+		var id = msg && typeof msg.id === "number" ? msg.id : null;
+		if (!force && rejectedIds.indexOf(id) >= 0) return;
+		if (rejectedIds.indexOf(id) < 0) {
+			rejectedIds.push(id);
+			if (rejectedIds.length > 16) rejectedIds.shift();
+		}
+		reportPaused(msg && typeof msg.name === "string" ? msg.name : "");
+		if (id !== null) sendAck(id, "fail", PAUSE_REASON, PAUSE_CODE);
+	}
 	var CHUNK = 48 * 1024;           /* 二进制块大小(b64 后 64KB,远小于 DC 消息上限) */
 	var BUFFER_LIMIT = 256 * 1024;   /* 通道积压超过 256KB 就等(保对局消息优先) */
 	var KERNEL_NAME = "联机助手";
@@ -202,6 +223,10 @@
 	}
 
 	function startTransfer(name, only) {
+		if (TRANSFER_PAUSED) {
+			reportPaused(Array.isArray(name) ? name.join("、") : (typeof name === "string" ? name : ""));
+			return 0;
+		}
 		var list = Array.isArray(name) ? name : [name];
 		var queued = 0;
 		var nowTs = Date.now();
@@ -449,11 +474,13 @@
 	function clientHandlers() {
 		return {
 			nnk_tx_begin: function(msg) {
+				if (TRANSFER_PAUSED) { rejectIncoming(msg, true); return; }
 				try {
 					nnk.modules.transfer.begin(msg);
 				} catch (e) { /* 形状不对:忽略,不影响对局 */ }
 			},
 			nnk_tx_file: function(msg) {
+				if (TRANSFER_PAUSED) { rejectIncoming(msg, false); return; }
 				try {
 					if (!msg || !safeName(msg.name)) {
 						return;
@@ -480,6 +507,7 @@
 				} catch (e) { /* 内核消息处理器必须自保(引擎派发不在 try 内) */ }
 			},
 			nnk_tx_data: function(msg) {
+				if (TRANSFER_PAUSED) { rejectIncoming(msg, false); return; }
 				try {
 					if (!rx || !msg || msg.id !== rx.id || msg.rel !== rx.rel) {
 						return;
@@ -501,6 +529,7 @@
 				} catch (e) { /* 同上:自保 */ }
 			},
 			nnk_tx_done: function(msg) {
+				if (TRANSFER_PAUSED) { rejectIncoming(msg, false); return; }
 				try {
 					if (!rx || !msg || msg.id !== rx.id) {
 						return;
@@ -541,9 +570,11 @@
 		};
 	}
 
-	function sendAck(id, type, reason) {
+	function sendAck(id, type, reason, code) {
 		try {
-			nnk.env.game.send("nnk_tx_ack", { id: id, type: type, reason: reason || "" });
+			var ack = { id: id, type: type, reason: reason || "" };
+			if (code) ack.code = code;
+			nnk.env.game.send("nnk_tx_ack", ack);
 		} catch (e) { /* 忽略 */ }
 	}
 
@@ -660,18 +691,31 @@
 	}
 
 	nnk.modules.transfer = {
+		paused: TRANSFER_PAUSED,
+		pauseReason: PAUSE_REASON,
 		install: function() {
+			nnk.state.transferPaused = false;
 			var lib = nnk.env.lib;
 			if (lib.message && lib.message.client) {
 				var handlers = clientHandlers();
 				for (var key in handlers) {
-					if (!lib.message.client["__nnk" + key]) {
-						lib.message.client[key] = handlers[key];
+					if (TRANSFER_PAUSED || !lib.message.client["__nnk" + key]) {
+						// 已有 legacy 标记也必须替换,不串接可能写盘的旧处理器。
+						lib.message.client[key] = TRANSFER_PAUSED
+							? (key === "nnk_tx_begin" ? function(msg) { rejectIncoming(msg, true); } : function(msg) { rejectIncoming(msg, false); })
+							: handlers[key];
 						lib.message.client["__nnk" + key] = true;
 					}
 				}
 			}
 			if (lib.message && lib.message.server) {
+				if (TRANSFER_PAUSED) {
+					// 迟到的旧 ready/done/progress 不是本版本的成功或进行中状态。
+					lib.message.server.nnk_tx_progress = function() {};
+					lib.message.server.nnk_tx_ack = function() {};
+					lib.message.server.__nnkTxProgress = true;
+					lib.message.server.__nnkTxAck = true;
+				}
 				if (!lib.message.server.__nnkTxProgress) {
 					/* 客人 → 房主:接收进度透传给工坊 */
 					lib.message.server.nnk_tx_progress = function(msg) {
@@ -693,6 +737,7 @@
 					lib.message.server.__nnkTxAck = true;
 				}
 			}
+			nnk.state.transferPaused = TRANSFER_PAUSED && !!(lib.message && lib.message.client && lib.message.server);
 		},
 		/* 工坊命令:补传指定扩展(传单个名字或名字数组,自动排队)。
 		 * only=只发给这一条通道(清单自动补传按上报者定向,防误覆盖别人的本地包) */
@@ -701,6 +746,10 @@
 		 * 的隧道发过去(与补传同款,不经 game.broadcast——联机模式下广播开门
 		 * 就 return,差集回发因此从来没到过客人;审计实证)。manifest 回发用它 */
 		sendDirect: function(client, func, payload) {
+			if (TRANSFER_PAUSED && typeof func === "string" && func.indexOf("nnk_tx_") === 0) {
+				reportPaused("");
+				return false;
+			}
 			var id = bridgeId(client);
 			if (id === null) {
 				return false;
@@ -716,6 +765,10 @@
 		clientId: bridgeId,
 		/* 客人侧开始一次接收会话(收到 tx_begin 后:先落会话,再回 ready 回执) */
 		begin: function(msg) {
+			if (TRANSFER_PAUSED) {
+				rejectIncoming(msg, true);
+				return;
+			}
 			if (!msg || !safeName(msg.name) || !Array.isArray(msg.files)) {
 				if (msg && typeof msg.id === "number") {
 					sendAck(msg.id, "fail", "补传清单格式不对");

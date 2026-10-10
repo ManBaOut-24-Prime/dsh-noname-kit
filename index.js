@@ -4,7 +4,7 @@
  * 无名杀(Noname)扩展开发工坊:AI 写扩展代码的受限开发套件。
  * - 注入规范知识(systemPrompt 常驻),取代用户手动喂知识库
  * - 注册 7 个工具:搜官方参考 / 校验 / 读扩展 / 写扩展(校验门禁) / 复制图片 / 复制配音 / 任务收口
- * - 守卫:拦截通用 write/edit/bash 对游戏 extension 目录的写入(防绕过校验)
+ * - 守卫:尽力拦截通用 write/edit/bash/pwsh 对游戏 extension 目录的可识别写入
  * - HTTP API:历史记录与备份回滚(浏览器工坊面板用)
  *
  * 配置:cordis.yml 行上配 nonameDir(无名杀游戏本体目录,含 extension/)。
@@ -29,9 +29,9 @@ import { listExtensionFolders } from './src/detect.js'
 import { copyAudios, audioTargetKind } from './src/audio.js'
 import { createTask, listTasks, skillFeedback, markSkillsWritten, setSkillStatus, setTaskImage, setSkillAudioFiles, setDieAudioFiles, completeById, deleteTask, reopenTask, getTask } from './src/tasks.js'
 import { bundledPresetDir, hostHasDeclarativePreset, installPreset, presetDirOf, presetStatus } from './src/preset.js'
-import { bundledKernelVersion, createBridgeSession, installKernel, kernelStatus } from './src/online.js'
+import { bundledKernelVersion, createBridgeSession, installKernel, kernelStatus, kernelRuntimeStatus } from './src/online.js'
 import { cachedUpdate, checkForUpdate, detectInstall, installHint } from './src/update.js'
-import { bashGuardReason, guardMessage, pathHitsProtected } from './src/guard.js'
+import { bashGuardReason, powershellGuardReason, guardMessage, pathHitsProtected } from './src/guard.js'
 import { readJsonSafeSync, writeJsonAtomicSync } from './src/store.js'
 import pkg from './package.json' with { type: 'json' }
 
@@ -59,7 +59,7 @@ export const Config = z.object({
 })
 
 /** 这些通用工具对 extension 目录的写入会被守卫拒绝——必须走 noname_write_extension。 */
-const GUARDED_TOOLS = new Set(['write', 'tool:write', 'edit', 'tool:edit', 'bash', 'tool:bash', 'str_replace_editor', 'tool:str_replace_editor'])
+const GUARDED_TOOLS = new Set(['write', 'tool:write', 'edit', 'tool:edit', 'bash', 'tool:bash', 'pwsh', 'tool:pwsh', 'str_replace_editor', 'tool:str_replace_editor'])
 
 /** 取工具参数里的目标路径:不同写工具叫法不同(file_path / path)。 */
 function pathArgOf(exec) {
@@ -645,19 +645,27 @@ export function apply(ctx, config) {
     const protectRoot = extRootOf(nonameDir)
     // 相对路径的解析基准:会话工作目录(DSH 写工具用的就是它)→ 进程 cwd → 游戏目录
     const baseDirs = []
+    let sessionCwd
     try {
-      const sessionCwd = exec.agent?.session?.header?.cwd
+      sessionCwd = exec.agent?.session?.header?.cwd
       if (typeof sessionCwd === 'string' && sessionCwd) baseDirs.push(sessionCwd)
     } catch { /* 非 agent 调用没有 agent 字段 */ }
     try {
       /* custom-bash 的 workdir 参数优先于会话 cwd——不推进来就是个现成旁路
        * (`bash{command:"cat > extension.js", workdir:"…/extension/pk"}`) */
       const workdir = exec.arguments?.workdir
-      if (typeof workdir === 'string' && workdir) baseDirs.unshift(workdir)
+      if (typeof workdir === 'string' && workdir) {
+        baseDirs.unshift(workdir)
+        // 原生 pwsh 将相对 workdir 解析到 session cwd,不能仅按插件进程 cwd 检查。
+        if ((exec.name === 'pwsh' || exec.name === 'tool:pwsh') && typeof sessionCwd === 'string' && sessionCwd) {
+          baseDirs.unshift(resolve(sessionCwd, workdir))
+        }
+      }
     } catch { /* 无该参数 */ }
     baseDirs.push(process.cwd(), nonameDir)
-    if (exec.name === 'bash' || exec.name === 'tool:bash') {
-      const reason = bashGuardReason(String(exec.arguments?.command ?? ''), protectRoot, baseDirs)
+    if (exec.name === 'bash' || exec.name === 'tool:bash' || exec.name === 'pwsh' || exec.name === 'tool:pwsh') {
+      const check = exec.name === 'pwsh' || exec.name === 'tool:pwsh' ? powershellGuardReason : bashGuardReason
+      const reason = check(String(exec.arguments?.command ?? ''), protectRoot, baseDirs)
       return reason ? guardMessage(reason) : undefined
     }
     const path = pathArgOf(exec)
@@ -965,6 +973,7 @@ export function apply(ctx, config) {
             kernel,
             kernelError,
             kernelVersion: bundledKernelVersion(),
+            runtimeStatus: kernelRuntimeStatus(kernel, bridge.snapshot()),
             savedDir: readSettingsFile().nonameDir || '',
             bridge: bridge.snapshot(),
           })
@@ -1030,6 +1039,11 @@ export function apply(ctx, config) {
           const body = await readBody()
           const actions = new Set(['create_room', 'join_room', 'invite_refresh', 'accept_answer', 'join_invite', 'transfer_pack', 'clear_quarantine', 'set_config', 'set_identity', 'restart_room', 'set_mode', 'cancel'])
           if (!actions.has(body.action)) return json(400, { ok: false, error: `未知命令: ${body.action}` })
+          // B0:旧 UI 或旧内核也不能经工坊命令恢复 legacy 补传。
+          if (body.action === 'transfer_pack') return json(409, {
+            ok: false, code: 'TRANSFER_PAUSED',
+            error: '补传已暂停：旧协议缺少客人逐请求授权与整批完整性／回滚保障。正常联机及扩展体检仍可使用，缺包可能影响对局兼容性；安全补传协议完成前不允许 legacy 降级。',
+          })
           if (body.action === 'set_config' && body.args?.key === 'mqttUrl') {
             // 自定义信令服务器:ws(s):// 开头才收;存 noname-kit.json 跨游戏目录
             const url = String(body.args.value || '').trim().slice(0, 200)

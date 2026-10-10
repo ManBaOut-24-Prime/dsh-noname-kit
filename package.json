@@ -4,6 +4,9 @@
   "description": "Noname (无名杀) extension workshop for DeepSeek Harness: AI writes skills/cards with official-reference search, validation-gated writes, task history, and a web workshop panel.",
   "type": "module",
   "main": "index.js",
+  "scripts": {
+    "test": "node scripts/test-all.mjs"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",

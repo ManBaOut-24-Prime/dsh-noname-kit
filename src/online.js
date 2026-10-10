@@ -57,6 +57,19 @@ export function bundledKernelVersion() {
   return cachedKernelVersion
 }
 
+/** B0 运行标识:与磁盘内容哈希分开,心跳必须来自已重启的新内核。 */
+export function bundledKernelBuild() {
+  const code = readFileSync(join(bundledKernelDir(), 'extension.js'), 'utf8')
+  return /window\.__nnk__ = \{ version: "[^"]+", build: "([^"]+)"/.exec(code)?.[1] ?? null
+}
+
+/** 已安装文件不代表运行代码更新。只在新内核已就绪并报告暂停处理器安装后标记 B0 生效。 */
+export function kernelRuntimeStatus(kernel, bridge) {
+  if (!bridge?.online) return 'offline'
+  if (kernel?.state !== 'ok' || bridge.kernelVersion !== bundledKernelVersion()
+    || bridge.kernelBuild !== bundledKernelBuild() || bridge.transferPaused !== true) return 'restart_required'
+  return bridge.bootStage === 'ready' ? 'b0_active' : 'booting'
+}
 /** 目录树复制:逐文件 copyFileSync。
  *  ⚠️ 绝不用 fs.cpSync:实测本机 Node22/Windows 上,目标路径含非 ASCII
  *  (如「联机助手」)时 cpSync 静默复制出空目录、无任何报错——而联机内核的
@@ -258,7 +271,7 @@ export function installKernel({ nonameDir, baseUrl, token, intervalMs }) {
   }
   const hash = hashKernelDir(target)
   try {
-    writeFileSync(join(target, KERNEL_MANIFEST), JSON.stringify({ hash, installedAt: Date.now() }, null, 2), 'utf8')
+    writeFileSync(join(target, KERNEL_MANIFEST), JSON.stringify({ hash, version: bundledKernelVersion(), build: bundledKernelBuild(), installedAt: Date.now() }, null, 2), 'utf8')
   } catch { /* 盖章失败只影响展示,不算安装失败 */ }
   installedHashCache = { dir: '', sig: null, hash: null }   /* 安装完成:哈希缓存立即失效 */
   return { ok: true, target, backup, hash }
@@ -277,6 +290,8 @@ export function createBridgeSession({ token, syncSource }) {
     token,
     lastSeen: 0,
     kernelVersion: null,
+    kernelBuild: null,
+    transferPaused: false,
     bootStage: null,
     role: '',
     state: null,
@@ -290,6 +305,9 @@ export function createBridgeSession({ token, syncSource }) {
     poll(payload) {
       session.lastSeen = Date.now()
       session.kernelVersion = payload?.kernel?.version ?? session.kernelVersion
+      // 不粘滞:换成旧内核/缺字段时立即撤销 B0 已生效判定。
+      session.kernelBuild = typeof payload?.kernel?.build === 'string' ? payload.kernel.build : null
+      session.transferPaused = payload?.kernel?.transferPaused === true
       session.bootStage = payload?.kernel?.stage ?? session.bootStage
       /* 按字段更新而非粘滞:新内核每拍都上报 role(空串=当前既非主机也非客人,
        * 是真实状态,取消房间后要能落回空);旧内核(≤0.3.42)不发该字段,保持
@@ -354,6 +372,8 @@ export function createBridgeSession({ token, syncSource }) {
         online: Boolean(session.lastSeen) && now - session.lastSeen < ONLINE_WINDOW_MS,
         lastSeen: session.lastSeen || null,
         kernelVersion: session.kernelVersion,
+        kernelBuild: session.kernelBuild,
+        transferPaused: session.transferPaused,
         bootStage: session.bootStage,
         /* 角色/房间状态只在心跳还热时下发:游戏关掉后房间随即从工坊消失,
          * 不会永远挂着最后一拍的房号;cfg 保留(身份回填/离线保存仍可用) */

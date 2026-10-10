@@ -266,7 +266,7 @@ export default { name: "standard", character: characters, translate: translates 
   const indexSrc = readFileSync(join(repoRoot, 'index.js'), 'utf8')
   ok(!mfSrc.includes('game.broadcast('), '差集回发不再走 game.broadcast(联机模式下开门即 return,永远到不了客人)')
   ok(mfSrc.includes('sendDirect(this, "nnk_manifest_diff"'), '差集回发走定向直发(与补传同通道)')
-  ok(mfSrc.includes('transfer.start(missing, reporterId)'), '自动补传按上报者定向(不再强推给不缺包的客人)')
+  ok(!mfSrc.includes('transfer.start(') && mfSrc.includes('pauseReason'), 'B0 缺包仅提示暂停,不再自动入队(行为另见 test-b0-safety)')
   ok(txSrc.includes('expectCount') && txSrc.includes('rejectedFiles'), '客人侧完整性收口(文件数对不上不回 done)')
   ok(txSrc.includes('sendAck(msg.id, "fail"') || txSrc.includes('sendAck(id, "fail"'), '明确 fail 回执(不再只靠超时)')
   ok(txSrc.includes('ackFailReason'), '房主侧收下 fail 原因')
