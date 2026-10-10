@@ -102,7 +102,7 @@ try {
     assert.ok(r.errors.length); assert.equal(r.code, mod)
   })
   await test('sequential unique edits apply to assembled current text', () => assert.equal(assembleBlocks(mod, [], [{ find: 'helper', replace: 'renamed' }, { find: 'renamed', replace: 'final' }]).code, mod.replace('helper', 'final')))
-  const index = readFileSync(new URL('../index.js', import.meta.url), 'utf8')
+  const index = readFileSync(new URL('../index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
   let tool
   const begin = index.lastIndexOf('ctx.tools.register(defineTool({', index.indexOf("name: 'noname_write_extension'"))
   runInNewContext(index.slice(begin, index.indexOf("  ctx.tools.register(defineTool({\n    name: 'noname_copy_images'", begin)), {

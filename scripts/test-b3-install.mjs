@@ -11,7 +11,7 @@ import { runInNewContext } from 'node:vm'
 import { kernelStatus } from '../src/online.js'
 
 const source = fileURLToPath(new URL('../online-kernel/', import.meta.url))
-const code = fs.readFileSync(new URL('../src/kernel-install.js', import.meta.url), 'utf8')
+const code = fs.readFileSync(new URL('../src/kernel-install.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 function installer(fault = '', crash = '') {
   let copies = 0, thrown = false
   const fds = new Map()

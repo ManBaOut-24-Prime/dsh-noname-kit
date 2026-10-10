@@ -155,7 +155,7 @@
 		}
 	}
 
-	function resetSession(session, naturalClose) {
+	function resetSession(session, closeReason) {
 		session = session || guestState.session;
 		if (!session || session.disposed) return;
 		if (guestState.session === session) guestState.session = null;
@@ -174,7 +174,24 @@
 			rtc.stopTracking(session.pc);
 			try { session.pc.close(); } catch (e) { /* 已关闭 */ }
 		}
-		if (!naturalClose && engineClose) engineClose.call(session.fake);
+		if (closeReason !== "transport-close" && closeReason !== "explicit-exit" && engineClose) engineClose.call(session.fake);
+	}
+
+	/* ICE、主通道和心跳共用结束入口;owner 失效后迟到事件不再启动重回。
+	 * transport-close 的原生回调由 FakeWebSocket 快照交付,其他断线在此交付。 */
+	function disconnectSession(session, transportClose) {
+		if (!owns(session)) return;
+		var engineClose = session.fake && session.fake.onclose;
+		var recover = session.wasIn && session.code && nnk.env._status.connectMode;
+		resetSession(session, "transport-close");
+		if (recover) {
+			bridgeApi().setPhase("joining", { code: session.code });
+			autoRejoin(session.code, 8);
+		} else {
+			bridgeApi().setPhase("idle");
+			bridgeApi().emit("room_closed", { side: "guest" });
+		}
+		if (!transportClose && engineClose) engineClose.call(session.fake);
 	}
 
 	/* 自动重回彻底放弃:收场回干净菜单。房号/邀请码会话期内引擎的自毁重载
@@ -480,7 +497,7 @@
 						cancelFlow();
 						guestState.rejoinCode = null;
 						guestState.rejoinGen = (guestState.rejoinGen || 0) + 1;
-						resetSession();
+						resetSession(null, "explicit-exit");
 						localStorage.removeItem(env.lib.configprefix + "nnk_guest_pending");
 					} catch (eX) { /* 忽略 */ }
 					return origExit.apply(this, arguments);
@@ -585,7 +602,7 @@
 							/* 房主解散房间(工坊取消):立即散场,不自动重回。
 							 * 与房号门同款:顺带把还在跑的重回链停掉 */
 							session.autoConnect = false;
-							guestState.rejoinCode = null;
+							cancelFlow();
 							resetSession(session);
 							bridgeApi().setPhase("idle");
 							bridgeApi().emit("info", { message: "房主已解散房间" });
@@ -626,18 +643,7 @@
 					}
 				};
 				fake.onDown(function() {
-					if (guestState.session === session) {
-						resetSession(session, true);
-				/* 一体化房间:邀请码客人也拿着房号(内核随停车指令下发),
-				 * 断开后走房号门自动重回——恢复不再区分当初从哪道门进来 */
-				if (session.wasIn && session.code && nnk.env._status.connectMode) {
-					bridgeApi().setPhase("joining", { code: session.code });
-					autoRejoin(session.code, 8);
-					return;
-				}
-						bridgeApi().setPhase("idle");
-						bridgeApi().emit("room_closed", { side: "guest" });
-					}
+					disconnectSession(session, true);
 				});
 			};
 			/* 关键时机差:回执码生成后,客人这边的 ICE 检查立刻开跑,而主机要
@@ -648,6 +654,7 @@
 			 * 就永远连不上)。给 3 分钟保底,超时才判死码引导重来 */
 			pc.onconnectionstatechange = function() {
 				if (!owns(session)) return;
+				if (pc.connectionState === "failed" && session.wasIn) { disconnectSession(session); return; }
 				if (pc.connectionState === "failed" && !session.failNoted) {
 					session.failNoted = true;
 					bridgeApi().emit("info", { message: "直连检查暂时没打通(房主还没粘贴回执码属正常)——把回执码发给房主,他点「连接」后通道会自动接上;本页别关,最多再等 3 分钟" });
@@ -776,7 +783,7 @@
 						} else if (msg && msg.nnk_stage === "closed") {
 							/* 房主解散房间(工坊取消):立即散场,不自动重回。
 							 * resetSession 后随后的通道断开事件变成空操作(会话已不在) */
-							guestState.rejoinCode = null;
+							cancelFlow();
 							resetSession(session);
 							bridgeApi().setPhase("idle");
 							bridgeApi().emit("info", { message: "房主已解散房间" });
@@ -798,23 +805,7 @@
 				fake.replay();
 			});
 			fake.onDown(function() {
-				if (guestState.session === session) {
-					resetSession(session, true);
-				/* 房号房间的通道断开(主机重组/换模式重载/掉线)一律自动重回:
-				 * 主机真退了的话重试穷尽后会给明确提示。
-				 * 注:曾试过在此抑制引擎自毁重载(保 game.onlineID)走原生断线重连
-				 * (reinit),但引擎 1.11.6 的 reinit 路径 decoded parsedResult 对
-				 * 活对象无环保护,重连必爆栈(Maximum call stack size exceeded,
-				 * event.name:game)——退回引擎自家的重载路径,身份刷新为新人,
-				 * 主机侧「对局中新客人」的原生拒绝由 denied 包装转成工坊提示 */
-				if (session.wasIn && session.code && nnk.env._status.connectMode) {
-					bridgeApi().setPhase("joining", { code: session.code });
-					autoRejoin(session.code, 8);
-					return;
-				}
-					bridgeApi().setPhase("idle");
-					bridgeApi().emit("room_closed", { side: "guest" });
-				}
+				disconnectSession(session, true);
 			});
 			pc.onconnectionstatechange = function() {
 				if (!owns(session)) return;
@@ -823,11 +814,17 @@
 						guestState.lastIceFailAt = Date.now();
 						bridgeApi().emit("error", { message: "直连建立失败(双方网络没打通)——常见原因:校园网/公司网拦 UDP 或不放行 P2P。先试:双方关掉防火墙对无名杀的 UDP 拦截;换手机热点往往能成;同网(同一路由器/热点)必成。注意邀请码不是网络兜底(它只换「找到对方」的方式,网络本身拦 UDP 时同样连不上)" });
 					}
-					bridgeApi().setPhase("idle");
-					resetSession(session);
+					disconnectSession(session);
 				}
 			};
-			var answered = false;
+			var answerState = "pending";
+			function failAnswer(message) {
+				if (!owns(session)) return;
+				answerState = "failed";
+				resetSession(session);
+				bridgeApi().setPhase("idle");
+				bridgeApi().emit("error", { message: message });
+			}
 			pc.createOffer().then(function(offer) {
 				if (!owns(session)) { return; }
 				return pc.setLocalDescription(offer);
@@ -865,15 +862,20 @@
 							}
 							return;
 						}
-						if (/\/answer\//.test(topic) && !answered && msg && msg.sdp) {
-							answered = true;
+						if (/\/answer\//.test(topic) && answerState === "pending" && msg && msg.sdp) {
+							answerState = "applying";
 							session.hostSeen = Date.now();
-							pc.setRemoteDescription(msg.sdp).then(function() {
+							var answerTimer = sessionTimeout(session, function() { failAnswer("房主应答应用超时,本次尝试已结束——请重新加入"); }, 30000);
+							Promise.resolve().then(function() {
 								if (!owns(session)) return;
+								return pc.setRemoteDescription(msg.sdp);
+							}).then(function() {
+								if (!owns(session)) return;
+								answerState = "applied";
+								clearTimeout(answerTimer);
 								noteRecv(rtc.addInjected(pc, msg.hosts));   /* 主机应答里带的虚拟网卡直连地址 */
 							}).catch(function(err) {
-								if (!owns(session)) return;
-								bridgeApi().emit("error", { message: "房主应答处理失败: " + (err.message || err) });
+								failAnswer("房主应答处理失败: " + (err.message || err));
 							});
 						}
 					}
@@ -918,7 +920,7 @@
 					 * 主线程可能整段卡住,心跳跟着断供——这是"忙"不是"死",
 					 * 留足余量防误判(同族教训:客机刚进选将就被判死) */
 					sessionTimeout(session, function() {
-						if (!answered && guestState.session === session && !session.beatRefreshed) {
+						if (answerState === "pending" && guestState.session === session && !session.beatRefreshed) {
 							guestState.lastAttemptBeatDead = true;   /* 重回循环据此换文案 */
 							var inLoading = Date.now() - (guestState.hostLoadingAt || 0) < 60000;
 							if (!inLoading) {
@@ -934,7 +936,7 @@
 						}
 					}, 14000);
 					sessionTimeout(session, function() {
-						if (!answered && guestState.session === session) {
+						if (answerState !== "applied" && guestState.session === session) {
 							bridgeApi().emit("error", { message: "30 秒未收到房主应答(可能已掉线)——重新输入房号再试,或让房主发一张邀请码" });
 							/* 收掉半死会话:自动重回循环据此续上下一试,状态不留悬空 */
 							bridgeApi().setPhase("idle");
