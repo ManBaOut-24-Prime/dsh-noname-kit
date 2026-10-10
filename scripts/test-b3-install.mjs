@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { runInNewContext } from 'node:vm'
 import { kernelStatus } from '../src/online.js'
+import batchFiles from '../online-kernel/lib/batch-files.cjs'
 
 const source = fileURLToPath(new URL('../online-kernel/', import.meta.url))
 const code = fs.readFileSync(new URL('../src/kernel-install.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
@@ -28,7 +29,7 @@ function installer(fault = '', crash = '') {
     },
     unlinkSync: name => { fs.unlinkSync(name); if (crash === 'complete' && String(name).endsWith('active.json')) process.exit(77) },
   }
-  const context = { fs: io, createHash, randomUUID, ...path, process }
+  const context = { fs: io, batchFiles, createHash, randomUUID, ...path, process }
   runInNewContext(code.replace(/^import .*\n/gm, '').replace(/export /g, '') + '\nglobalThis.api = { installKernelFiles, kernelContentHash };', context)
   return context.api
 }

@@ -8,6 +8,7 @@
 import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { safeFolderPath } from './write.js'
+import {withBatchWrite} from './batch.js'
 
 /**
  * 复制一批配音到扩展包的 audio/ 子目录。
@@ -17,7 +18,8 @@ import { safeFolderPath } from './write.js'
  * @param {Array<{source:string, target:string}>} input.audios - source=本地 mp3 绝对路径;target=存入 audio/ 的相对路径,必须是 `skill/<名>.mp3` 或 `die/<名>.mp3`。
  * @returns {{ok:boolean, copied?:Array, errors?:Array}}
  */
-export async function copyAudios(nonameDir, { folder, audios }) {
+export async function copyAudios(nonameDir, args) { return withBatchWrite(nonameDir,()=>copyAudiosInner(nonameDir,args)) }
+async function copyAudiosInner(nonameDir, { folder, audios }) {
   if (!Array.isArray(audios) || audios.length === 0) {
     return { ok: false, errors: [{ source: '', error: 'audios 不能为空' }] }
   }

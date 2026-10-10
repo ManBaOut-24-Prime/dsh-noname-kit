@@ -14,7 +14,7 @@
 	}
 	window.__nnkLoaded = true;
 	if (!window.__nnk__) {
-		window.__nnk__ = { version: "0.3.82", build: "b6-consent-1", modules: {}, env: null, state: {} };
+		window.__nnk__ = { version: "0.3.83", build: "b7-files-1", modules: {}, env: null, state: {} };
 	}
 
 	game.import("extension", function(lib, game, ui, get, ai, _status) {

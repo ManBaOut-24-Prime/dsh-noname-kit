@@ -4,6 +4,7 @@
  * (防路径逃逸)。覆盖前自动备份到 <文件夹>/backup/。
  */
 import { copyFile, mkdir, readFile, readdir, writeFile, unlink, stat, rename } from 'node:fs/promises'
+import {withBatchWrite} from './batch.js'
 import { join, resolve, basename, relative, sep, dirname } from 'node:path'
 import { validateExtensionCode, syntaxCheck, collectDefinedIds } from './validate.js'
 import { scanAnchored, scanBlocks, extractBlock, assembleBlocks, checkFidelity, migrateCode, stripAnchors, findAllSections, sectionProperties, virtualCharacterBlocks, virtualCardBlocks, virtualBlocks, virtualTranslateBlocks, CONTENT_KINDS } from './blocks.js'
@@ -163,7 +164,8 @@ async function collectBackupDirs(folderFull) {
 
 /** 主动清理整个扩展包的全部 backup/(工坊历史面板按钮):
  *  每目录保留最新 3 个,并同步清除 history 里指向被删文件的登记。 */
-export async function prunePackageBackups(nonameDir, folder) {
+export async function prunePackageBackups(nonameDir, folder) { return withBatchWrite(nonameDir,()=>prunePackageBackupsInner(nonameDir,folder)) }
+async function prunePackageBackupsInner(nonameDir, folder) {
   const { full } = safeFolderPath(nonameDir, folder)
   try { await readdir(full) } catch { return { ok: false, error: '扩展包不存在。' } }
   const dirs = await collectBackupDirs(full)
@@ -177,7 +179,8 @@ export async function prunePackageBackups(nonameDir, folder) {
   return { ok: true, removedCount: allRemoved.length, dirs: touchedDirs }
 }
 
-export async function writeExtension(nonameDir, { folder, file, code, blocks, edits, deletes, editScope, style, kind, infoJson, idPrefix, writeMode }) {
+export async function writeExtension(nonameDir, args) { return withBatchWrite(nonameDir,()=>writeExtensionInner(nonameDir,args)) }
+async function writeExtensionInner(nonameDir, { folder, file, code, blocks, edits, deletes, editScope, style, kind, infoJson, idPrefix, writeMode }) {
   const blockMode = Array.isArray(blocks) || Array.isArray(edits) || Array.isArray(deletes)
   const full = safeFolderPath(nonameDir, folder).full
   await mkdir(full, { recursive: true })
@@ -373,7 +376,8 @@ export async function readExtension(nonameDir, folder, opts = {}) {
  * 锚点注释行,一个代码字符不动;写前跑语法校验(不过不落盘),通过后自动备份再写。
  * file 缺省 = extension.js;多文件包对子目录模块文件逐个迁移。
  */
-export async function migrateAnchors(nonameDir, folder, file) {
+export async function migrateAnchors(nonameDir, folder, file) { return withBatchWrite(nonameDir,()=>migrateAnchorsInner(nonameDir,folder,file)) }
+async function migrateAnchorsInner(nonameDir, folder, file) {
   const target = safeEntryFilePath(nonameDir, folder, file).full
   let oldCode
   try { oldCode = await readFile(target, 'utf8') } catch { return { ok: false, error: '该文件不存在。' } }
@@ -398,7 +402,8 @@ export async function migrateAnchors(nonameDir, folder, file) {
  * 已锚文件剥旧锚重打;无条目的壳文件如 extension.js / index.js 自动跳过)。
  * 返回逐文件明细;全部失败才 ok:false。
  */
-export async function migrateExtension(nonameDir, folder) {
+export async function migrateExtension(nonameDir, folder) { return withBatchWrite(nonameDir,()=>migrateExtensionInner(nonameDir,folder)) }
+async function migrateExtensionInner(nonameDir, folder) {
   const files = await listPackageJsFiles(nonameDir, folder)
   if (!files.length) return { ok: false, error: '扩展包里没有任何 .js 文件。' }
   const results = []
@@ -464,7 +469,8 @@ export async function listBackups(nonameDir, folder) {
 }
 
 /** 回滚:把指定备份覆盖回 extension.js。返回旧内容备份名。 */
-export async function rollbackExtension(nonameDir, folder, backupName) {
+export async function rollbackExtension(nonameDir, folder, backupName) { return withBatchWrite(nonameDir,()=>rollbackExtensionInner(nonameDir,folder,backupName)) }
+async function rollbackExtensionInner(nonameDir, folder, backupName) {
   /* 接受两种形态:
    *   "extension.20261007-...js"                —— 包根 backup/ 里的(旧客户端)
    *   "character/backup/character.2026...js"    —— 子目录模块的备份(多文件包)

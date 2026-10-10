@@ -282,7 +282,7 @@ for (const host of [true, false]) test('体检卡片 ' + (host ? '主机' : '客
 
 const current = { online: true, kernelVersion: bundledKernelVersion(), kernelBuild: bundledKernelBuild(), transferPaused: true, bootStage: 'ready' }
 test('安装与运行版本具有独立 B0 标识', () => {
-  assert.equal(current.kernelVersion, '0.3.82')
+  assert.equal(current.kernelVersion, '0.3.83')
   assert.equal(current.kernelBuild, bundledKernelBuild())
   assert.ok(current.kernelBuild)
   assert.equal(kernelRuntimeStatus({ state: 'ok' }, current), 'b0_active')

@@ -2,6 +2,7 @@
 import * as fs from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { join, resolve, relative, isAbsolute } from 'node:path'
+import batchFiles from '../online-kernel/lib/batch-files.cjs'
 
 const WORK = 'nnk-kernel-install'
 const BACKUPS = 'nnk-kernel-backups'
@@ -108,9 +109,12 @@ function acquireLock(work) {
 }
 /** Prepare, verify, then rename; ordinary failures restore the old directory, crashes recover on the next install. */
 export function installKernelFiles({ root, source, version, build, baseUrl, token, intervalMs }) {
-  let release, backup = null, attempt
+  let release, batchLease, backup = null, attempt
   try {
+    if (fs.existsSync(join(root, 'nnk-batches', 'active'))) throw new Error('补传批次尚未恢复，请先执行离线恢复。')
     realDirectory(root)
+    if (process.platform==='win32') batchLease=batchFiles.acquireWriteLease(root)
+    if (fs.existsSync(join(root, 'nnk-batches', 'active'))) throw new Error('补传批次尚未恢复，请先执行离线恢复。')
     fs.mkdirSync(join(root, 'extension'), { recursive: true }); realDirectory(join(root, 'extension'))
     const work = join(root, WORK)
     fs.mkdirSync(work, { recursive: true }); realDirectory(work)
@@ -154,5 +158,6 @@ export function installKernelFiles({ root, source, version, build, baseUrl, toke
       ...(recoveryError ? { recoveryRequired: true, recoveryError } : {}) }
   } finally {
     if (release) { try { release() } catch (error) { /* Preserve a failed lock for a later diagnostic/recovery attempt. */ } }
+    if (batchLease) batchLease.release()
   }
 }

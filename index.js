@@ -34,6 +34,7 @@ import { cachedUpdate, checkForUpdate, detectInstall, installHint } from './src/
 import { bashGuardReason, powershellGuardReason, guardMessage, pathHitsProtected } from './src/guard.js'
 import { readJsonSafeSync, writeJsonAtomicSync } from './src/store.js'
 import pkg from './package.json' with { type: 'json' }
+import {batchPending, batchStatus, recoverBatch} from './src/batch.js'
 
 /** bash 单次输出上限的出厂默认与允许范围(与 custom-bash.mjs 保持一致)。
  * 默认 64K=下限:阀门太小会增加调用轮数,总上下文消耗反而更大;256K 上限
@@ -76,7 +77,8 @@ const detectCache = { at: 0, list: [] }
 function isValidGameDir(dir) {
   if (!dir) return false
   try {
-    if (!statSync(join(dir, 'extension')).isDirectory()) return false
+    if (!existsSync(join(dir, 'extension')) && !batchPending(dir)) return false
+    if (existsSync(join(dir, 'extension')) && !statSync(join(dir, 'extension')).isDirectory()) return false
     if (existsSync(join(dir, 'noname.js'))) return true
     return statSync(join(dir, 'noname')).isDirectory() || statSync(join(dir, 'game')).isDirectory()
   } catch { return false }
@@ -977,6 +979,7 @@ export function apply(ctx, config) {
             runtimeStatus: kernelRuntimeStatus(kernel, bridge.snapshot()),
             savedDir: readSettingsFile().nonameDir || '',
             bridge: bridge.snapshot(),
+            batchRecovery: active ? batchStatus(nonameDir) : {status:'none'},
           })
         }
         if (req.method === 'POST' && url.pathname === '/noname-kit-api/online/bridge') {
@@ -986,6 +989,11 @@ export function apply(ctx, config) {
         }
         // 以下都需要已配置
         if (!active) return json(503, { error: 'noname-kit 未配置 nonameDir(或目录无效):请在工坊「初始化向导」里完成配置' })
+        // Independent of kernel boot, MQTT, RTC and the bridge heartbeat.
+        if (req.method === 'POST' && url.pathname === '/noname-kit-api/online/batch/recover') {
+          const result=recoverBatch(nonameDir)
+          return json(['busy','recovery_required'].includes(result.status) ? 409 : 200, result)
+        }
         // 联机助手:内核安装与命令下发(要写游戏目录,必须在 503 闸门之后)
         if (req.method === 'POST' && url.pathname === '/noname-kit-api/online/kernel/install') {
           // baseUrl 供游戏内核回连本插件:同机回环,取本请求的 host 端口最准

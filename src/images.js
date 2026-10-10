@@ -6,6 +6,7 @@
 import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { safeFolderPath } from './write.js'
+import {withBatchWrite} from './batch.js'
 
 const TARGET_NAME_RE = /^[\w\u4e00-\u9fff-]+\.(jpg|jpeg|png|gif|webp)$/i
 
@@ -17,7 +18,8 @@ const TARGET_NAME_RE = /^[\w\u4e00-\u9fff-]+\.(jpg|jpeg|png|gif|webp)$/i
  * @param {Array<{source:string, target:string}>} input.images - source=本地图片绝对路径;target=存入 image/ 的文件名(含扩展名)。
  * @returns {{ok:boolean, copied?:Array, errors?:Array}}
  */
-export async function copyImages(nonameDir, { folder, images }) {
+export async function copyImages(nonameDir, args) { return withBatchWrite(nonameDir,()=>copyImagesInner(nonameDir,args)) }
+async function copyImagesInner(nonameDir, { folder, images }) {
   if (!Array.isArray(images) || images.length === 0) {
     return { ok: false, errors: [{ source: '', error: 'images 不能为空' }] }
   }

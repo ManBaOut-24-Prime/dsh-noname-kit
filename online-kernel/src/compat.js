@@ -169,6 +169,7 @@
 		 * 美化类=关(哪怕作者声明了 connect:true——真机实证:美化族普遍自带
 		 * connect 声明,只拨亮不拨灭的话它们照样加载,开闸形同虚设) */
 		function decide(name, obj) {
+			if (nnk.modules.isolation && nnk.modules.isolation.blocked(name)) return false;
 			if (name === KERNEL_NAME) {
 				return true;
 			}

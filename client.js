@@ -1304,6 +1304,16 @@ window.__ModuleLoader__.load({
           }, function () { setNote('❌ 插件服务不可达'); })
           .then(function () { setInstallBusy(false); });
       };
+      var recoverBatch = function () {
+        if (installBusy) return;
+        setInstallBusy(true);setNote('正在恢复完整补传批次…');
+        fetch('/noname-kit-api/online/batch/recover', {method:'POST'})
+          .then(function(r) {return r.json()})
+          .then(function(d) {
+            setNote(d.status==='committed' ? '✅ 完整新版批次已恢复。请在没有进行中对局时重启游戏。' : d.status==='rolled_back' || d.status==='none' ? '✅ 已恢复整批旧文件。' : '❌ 恢复尚未完成：'+(d.error || '批次仍在使用中，请等待或完全退出原游戏进程后重试。'));
+          }, function() {setNote('❌ 插件服务不可达');})
+          .then(function() {setInstallBusy(false);});
+      };
       var copyText = function (text) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).then(function () { setNote('✅ 已复制,去粘贴发送吧'); }, function () { setNote('❌ 复制失败,请手动全选复制'); });
@@ -1762,6 +1772,12 @@ window.__ModuleLoader__.load({
           h('a', { href: 'https://github.com/libnoname/noname', target: '_blank', rel: 'noopener', style: { color: 'var(--dsw-alias-brand-primary)', marginLeft: '6px' } }, 'github.com/libnoname/noname')),
         h('div', { className: 'nnk-card nnk-dash-full' },
           e('div', null, h('b', null, '🌐 联机助手')),
+          status.batchRecovery && status.batchRecovery.status!=='none'
+            ? h('div', {className:'nnk-err'},
+                e('div', null, '补传批次尚未完成恢复，安装和普通扩展写入已暂停。离线恢复不需要连接房主或启动游戏。'),
+                status.batchRecovery.error ? e('div', null, status.batchRecovery.error) : null,
+                h('button', {className:'nnk-smallbtn', disabled:installBusy, onClick:recoverBatch}, '恢复完整批次'))
+            : null,
           !status.active
             ? e('div', 'nnk-hint', status.savedDir
                 ? '游戏目录已保存过,但本实例启动在先——重启 dsh 生效,或在「⚙ 设置」重新保存(立即生效)。'
@@ -1779,8 +1795,8 @@ window.__ModuleLoader__.load({
                     : null,
                 h('div', { className: 'nnk-row' },
                   kernel.state !== 'ok'
-                    ? h('button', { className: 'nnk-submit', style: { marginTop: '0' }, disabled: installBusy, onClick: installKernel }, kernel.state === 'stale' ? '⬆️ 升级内核' : '📦 安装内核')
-                    : h('button', { className: 'nnk-smallbtn', disabled: installBusy, onClick: installKernel }, '🔁 重装内核')),
+                    ? h('button', { className: 'nnk-submit', style: { marginTop: '0' }, disabled: installBusy || !!(status.batchRecovery && status.batchRecovery.status!=='none'), onClick: installKernel }, kernel.state === 'stale' ? '⬆️ 升级内核' : '📦 安装内核')
+                    : h('button', { className: 'nnk-smallbtn', disabled: installBusy || !!(status.batchRecovery && status.batchRecovery.status!=='none'), onClick: installKernel }, '🔁 重装内核')),
                 h('div', { className: 'nnk-phaseline' },
                   bridgeOnline
                     ? e('span', 'nnk-ok', '🟢 内核在线(游戏运行中)')
