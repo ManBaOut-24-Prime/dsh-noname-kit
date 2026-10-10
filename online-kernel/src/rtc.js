@@ -321,10 +321,11 @@
 			}
 		};
 		channel.onclose = function() {
-			self._downHooks.forEach(function(f) { f(); });
-			if (self.onclose) {
-				self.onclose();
-			}
+			if (self._closed) return;
+			self._closed = true;
+			var engineClose = self.onclose;
+			self._downHooks.slice().forEach(function(f) { try { f(); } catch (e) { /* 继续原生收尾 */ } });
+			if (engineClose) engineClose.call(self);
 		};
 		channel.onerror = function() { /* 引擎侧无对应处理,忽略 */ };
 	}
