@@ -106,6 +106,7 @@
 				return;
 			}
 			stopped = true;
+			channel.onmessage = channel.onclose = null;
 			if (timer) {
 				clearInterval(timer);
 			}
@@ -174,28 +175,44 @@
 	}
 
 	/* 非 trickle:等候选收齐(超时兜底,用已收集的候选直接走) */
-	function waitGather(pc) {
-		return new Promise(function(resolve) {
+	function waitGather(pc, signal) {
+		return new Promise(function(resolve, reject) {
+			if (signal && signal.aborted) { var error = new Error("连接尝试已取消"); error.name = "AbortError"; reject(error); return; }
 			if (pc.iceGatheringState === "complete") {
 				return resolve();
 			}
 			var done = false;
+			var timer;
 			var finish = function() {
 				if (!done) {
 					done = true;
+					clearTimeout(timer);
+					pc.removeEventListener("icegatheringstatechange", changed);
+					if (signal) signal.removeEventListener("abort", abort);
 					resolve();
 				}
 			};
-			pc.addEventListener("icegatheringstatechange", function() {
+			var changed = function() {
 				if (pc.iceGatheringState === "complete") {
 					finish();
 				}
-			});
+			};
+			var abort = function() {
+				if (done) return;
+				done = true;
+				clearTimeout(timer);
+				pc.removeEventListener("icegatheringstatechange", changed);
+				if (signal) signal.removeEventListener("abort", abort);
+				var error = new Error("连接尝试已取消"); error.name = "AbortError"; reject(error);
+			};
+			if (signal && signal.aborted) { abort(); return; }
+			pc.addEventListener("icegatheringstatechange", changed);
+			if (signal) signal.addEventListener("abort", abort, { once: true });
 			/* 兜底 4→8 秒:这是**非 trickle** 的一次性交换,码一发出去就不再补候选,
 			 * 4 秒内没集齐的 srflx 就永久丢了(默认 STUN 里 google 那条国内大概率不可达,
 			 * 其超时会拖住整个 gathering)——慢网上表现为「双方网络没打通」。只在
 			 * 集齐偏慢时才多等几秒;STUN 配空/全部秒回时行为不变 */
-			setTimeout(finish, 8000);
+			timer = setTimeout(finish, 8000);
 		});
 	}
 
@@ -218,6 +235,7 @@
 		this._open = false;
 		this._lastIn = 0;   /* 主通道最近来包时刻:心跳判死的兜底证据(见 startPing) */
 		channel.onopen = function() {
+			if (self._disposed) return;
 			self._open = true;
 			self._upHooks.forEach(function(f) { f(); });
 			if (self.onopen) {
@@ -225,6 +243,7 @@
 			}
 		};
 		channel.onmessage = function(e) {
+			if (self._disposed) return;
 			self._lastIn = Date.now();
 			if (self.onmessage) {
 				self.onmessage({ data: e.data });
@@ -233,15 +252,19 @@
 			}
 		};
 		channel.onerror = function(e) {
+			if (self._disposed) return;
 			if (self.onerror) {
 				self.onerror(e);
 			}
 		};
 		channel.onclose = function() {
+			if (self._closed || self._disposed) return;
+			self._closed = true;
+			var onclose = self.onclose;
 			self._open = false;
-			self._downHooks.forEach(function(f) { f(); });
-			if (self.onclose) {
-				self.onclose();
+			self._downHooks.slice().forEach(function(f) { try { f(); } catch (error) { console.error("[联机助手] 客人关闭监听失败", error); } });
+			if (onclose) {
+				onclose.call(self);
 			}
 		};
 	}
@@ -267,6 +290,16 @@
 	};
 	FakeWebSocket.prototype.close = function() {
 		try { this.channel.close(); } catch (e) { /* 已关 */ }
+	};
+	/* 释放尝试资源;正常引擎 close 回调由当前 owner 明确交付。 */
+	FakeWebSocket.prototype.dispose = function() {
+		if (this._disposed) return;
+		this._disposed = true;
+		this._open = false;
+		this._buffer = []; this._upHooks = []; this._downHooks = [];
+		this.onopen = this.onmessage = this.onerror = this.onclose = null;
+		this.channel.onopen = this.channel.onmessage = this.channel.onerror = this.channel.onclose = null;
+		this.close();
 	};
 
 	/*
@@ -491,6 +524,7 @@
 					return;
 				}
 				p.then(function(report) {
+					if (linkWatchedPc !== target) return;
 					var candidates = {};
 					var pair = null;
 					var fallback = null;
@@ -531,6 +565,12 @@
 			} catch (eS) { /* 同上 */ }
 		}, 5000);
 	}
+	function stopTracking(pc) {
+		if (linkWatchedPc !== pc) return;
+		linkWatchedPc = null; lastLink = null;
+		if (linkWatchTimer) clearInterval(linkWatchTimer);
+		linkWatchTimer = null;
+	}
 	/** 15 秒内的最近一次观测(否则视为不新鲜,返回 null)。 */
 	function currentLink() {
 		if (!lastLink || Date.now() - lastLink.at > 15000) {
@@ -555,6 +595,7 @@
 		virtualIps: virtualIps,   /* 工坊面板状态行用(检测到哪些虚拟网卡地址) */
 		hostPortsFromSdp: hostPortsFromSdp,
 		trackPc: trackPc,         /* 记住当前 pc,5 秒一轮观测线路(直连/中继 + RTT) */
-		currentLink: currentLink  /* 工坊「内核卡」显示用;15 秒无观测返回 null */
+		currentLink: currentLink,  /* 工坊「内核卡」显示用;15 秒无观测返回 null */
+		stopTracking: stopTracking
 	};
 })();

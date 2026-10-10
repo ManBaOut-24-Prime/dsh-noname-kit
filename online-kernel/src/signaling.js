@@ -81,14 +81,19 @@
 		try { e2.nnkSignal = true; } catch (e3) { /* 极端情况(冻结对象):不强求 */ }
 		return e2;
 	}
-	async function openRoomSession(code, role, topics, onMessage) {
+	async function openRoomSession(code, role, topics, onMessage, signal) {
+		function cancelled() { var error = new Error("信令会话已取消"); error.name = "AbortError"; return error; }
+		if (signal && signal.aborted) throw cancelled();
 		if (!window.mqtt) {
 			throw signalFailure(new Error("MQTT 库未加载(房号信令不可用),请改用邀请码方式"));
 		}
 		var key = await deriveKey(code);
+		if (signal && signal.aborted) throw cancelled();
 		var cfgUrl = nnk.modules.config.get("mqttUrl") || "wss://broker.emqx.io:8084/mqtt";
 		return await new Promise(function(resolve, reject) {
 			var settled = false;
+			var closed = false;
+			var timer;
 			var client;
 			try {
 				client = window.mqtt.connect(cfgUrl, {
@@ -109,27 +114,42 @@
 			}
 			var session = {
 				publish: async function(topic, obj, retained) {
+					if (closed) throw cancelled();
 					var payload = await seal(key, obj);
+					if (closed) throw cancelled();
 					client.publish(topic, payload, { qos: 0, retain: Boolean(retained) });
 				},
 				/* 原样发布(不清空 retained 心跳时用空载荷) */
 				publishRaw: function(topic, payload, retained) {
+					if (closed) return;
 					client.publish(topic, payload, { qos: 0, retain: Boolean(retained) });
 				},
 				end: function() {
+					if (closed) return;
+					closed = true;
+					clearTimeout(timer);
+					if (signal) signal.removeEventListener("abort", session.end);
+					client.removeListener("connect", connected);
+					client.removeListener("message", message);
+					client.removeListener("error", failed);
 					try { client.end(true); } catch (e) { /* 忽略 */ }
+					if (!settled) { settled = true; reject(cancelled()); }
 				}
 			};
-			client.on("connect", function() {
+			function connected() {
+				if (closed || settled) return;
 				settled = true;
+				clearTimeout(timer);
 				topics.forEach(function(t) { client.subscribe(t); });
 				resolve(session);
-			});
-			client.on("message", function(topic, payload) {
+			}
+			function message(topic, payload) {
+				if (closed) return;
 				/* unseal 是异步的:必须先等解密完成再把明文对象交给回调,
 				 * 直接把 Promise 传过去会让调用方判定 msg.guestId/msg.sdp 恒为
 				 * undefined,提议/应答被静默丢弃(与 mqttSession 作用域坑同族) */
 				unseal(key, String(payload)).then(function(msg) {
+					if (closed) return;
 					try {
 						onMessage(topic, msg);
 					} catch (err) {
@@ -138,16 +158,23 @@
 				}).catch(function() {
 					/* 解不开的载荷=别的房号/别的用途,静默忽略 */
 				});
-			});
-			client.on("error", function(err) {
+			}
+			function failed(err) {
 				if (!settled) {
-					try { client.end(true); } catch (e) { /* 忽略 */ }
+					settled = true;
+					session.end();
 					reject(signalFailure(new Error("信令服务器连不上: " + ((err && err.message) || err))));
 				}
-			});
-			setTimeout(function() {
+			}
+			client.on("connect", connected);
+			client.on("message", message);
+			client.on("error", failed);
+			if (signal) signal.addEventListener("abort", session.end, { once: true });
+			if (signal && signal.aborted) { session.end(); return; }
+			timer = setTimeout(function() {
 				if (!settled) {
-					try { client.end(true); } catch (e) { /* 忽略 */ }
+					settled = true;
+					session.end();
 					/* 文案说准:超时是"本机连不上信令服务器",与房主是否在重组无关
 					 * (旧文案让用户以为房主那边出事了)。留邀请码这条路兜底。 */
 					reject(signalFailure(new Error("信令服务器连不上或响应太慢(公共服务器偶发抽风;反复失败可让房主发一张邀请码,从另一道门进)")));

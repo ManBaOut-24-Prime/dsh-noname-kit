@@ -206,7 +206,7 @@ export default { name: "standard", character: characters, translate: translates 
   ok(guestSrc.includes('房主已无心跳,尝试重回'), '判死期间文案分流(不再谎称「重组房间」)')
   ok(guestSrc.replace(/\r\n/g, '\n').includes('guestState.lastAttemptBeatDead = false;\n\t\t\t\tguestState.rejoinBeatStreak = 0;\n\t\t\t}\n\t\t\tif (!rejoin && env.game.online)'), '手动发起新加入时清空判死计数')
   const iceGuard = guestSrc.lastIndexOf('pc.onconnectionstatechange')   /* 后者=房号门;前者=邀请码门(自带 failNoted 守卫) */
-  ok(iceGuard > 0 && guestSrc.slice(iceGuard, iceGuard + 400).includes('if (guestState.session !== session)'), 'ICE 失败回调有会话守卫(旧 pc 迟到报错不误杀新尝试)')
+  ok(iceGuard > 0 && guestSrc.slice(iceGuard, iceGuard + 400).includes('if (!owns(session)) return;'), 'ICE 失败回调有会话守卫(行为回归见 test-b4-guest)')
   ok(guestSrc.includes('lastIceFailAt'), '「直连建立失败」同文案 2 秒去重(实测双发)')
 
   // ── 结构性回归锁:房间模式白名单单一来源(联机单挑局会把它原生改成

@@ -21,6 +21,40 @@
 	function bridgeApi() {
 		return nnk.modules.bridge;
 	}
+	var flowTimers = [];
+	var flowGen = 0;
+	function cancelFlow() {
+		flowGen++;
+		flowTimers.forEach(function(id) { clearTimeout(id); clearInterval(id); });
+		flowTimers = [];
+		guestState.rejoinCode = null;
+		guestState.rejoinGen++;
+	}
+	function flowTimeout(fn, ms) {
+		var gen = flowGen;
+		var id = setTimeout(function() {
+			flowTimers = flowTimers.filter(function(x) { return x !== id; });
+			if (gen === flowGen) fn();
+		}, ms);
+		flowTimers.push(id);
+		return id;
+	}
+	function owns(session) { return !!session && !session.disposed && guestState.session === session; }
+	function sessionTimeout(session, fn, ms) {
+		var id = setTimeout(function() {
+			session.timers = session.timers.filter(function(x) { return x !== id; });
+			if (owns(session)) fn();
+		}, ms);
+		session.timers.push(id);
+		return id;
+	}
+	function ownSession(session) {
+		session.controller = new AbortController();
+		session.timers = [];
+		session.disposed = false;
+		guestState.session = session;
+		return session;
+	}
 
 	/* 虚拟网卡直连候选的播报(每侧每次开机只说一次,防重回循环刷屏) */
 	var directNoted = { sent: false, recv: false };
@@ -54,6 +88,7 @@
 			nnk.modules.compat.dumpExtensions();   /* 透视:本次联机实际加载/跳过了哪些扩展 */
 		}
 		env._status.connectCallback = function(success) {
+			if (!owns(session)) return;
 			if (success) {
 				session.entered = true;   /* 自动重回循环据此区分「真进了」和「还在握手」 */
 				guestState.hostLoadingAt = 0;   /* 已进来,载入跟随之类的话术复位 */
@@ -78,6 +113,7 @@
 		 * (引擎对非数组消息只会打 invalid message,所以内核消息必须自己消化) */
 		var engineOnMessage = env.lib.element.ws.onmessage;
 		fake.onmessage = function(ev) {
+			if (!owns(session) || env.game.ws !== fake) return;
 			if (ev && typeof ev.data === "string" && ev.data.indexOf("nnk_members") >= 0) {
 				try {
 					var m = JSON.parse(ev.data);
@@ -98,7 +134,9 @@
 			}
 			return env.lib.element.ws.onerror.call(this, e);
 		};
-		fake.onclose = env.lib.element.ws.onclose;
+		fake.onclose = function() {
+			if (env.game.ws === fake) return env.lib.element.ws.onclose.call(fake);
+		};
 		env._status.ip = "nnk://p2p";
 		session.parked = true;   /* 已交给引擎:自动重回循环到此算落点,不再重试 */
 		/* 顺序要紧:先报「进房中」再 onopen——引擎的 ws.onopen 会立刻回调
@@ -117,17 +155,26 @@
 		}
 	}
 
-	function resetSession() {
-		if (guestState.session && guestState.session.ping) {
-			try { guestState.session.ping.stop(); } catch (eP) { /* 忽略 */ }
+	function resetSession(session, naturalClose) {
+		session = session || guestState.session;
+		if (!session || session.disposed) return;
+		if (guestState.session === session) guestState.session = null;
+		session.disposed = true;
+		session.autoConnect = false;
+		session.controller.abort();
+		session.timers.forEach(function(id) { clearTimeout(id); });
+		session.timers = [];
+		if (session.ping) { try { session.ping.stop(); } catch (eP) { /* 独立收尾继续 */ } }
+		if (session.mqtt) { try { session.mqtt.end(); } catch (eM) { /* 独立收尾继续 */ } }
+		var engineClose = session.fake && session.fake.onclose;
+		if (session.fake) session.fake.dispose();
+		if (session.pc) {
+			session.pc.ondatachannel = null;
+			session.pc.onconnectionstatechange = null;
+			rtc.stopTracking(session.pc);
+			try { session.pc.close(); } catch (e) { /* 已关闭 */ }
 		}
-		if (guestState.session && guestState.session.pc) {
-			try { guestState.session.pc.close(); } catch (e) { /* 忽略 */ }
-		}
-		if (guestState.session && guestState.session.mqtt) {
-			try { guestState.session.mqtt.end(); } catch (e) { /* 忽略 */ }
-		}
-		guestState.session = null;
+		if (!naturalClose && engineClose) engineClose.call(session.fake);
 	}
 
 	/* 自动重回彻底放弃:收场回干净菜单。房号/邀请码会话期内引擎的自毁重载
@@ -176,7 +223,7 @@
 			bridgeApi().emit("info", { message: (hostLoading ? "主机正在载入游戏,自动跟随重连 " : hostGone ? "房主已无心跳,尝试重回 " : "房主正在重组房间,自动重回 ") + code + "(第 " + (9 - attempts) + " 次尝试)…" });
 			api.joinByRoomCode(code, true, true);   /* rejoin 模式:绕过「联机中不能加入」守卫 */
 		}
-		setTimeout(function() {
+		flowTimeout(function() {
 			if (guestState.rejoinCode !== code || guestState.rejoinGen !== gen) {
 				return;   /* 用户已取消 / 已被更新的重试链取代 */
 			}
@@ -232,6 +279,8 @@
 	 * 不跨重载,由续跑重建)。
 	 */
 	function ensureConnectBoot(task) {
+		cancelFlow();
+		resetSession();
 		var env = nnk.env;
 		try {
 			localStorage.setItem(env.lib.configprefix + "nnk_guest_pending", JSON.stringify(task));
@@ -240,16 +289,17 @@
 		/* saveConfig 是异步写库,写丢=重载落回离线模式、续跑只能报错收场
 		 * (实测同款竞速,主机侧 6f0c934 已修)——等写库回调落地再重载,
 		 * 1.5 秒兜底防写库挂死。续跑标记是 localStorage 同步写,无此风险 */
+		var bootGen = flowGen;
 		var gone = false;
 		var go = function() {
-			if (gone) {
+			if (gone || bootGen !== flowGen) {
 				return;
 			}
 			gone = true;
 			env.game.reload();
 		};
 		env.game.saveConfig("mode", "connect", null, go);
-		setTimeout(go, 1500);
+		flowTimeout(go, 1500);
 	}
 
 	var api = {
@@ -326,6 +376,7 @@
 					var resumeGen = guestState.rejoinGen || 0;
 					var waited = 0;
 					var resumeTimer = setInterval(function() {
+						if (guestState.rejoinGen !== resumeGen) { clearInterval(resumeTimer); return; }
 						waited += 300;
 						if (nnk.env.ui && nnk.env.ui.control && nnk.env.ui.arena) {
 							clearInterval(resumeTimer);
@@ -355,7 +406,7 @@
 								}
 							} catch (eW) { /* 忽略 */ }
 							if (waitMs2) {
-								setTimeout(runResume, waitMs2);
+								flowTimeout(runResume, waitMs2);
 							} else {
 								runResume();
 							}
@@ -365,6 +416,7 @@
 							bridgeApi().emit("error", { message: "联机界面 15 秒未就绪,加入未完成——请重试" });
 						}
 					}, 300);
+					flowTimers.push(resumeTimer);
 				}
 			} catch (e) { /* localStorage 不可用则无续跑 */ }
 			/* 引擎「加入被拒」(denied)的阻塞弹窗在房间会话期静音:
@@ -425,6 +477,7 @@
 				var origExit = env.ui.click.exit;
 				env.ui.click.exit = function() {
 					try {
+						cancelFlow();
 						guestState.rejoinCode = null;
 						guestState.rejoinGen = (guestState.rejoinGen || 0) + 1;
 						resetSession();
@@ -443,7 +496,6 @@
 				ensureConnectBoot({ kind: "invite", code: String(offerText || "") });
 				return;
 			}
-			resetSession();
 			if (env.game.online) {
 				bridgeApi().emit("error", { message: "游戏正在联机中,请先退出当前对局" });
 				return;
@@ -453,9 +505,11 @@
 				bridgeApi().emit("error", { message: "本游戏正在建房等待中,不能同时加入其他房间" });
 				return;
 			}
+			cancelFlow();
+			resetSession();
 			var pc = new RTCPeerConnection(rtc.pcConfig());
 			var session = { pc: pc, autoConnect: true };
-			guestState.session = session;
+			ownSession(session);
 			bridgeApi().setPhase("joining");
 			var data;
 			try {
@@ -467,7 +521,7 @@
 					throw new Error("这是回执码,请粘贴房主的「邀请码」");
 				}
 			} catch (err) {
-				resetSession();
+				resetSession(session);
 				bridgeApi().setPhase("idle");
 				/* 码的诊断与出路由 rtc.decodeCode 统一给(容错摘取 + 分情况文案),
 				 * 这里不再叠加重复提示 */
@@ -475,9 +529,11 @@
 				return;
 			}
 			pc.ondatachannel = function(e) {
+				if (!owns(session)) { e.channel.close(); return; }
 				if (e.channel.label === "nnk-ping") {
 					/* 专用心跳线(主机侧建的):只保温+判死,不进引擎 */
 					e.channel.onopen = function() {
+						if (!owns(session)) return;
 						rtc.trackPc(pc);   /* 线路观测:工坊显示直连/中继 + 往返延迟 */
 						session.ping = rtc.startPing(e.channel, function() {
 							if (guestState.session !== session) {
@@ -495,12 +551,16 @@
 				}
 				var fake = new rtc.FakeWebSocket(e.channel);
 				session.fake = fake;
-				fake.onUp(function() { session.wasIn = true; });
+				fake.onUp(function() {
+					if (!owns(session)) return;
+					session.wasIn = true;
+				});
 				/* 内核协议 tap(与房号模式同款):收到放行(loaded/引擎消息直达)才接
 				 * 引擎——closed=房主解散,给人话收场,不对着断线发懵;
 				 * lobby/queued=一体化房间的停车与排队,顺带从指令里收下房号:
 				 * 邀请码门进来的客人也拿着房号,断线后能走房号门自动重回 */
 				fake.onmessage = function(ev) {
+					if (!owns(session)) return;
 					var msg;
 					try {
 						msg = JSON.parse(ev.data);
@@ -518,7 +578,7 @@
 						if (msg.nnk_stage === "full") {
 							/* 旧内核主机:房满直接拒收(新内核满员改为排队) */
 							session.autoConnect = false;
-							resetSession();
+							resetSession(session);
 							bridgeApi().setPhase("idle");
 							bridgeApi().emit("error", { message: "房间人数已满,主机没能让你进——等有人退出,让房主发一张新邀请码再来" });
 						} else if (msg.nnk_stage === "closed") {
@@ -526,7 +586,7 @@
 							 * 与房号门同款:顺带把还在跑的重回链停掉 */
 							session.autoConnect = false;
 							guestState.rejoinCode = null;
-							resetSession();
+							resetSession(session);
 							bridgeApi().setPhase("idle");
 							bridgeApi().emit("info", { message: "房主已解散房间" });
 						} else if (msg.nnk_stage === "lobby") {
@@ -567,8 +627,7 @@
 				};
 				fake.onDown(function() {
 					if (guestState.session === session) {
-						guestState.session = null;
-						try { if (session.ping) session.ping.stop(); } catch (eP) { /* 忽略 */ }
+						resetSession(session, true);
 				/* 一体化房间:邀请码客人也拿着房号(内核随停车指令下发),
 				 * 断开后走房号门自动重回——恢复不再区分当初从哪道门进来 */
 				if (session.wasIn && session.code && nnk.env._status.connectMode) {
@@ -588,31 +647,36 @@
 			 * 通道照样接上(此前一看到 failed 就 resetSession,房主贴慢一点
 			 * 就永远连不上)。给 3 分钟保底,超时才判死码引导重来 */
 			pc.onconnectionstatechange = function() {
+				if (!owns(session)) return;
 				if (pc.connectionState === "failed" && !session.failNoted) {
 					session.failNoted = true;
 					bridgeApi().emit("info", { message: "直连检查暂时没打通(房主还没粘贴回执码属正常)——把回执码发给房主,他点「连接」后通道会自动接上;本页别关,最多再等 3 分钟" });
-					setTimeout(function() {
+					sessionTimeout(session, function() {
 						if (guestState.session === session && pc.connectionState !== "connected" && pc.connectionState !== "closed") {
 							bridgeApi().emit("error", { message: "3 分钟没等来房主的连接——回执码可能已失效(候选过期)或房主没粘贴;请房主换一张新邀请码,马上发马上用" });
 							bridgeApi().setPhase("idle");
-							resetSession();
+							resetSession(session);
 						}
 					}, 180000);
 				}
 			};
-			setTimeout(function() {
+			sessionTimeout(session, function() {
 				if (guestState.session === session && pc.connectionState !== "connected" && pc.connectionState !== "closed") {
 					bridgeApi().emit("info", { message: "还没连上?确认房主已粘贴你的回执码并点了「连接」——他粘贴前,你这边的直连检查打不通是正常的" });
 				}
 			}, 30000);
 			pc.setRemoteDescription(data.sdp).then(function() {
+				if (!owns(session)) { return; }
 				noteRecv(rtc.addInjected(pc, data.hosts));   /* 主机随邀请码带来的虚拟网卡直连地址 */
 				return pc.createAnswer();
 			}).then(function(answer) {
+				if (!owns(session)) { return; }
 				return pc.setLocalDescription(answer);
 			}).then(function() {
-				return rtc.waitGather(pc);
+				if (!owns(session)) { return; }
+				return rtc.waitGather(pc, session.controller.signal);
 			}).then(function() {
+				if (!owns(session)) { return; }
 				/* 带上房号(与 joining/lobby_waiting/queued 同款):setPhase 是整体
 				 * 替换 state,不带的话生成回执码这一拍工坊的房号会凭空消失——客人
 				 * 手里的「房间大厅 / 退出房间」入口跟着闪没(实测:回执码出了,
@@ -620,8 +684,9 @@
 				bridgeApi().setPhase("answer_ready", session.code ? { code: session.code } : undefined);
 				bridgeApi().emit("answer_ready", { code: rtc.encodeCode("answer", pc.localDescription, noteSent(rtc.directHosts(pc))) });
 			}).catch(function(err) {
+				if (!owns(session)) return;
 				console.error("[联机助手] 加入失败", err);
-				resetSession();
+				resetSession(session);
 				bridgeApi().setPhase("idle");
 				bridgeApi().emit("error", { message: "加入失败: " + (err.message || err) });
 			});
@@ -637,7 +702,6 @@
 				ensureConnectBoot({ kind: "room", code: String(codeText || "") });
 				return;
 			}
-			resetSession();
 			if (!rejoin) {
 				/* 手动发起新加入:清掉上一条重回链留下的判死证据与计数 */
 				guestState.lastAttemptBeatDead = false;
@@ -656,10 +720,12 @@
 				bridgeApi().emit("error", { message: "房号格式不对(应为 6 位字母数字组合)" });
 				return;
 			}
+			if (!rejoin) cancelFlow();
+			resetSession();
 			var pc = new RTCPeerConnection(rtc.pcConfig());
 			var guestId = signaling.randomId();
 			var session = { pc: pc, autoConnect: true, code: code, rejoin: !!rejoin };
-			guestState.session = session;
+			ownSession(session);
 			bridgeApi().setPhase("joining", { code: code });
 			var channel = pc.createDataChannel("nnk-link", { ordered: true });
 			var fake = new rtc.FakeWebSocket(channel);
@@ -669,6 +735,7 @@
 			 * 引擎重载 + 「任何来源重载都自动重回」)立刻接管 */
 			var pingChannel = pc.createDataChannel("nnk-ping", { ordered: true });
 			pingChannel.onopen = function() {
+				if (!owns(session)) return;
 				rtc.trackPc(pc);   /* 线路观测:工坊显示直连/中继 + 往返延迟 */
 				session.ping = rtc.startPing(pingChannel, function() {
 					if (guestState.session !== session) {
@@ -683,11 +750,13 @@
 				});
 			};
 			fake.onUp(function() {
+				if (!owns(session)) return;
 				session.wasIn = true;
 				/* 大厅停车:先不接引擎,等主机的 stage 指令——loaded=进引擎,
 				 * lobby=停车并报身份(hello)。tap 先收内核协议,进引擎时被
 				 * connectNow 换成引擎 handler,暂存的引擎消息由 replay 回放 */
 				fake.onmessage = function(ev) {
+					if (!owns(session)) return;
 					try {
 						var msg = JSON.parse(ev.data);
 						if (msg && msg.nnk_stage === "loaded" && session.autoConnect) {
@@ -708,7 +777,7 @@
 							/* 房主解散房间(工坊取消):立即散场,不自动重回。
 							 * resetSession 后随后的通道断开事件变成空操作(会话已不在) */
 							guestState.rejoinCode = null;
-							resetSession();
+							resetSession(session);
 							bridgeApi().setPhase("idle");
 							bridgeApi().emit("info", { message: "房主已解散房间" });
 						} else if (msg && msg.nnk_members) {
@@ -730,8 +799,7 @@
 			});
 			fake.onDown(function() {
 				if (guestState.session === session) {
-					guestState.session = null;
-					try { if (session.ping) session.ping.stop(); } catch (eP) { /* 忽略 */ }
+					resetSession(session, true);
 				/* 房号房间的通道断开(主机重组/换模式重载/掉线)一律自动重回:
 				 * 主机真退了的话重试穷尽后会给明确提示。
 				 * 注:曾试过在此抑制引擎自毁重载(保 game.onlineID)走原生断线重连
@@ -749,27 +817,29 @@
 				}
 			});
 			pc.onconnectionstatechange = function() {
-				if (guestState.session !== session) {
-					return;   /* 旧 pc 的迟到报错:不惊扰新一轮尝试(双发同文案、还会 resetSession 误杀新会话,实测) */
-				}
+				if (!owns(session)) return;
 				if (pc.connectionState === "failed") {
 					if (Date.now() - (guestState.lastIceFailAt || 0) > 2000) {
 						guestState.lastIceFailAt = Date.now();
 						bridgeApi().emit("error", { message: "直连建立失败(双方网络没打通)——常见原因:校园网/公司网拦 UDP 或不放行 P2P。先试:双方关掉防火墙对无名杀的 UDP 拦截;换手机热点往往能成;同网(同一路由器/热点)必成。注意邀请码不是网络兜底(它只换「找到对方」的方式,网络本身拦 UDP 时同样连不上)" });
 					}
 					bridgeApi().setPhase("idle");
-					resetSession();
+					resetSession(session);
 				}
 			};
 			var answered = false;
 			pc.createOffer().then(function(offer) {
+				if (!owns(session)) { return; }
 				return pc.setLocalDescription(offer);
 			}).then(function() {
-				return rtc.waitGather(pc);
+				if (!owns(session)) { return; }
+				return rtc.waitGather(pc, session.controller.signal);
 			}).then(function() {
+				if (!owns(session)) { return; }
 				return signaling.openRoomSession(code, "guest-" + guestId,
 					[signaling.roomTopic(code, "answer/" + guestId), signaling.roomTopic(code, "host")],
 					function(topic, msg) {
+						if (!owns(session)) return;
 						if (/\/host$/.test(topic)) {
 							session.hostSeen = Date.now();
 							/* 心跳刷新判定:主机活着每 10 秒换一个新时间戳。retained
@@ -799,13 +869,16 @@
 							answered = true;
 							session.hostSeen = Date.now();
 							pc.setRemoteDescription(msg.sdp).then(function() {
+								if (!owns(session)) return;
 								noteRecv(rtc.addInjected(pc, msg.hosts));   /* 主机应答里带的虚拟网卡直连地址 */
 							}).catch(function(err) {
+								if (!owns(session)) return;
 								bridgeApi().emit("error", { message: "房主应答处理失败: " + (err.message || err) });
 							});
 						}
 					}
-				).then(function(mqttSession) {
+					, session.controller.signal).then(function(mqttSession) {
+					if (!owns(session)) { if (mqttSession) mqttSession.end(); return; }
 					session.mqtt = mqttSession;
 					/* 房主在线校验:retained 心跳在 SUBSCRIBE 往返后送达。
 					 * **一收到就放行**——原先是一次性定时器在窗口末尾才判,成功路径也要
@@ -816,6 +889,7 @@
 					return new Promise(function(resolve, reject) {
 						var waited = 0;
 						var poll = function() {
+							if (!owns(session)) return reject(new Error("连接尝试已取消"));
 							if (session.hostSeen) {
 								return resolve(mqttSession);   /* 传给下一步发提议用(参数作用域不跨 then) */
 							}
@@ -823,17 +897,19 @@
 							if (waited >= 8000) {
 								return reject(new Error("没有找到该房号的在线主机(房号可能输错,或房主已离线)"));
 							}
-							setTimeout(poll, 250);
+							sessionTimeout(session, poll, 250);
 						};
 						poll();
 					});
 				}).then(function(mqttSession) {
+					if (!owns(session)) { if (mqttSession) mqttSession.end(); return; }
 					return mqttSession.publish(signaling.roomTopic(code, "offer"), {
 						guestId: guestId,
 						sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp },
 						hosts: noteSent(rtc.directHosts(pc))   /* 虚拟网卡直连地址(Radmin/ZeroTier 等) */
 					});
 				}).then(function() {
+					if (!owns(session)) return;
 					bridgeApi().setPhase("waiting_host", { code: code });
 					/* 心跳快判:主机活着每 10 秒刷一次心跳;发完提议后 14 秒内
 					 * 没见刷新=主机强关/掉线(只剩 broker 上的 retained 旧心跳),
@@ -841,7 +917,7 @@
 					 * 时每轮都要耗满 30 秒)。窗口 10→14 秒:主机开局/选将时
 					 * 主线程可能整段卡住,心跳跟着断供——这是"忙"不是"死",
 					 * 留足余量防误判(同族教训:客机刚进选将就被判死) */
-					setTimeout(function() {
+					sessionTimeout(session, function() {
 						if (!answered && guestState.session === session && !session.beatRefreshed) {
 							guestState.lastAttemptBeatDead = true;   /* 重回循环据此换文案 */
 							var inLoading = Date.now() - (guestState.hostLoadingAt || 0) < 60000;
@@ -854,23 +930,25 @@
 								? "主机正在载入游戏(心跳暂断)——自动跟随重连中…"
 								: "房主心跳已停止刷新——主机可能已关闭游戏,正在重试…" });
 							bridgeApi().setPhase("idle");
-							resetSession();
+							resetSession(session);
 						}
 					}, 14000);
-					setTimeout(function() {
+					sessionTimeout(session, function() {
 						if (!answered && guestState.session === session) {
 							bridgeApi().emit("error", { message: "30 秒未收到房主应答(可能已掉线)——重新输入房号再试,或让房主发一张邀请码" });
 							/* 收掉半死会话:自动重回循环据此续上下一试,状态不留悬空 */
 							bridgeApi().setPhase("idle");
-							resetSession();
+							resetSession(session);
 						}
 					}, 30000);
 				}).catch(function(err) {
-					resetSession();
+					if (!owns(session)) return;
+					resetSession(session);
 					bridgeApi().setPhase("idle");
 					bridgeApi().emit("error", { message: (err && err.message) || "加入失败" });
 				});
 			}).catch(function(err) {
+				if (!owns(session)) return;
 				/* 信令层失败(MQTT 连不上/超时/库缺失)打标:自动重回循环据此不扣重试
 				 * 次数——这不是"房主不在"的证据(实测:8 次重试全被信令超时耗完,误报
 				 * "房主可能已关闭游戏")。标记由 signaling 层统一打(err.nnkSignal),
@@ -878,13 +956,14 @@
 				if ((err && err.nnkSignal) || /信令服务器/.test(String((err && err.message) || err))) {
 					guestState.lastJoinSignalFail = true;
 				}
-				resetSession();
+				resetSession(session);
 				bridgeApi().setPhase("idle");
 				bridgeApi().emit("error", { message: "加入失败: " + (err.message || err) });
 			});
 		},
 
 		cancelJoin: function() {
+			cancelFlow();
 			guestState.rejoinCode = null;   /* 停掉还在跑的自动重进循环 */
 			guestState.rejoinGen = (guestState.rejoinGen || 0) + 1;   /* 迟到定时器一并作废 */
 			resetSession();
