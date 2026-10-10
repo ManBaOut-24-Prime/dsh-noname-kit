@@ -60,7 +60,7 @@
 			identity.avatar = av ? (typeof lib.translate[av] === "string" && lib.translate[av]) || av : "";
 		} catch (e) { /* 忽略 */ }
 		exts.sort();
-		return { exts: exts, packs: packs.sort(), cards: cards.sort(), kernel: nnk.version, identity: identity };
+		return { exts: exts, packs: packs.sort(), cards: cards.sort(), kernel: nnk.version, identity: identity, batchProtocol: 2 };
 	}
 
 	function validManifest(m) {
@@ -110,6 +110,8 @@
 			 * 只能看到"房主可能已关闭游戏"这类错误诊断) */
 			guestKernel: guest.kernel || null,
 			hostKernel: host.kernel || null,
+			guestBatchProtocol: guest.batchProtocol || null,
+			hostBatchProtocol: host.batchProtocol || null,
 			/* 双向身份:房主工坊显示「👤 客人:某某」,客人侧显示房主身份——
 			 * P2P 连接识别 v1(名字随清单走,头像给显示名) */
 			guestIdentity: guest.identity || null,
@@ -138,6 +140,7 @@ function onGuestManifest(manifest) {
 	console.log("[联机助手] 包体检完成:客人「" + guestName + "」缺扩展 " + result.exts.missing.length + " 个、缺武将包 " + result.packs.missing.length + " 个");
 	/* B0:缺包仍如实报告,重连/重检也不再自动入补传队列。 */
 	var missing = result.exts.missing || [];
+	if (missing.length && nnk.modules.consent) nnk.modules.consent.propose(this, missing);
 	if (missing.length) {
 		bridgeApi().emit("info", { message: "客人缺 " + missing.length + " 个已启用扩展。" +
 			(nnk.modules.transfer ? nnk.modules.transfer.pauseReason : "补传已暂停，缺包可能影响对局兼容性。") });
@@ -163,6 +166,7 @@ function onGuestManifest(manifest) {
 				lib.message.client.nnk_manifest_diff = function(result) {
 					try {
 						bridgeApi().emit("manifest_diff", result);
+						if (result && result.hostBatchProtocol !== 2 && result.exts && result.exts.missing && result.exts.missing.length) bridgeApi().emit("batch_upgrade", { message: "房主未声明批次授权协议；请双方升级。补传不降级。" });
 					} catch (e) { /* 忽略 */ }
 				};
 				lib.message.client.__nnkManifest = true;

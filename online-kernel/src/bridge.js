@@ -72,6 +72,12 @@
 					nnk.modules.transfer.start(args.name);
 				}
 				break;
+			case "batch_decision":
+				if (nnk.modules.consent && !nnk.modules.consent.decide(args)) emit("error", { message: "提议已失效，授权未生效。" });
+				break;
+			case "batch_cancel":
+				if (nnk.modules.consent) nnk.modules.consent.cancel(args);
+				break;
 			case "clear_quarantine":
 				if (nnk.modules.compat) {
 					nnk.modules.compat.clearQuarantine();
@@ -117,6 +123,7 @@
 				break;
 			}
 			case "cancel":
+				if (nnk.modules.consent) nnk.modules.consent.cancelAll();
 				host.cancelAll();
 				guest.cancelJoin();
 				setPhase("idle");
@@ -170,6 +177,7 @@
 					 * 事件流,不给 0.7 秒一轮的心跳塞几 KB 的 SDP)。并进 state 下发:
 					 * 工坊读 bridge.state.*,并跟着房间状态一起过期(30 秒宽限) */
 					state: Object.assign({}, state, {
+						batchProposals: nnk.modules.consent ? nnk.modules.consent.summaries() : [],
 						invites: (function() {
 							try {
 								var hs = nnk.state.host;

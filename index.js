@@ -1038,8 +1038,12 @@ export function apply(ctx, config) {
         }
         if (req.method === 'POST' && url.pathname === '/noname-kit-api/online/command') {
           const body = await readBody()
-          const actions = new Set(['create_room', 'join_room', 'invite_refresh', 'accept_answer', 'join_invite', 'transfer_pack', 'clear_quarantine', 'set_config', 'set_identity', 'restart_room', 'set_mode', 'cancel'])
+          const actions = new Set(['create_room', 'join_room', 'invite_refresh', 'accept_answer', 'join_invite', 'transfer_pack', 'batch_decision', 'batch_cancel', 'clear_quarantine', 'set_config', 'set_identity', 'restart_room', 'set_mode', 'cancel'])
           if (!actions.has(body.action)) return json(400, { ok: false, error: `未知命令: ${body.action}` })
+          if (body.action === 'batch_decision' || body.action === 'batch_cancel') {
+            const a = body.args
+            if (!a || !['session', 'peerSession', 'proposal'].every(k => typeof a[k] === 'string' && /^[a-f0-9]{32}$/.test(a[k])) || !/^[a-f0-9]{64}$/.test(a.digest) || (body.action === 'batch_decision' && typeof a.yes !== 'boolean')) return json(400, { ok: false, error: '补传提议标识或明确授权值无效' })
+          }
           // B0:旧 UI 或旧内核也不能经工坊命令恢复 legacy 补传。
           if (body.action === 'transfer_pack') return json(409, {
             ok: false, code: 'TRANSFER_PAUSED',

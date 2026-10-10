@@ -1477,6 +1477,27 @@ window.__ModuleLoader__.load({
             } }, '💾 保存人物标识')));
       }
 
+      function renderBatchProposals() {
+        var proposals = (bridge.state && bridge.state.batchProposals) || [];
+        var labels = { preparing: '正在核验提议', pending: '等待客人选择', accepting: '等待房主确认授权', rejecting: '等待房主确认拒绝', authorized_paused: '本批已授权；文件发送仍暂停', declined: '已拒绝', cancelled: '已取消', expired: '已超时', disconnected: '连接结束，授权失效', failed: '提议失败' };
+        return proposals.map(function (q) {
+          var binding = { session: q.session, peerSession: q.peerSession, proposal: q.proposal, digest: q.digest };
+          var batch = q.batch || { extensions: [], total: 0, count: 0 };
+          var choice = bridgeOnline && q.role === 'guest' && q.status === 'pending';
+          var cancellable = bridgeOnline && ['pending', 'accepting', 'rejecting', 'authorized_paused'].indexOf(q.status) >= 0;
+          return h('div', { className: 'nnk-card', key: q.session + q.proposal },
+            e('div', null, h('b', null, '📦 完整批次补传提议')),
+            e('div', 'nnk-hint', '来源：' + q.source + ' · ' + batch.extensions.length + ' 个扩展 · ' + batch.count + ' 个文件 · ' + batch.total + ' 字节'),
+            batch.extensions.map(function (ext) { return e('div', 'nnk-break', ext.name + '（' + (ext.files ? ext.files.length : ext.fileCount) + ' 个文件）'); }),
+            e('div', 'nnk-err', '扩展可执行代码。是否信任房主并授权这一完整批次？点击“是”仅授权当前提议，不授权后续批次。文件事务安全验证完成前不会发送文件，也不会写入游戏目录。'),
+            e('div', 'nnk-hint', labels[q.status] || '未知状态'),
+            q.reason ? e('div', 'nnk-hint', q.reason) : null,
+            choice ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: true })); } }, '是') : null,
+            choice ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: false })); } }, '否') : null,
+            cancellable ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_cancel', binding); } }, '关闭／取消提议') : null);
+        });
+      }
+
       function renderManifestCard(evs, hostFlow) {
         var diffEv = onlinePickEvent(evs, 'manifest_diff');
         var pauseHint = e('div', 'nnk-err', '⚠️ 补传已暂停：旧协议缺少客人逐请求授权与整批完整性／回滚保障，不接受 legacy 降级。正常联机及包体检仍可使用；缺包可能影响对局兼容性。已运行的旧内核须另行升级并重启，才会应用此止损。');
@@ -1907,6 +1928,7 @@ window.__ModuleLoader__.load({
                   return h('div', { key: i, className: 'nnk-break' }, new Date(ev.ts).toLocaleTimeString() + ' · ' + onlineEventText(ev));
                 })
                 : h('div', { className: 'nnk-hint' }, '暂无动态。'))),
+            renderBatchProposals(),
             renderManifestCard(evs, hostFlow),
             renderFoldCard('help', '📖 怎么用', function () { return h('div', {},
               e('div', 'nnk-hint',

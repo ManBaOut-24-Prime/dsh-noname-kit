@@ -245,6 +245,7 @@
 		channel.onmessage = function(e) {
 			if (self._disposed) return;
 			self._lastIn = Date.now();
+			if (nnk.modules.consent && nnk.modules.consent.handle(self, e.data)) return;
 			if (self.onmessage) {
 				self.onmessage({ data: e.data });
 			} else {
@@ -267,6 +268,7 @@
 				onclose.call(self);
 			}
 		};
+		if (nnk.modules.consent) nnk.modules.consent.attach(self, "guest");
 	}
 	FakeWebSocket.prototype.onUp = function(fn) { this._upHooks.push(fn); };
 	FakeWebSocket.prototype.onDown = function(fn) { this._downHooks.push(fn); };
@@ -294,6 +296,7 @@
 	/* 释放尝试资源;正常引擎 close 回调由当前 owner 明确交付。 */
 	FakeWebSocket.prototype.dispose = function() {
 		if (this._disposed) return;
+		if (nnk.modules.consent) nnk.modules.consent.detach(this);
 		this._disposed = true;
 		this._open = false;
 		this._buffer = []; this._upHooks = []; this._downHooks = [];
@@ -316,6 +319,7 @@
 		this.bridgeId = "b" + (++HOST_BRIDGE_SEQ);
 		this._downHooks = [];
 		channel.onmessage = function(e) {
+			if (nnk.modules.consent && nnk.modules.consent.handle(self, e.data)) return;
 			if (self.onmessage) {
 				self.onmessage(e.data);
 			}
@@ -328,6 +332,7 @@
 			if (engineClose) engineClose.call(self);
 		};
 		channel.onerror = function() { /* 引擎侧无对应处理,忽略 */ };
+		if (nnk.modules.consent) nnk.modules.consent.attach(self, "host");
 	}
 	var HOST_BRIDGE_SEQ = 0;
 	HostBridge.prototype.send = function(data) {
