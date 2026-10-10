@@ -13,7 +13,7 @@ let count = 0
 async function test(label, fn) { await fn(); count++; console.log('  ✓ ' + label) }
 const dir = await mkdtemp(join(tmpdir(), 'nnk-b1-'))
 const old = `import { lib } from '../../noname.js';
-const helper = 7; // keep whitespace  
+const helper = 7; // keep whitespace${'  '}
 export default function () {
   return { name: '测试包', precontent: function () { window.keep = helper; },
     skill: {
