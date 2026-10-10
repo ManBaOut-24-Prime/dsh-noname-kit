@@ -1749,7 +1749,7 @@ window.__ModuleLoader__.load({
               ? e('div', 'nnk-err', '❌ ' + ((kernel && kernel.error) || '内核状态未知'))
               : h('div', {},
                 kernel.state === 'missing' ? e('div', 'nnk-hint', '内核未安装,点下面按钮安装。')
-                  : kernel.state === 'stale' ? e('div', 'nnk-hint', '插件更新过,内核也该升级了。')
+                  : kernel.state === 'stale' ? e('div', 'nnk-hint', kernel.error || '插件更新过,内核也该升级了。')
                     : e('div', 'nnk-ok', '✅ 内核已安装' + (bridge.kernelVersion ? '(v' + bridge.kernelVersion + ')' : '')),
                 status.runtimeStatus === 'restart_required'
                   ? e('div', 'nnk-err', '⚠️ B0 暂停尚未确认生效：运行内核或磁盘内容不是当前版本，或暂停处理器未就绪。请升级内核并完全重启游戏。')

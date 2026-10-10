@@ -13,17 +13,13 @@
  * 为什么不用 preset.js 的 hashDir:安装时会往内核目录多写一个 nnk-bridge.json
  * (哈希必须忽略它),所以这里自带一份带跳过清单的目录哈希。
  */
-import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { installKernelFiles, kernelContentHash, kernelInstallPending } from './kernel-install.js'
 
 export const KERNEL_FOLDER = '联机助手'
 export const KERNEL_MANIFEST = '.nnk-kernel.json'
-const BRIDGE_FILE = 'nnk-bridge.json'
-/** 备份目录:游戏根目录下、extension/ 之外(见模块注释)。 */
-const BACKUP_DIR_NAME = 'nnk-kernel-backups'
-const BACKUP_KEEP = 3
 /** 命令在队列里的最长等待:内核 0.7s 一轮,60s 足够宽裕;过期丢弃防陈旧命令误执行。 */
 const COMMAND_TTL_MS = 60_000
 /** bridge.snapshot() 里 online 的判定窗口(内核 0.7s 一轮,3 秒没消息即视为离线)。 */
@@ -70,50 +66,9 @@ export function kernelRuntimeStatus(kernel, bridge) {
     || bridge.kernelBuild !== bundledKernelBuild() || bridge.transferPaused !== true) return 'restart_required'
   return bridge.bootStage === 'ready' ? 'b0_active' : 'booting'
 }
-/** 目录树复制:逐文件 copyFileSync。
- *  ⚠️ 绝不用 fs.cpSync:实测本机 Node22/Windows 上,目标路径含非 ASCII
- *  (如「联机助手」)时 cpSync 静默复制出空目录、无任何报错——而联机内核的
- *  安装目标必然是中文目录。文件级 copyFileSync 无此问题(images.js 生产在用)。 */
-function copyDirInto(srcDir, destDir) {
-  mkdirSync(destDir, { recursive: true })
-  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
-    const from = join(srcDir, entry.name)
-    const to = join(destDir, entry.name)
-    if (entry.isDirectory()) copyDirInto(from, to)
-    else if (entry.isFile()) copyFileSync(from, to)
-  }
-}
-
-function collectFiles(dir, prefix, out) {
-  let entries
-  try {
-    entries = readdirSync(dir, { withFileTypes: true })
-  } catch {
-    return out
-  }
-  for (const entry of entries) {
-    // 跳过点开头(盖盖章文件/OS 垃圾)与桥配置(安装时才写入,不属于内核内容)
-    if (entry.name.startsWith('.') || entry.name === BRIDGE_FILE) continue
-    const rel = prefix ? `${prefix}/${entry.name}` : entry.name
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) collectFiles(full, rel, out)
-    else if (entry.isFile()) out.push({ rel, full })
-  }
-  return out
-}
-
-/** 目录内容哈希(与 preset.js 同法:路径+内容喂 sha256,行尾归一 LF)。 */
+/** 目录内容哈希:相对路径与原始字节，读取失败显式抛出，不接受部分目录。 */
 export function hashKernelDir(dir) {
-  if (!existsSync(dir)) return null
-  const files = collectFiles(dir, '', []).sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
-  const hash = createHash('sha256')
-  for (const file of files) {
-    hash.update(file.rel)
-    hash.update('\0')
-    hash.update(readFileSync(file.full, 'utf8').replace(/\r\n/g, '\n'))
-    hash.update('\0')
-  }
-  return hash.digest('hex')
+  return kernelContentHash(dir)
 }
 
 function readManifest(dir) {
@@ -127,58 +82,26 @@ function readManifest(dir) {
 /**
  * 内核自检:state ok/stale/missing/unknown(语义同 preset;unknown = 插件自带
  * 源不完整,打包异常,此时不能催用户重装)。
- * 哈希缓存:此函数被工坊 1.5 秒一轮的 /online/status 反复调用,而内核目录
- * 405KB。两侧都按「目录签名」(文件名+大小+mtime,几个 stat 就能算)缓存内容
- * 哈希——内容没动不读盘、改动(含原地编辑)立刻现形。**自带源不能"进程内
- * 冻结"**:link 安装时它就是源码目录、随时在变(曾因此漏报"该升级内核")。
+ * 状态查询读取实际内容，不用大小/mtime 缓存代替内容验证；安装恢复记录未结案时不报 ok。
  */
-let bundledHashCache = { sig: null, hash: null }
-let installedHashCache = { dir: '', sig: null, hash: null }
-
-function dirSignature(dir) {
-  try {
-    const parts = []
-    const walk = (d, rel) => {
-      const entries = readdirSync(d, { withFileTypes: true })
-      for (const entry of entries) {
-        const r = rel ? rel + '/' + entry.name : entry.name
-        if (entry.isDirectory()) {
-          walk(join(d, entry.name), r)
-        } else {
-          const st = statSync(join(d, entry.name))
-          parts.push(r + ':' + st.size + ':' + st.mtimeMs)
-        }
-      }
-    }
-    walk(dir, '')
-    return parts.sort().join('|')
-  } catch {
-    return null
-  }
-}
-
 export function kernelStatus({ nonameDir, token }) {
   const bundledDir = bundledKernelDir()
-  const bundledSig = dirSignature(bundledDir)
-  if (bundledSig === null || bundledHashCache.sig !== bundledSig) {
-    bundledHashCache = { sig: bundledSig, hash: hashKernelDir(bundledDir) }
-  }
-  const bundledHash = bundledHashCache.hash
+  let bundledHash
+  try { bundledHash = hashKernelDir(bundledDir) }
+  catch (error) { return { state: 'unknown', error: '读取自带内核失败: ' + error.message } }
   if (!bundledHash || !existsSync(join(bundledDir, 'extension.js'))) {
     return { state: 'unknown', error: `插件自带的内核源不完整(缺 extension.js):${bundledDir}` }
   }
   const target = kernelDirOf(nonameDir)
+  if (kernelInstallPending(nonameDir)) {
+    return { state: 'stale', recoveryPending: true, error: '上次内核安装中断，请关闭游戏后再次安装以恢复。', bundledHash }
+  }
   if (!existsSync(target)) {
     return { state: 'missing', bundledHash, installedHash: null, installedAt: null, boundApi: null }
   }
-  const sig = dirSignature(target)
   let installedHash
-  if (sig !== null && installedHashCache.dir === target && installedHashCache.sig === sig) {
-    installedHash = installedHashCache.hash
-  } else {
-    installedHash = hashKernelDir(target)
-    installedHashCache = { dir: target, sig, hash: installedHash }
-  }
+  try { installedHash = hashKernelDir(target) }
+  catch (error) { return { state: 'stale', error: '读取已安装内核失败: ' + error.message, bundledHash } }
   /* 内核心跳绑定在哪个 dsh(装它时写入的 baseUrl)——双 dsh 共管一个游戏目录时,
    * 心跳只发绑定方,另一方会显示离线,这个字段让绑定关系可见 */
   let boundApi = null
@@ -222,59 +145,13 @@ function ioHint(error) {
 
 /**
  * 安装/重装内核:旧目录整体备份到游戏根 nnk-kernel-backups/(滚动留 3 份),
- * 复制新的一份,写入桥配置(nnk-bridge.json)并盖章。装完需重启游戏加载。
+ * 在 extension/ 外复制校验并写配置/盖章，然后切换目录；失败恢复或保留明确待恢复记录。装完需重启游戏加载。
  */
 export function installKernel({ nonameDir, baseUrl, token, intervalMs }) {
-  const bundled = bundledKernelDir()
-  if (!existsSync(join(bundled, 'extension.js'))) {
-    return { ok: false, error: `插件自带的内核源不完整(缺 extension.js):${bundled}` }
-  }
-  const target = kernelDirOf(nonameDir)
-  let backup = null
-  if (existsSync(target)) {
-    const backupRoot = join(nonameDir, BACKUP_DIR_NAME)
-    const backupPath = join(backupRoot, `${KERNEL_FOLDER}-${Date.now()}`)
-    try {
-      mkdirSync(backupRoot, { recursive: true })
-      copyDirInto(target, backupPath)
-      backup = backupPath
-    } catch (error) {
-      return { ok: false, error: `备份旧内核失败:${error.message}${ioHint(error)}` }
-    }
-    try {
-      rmSync(target, { recursive: true, force: true })
-    } catch (error) {
-      return { ok: false, error: `清理旧内核失败:${error.message}${ioHint(error)}`, backup }
-    }
-    try {
-      // 滚动清理:同前缀按名字(毫秒时间戳,等宽)排序,只留最新 BACKUP_KEEP 份
-      const baks = readdirSync(backupRoot).filter((n) => n.startsWith(`${KERNEL_FOLDER}-`)).sort()
-      for (const name of baks.slice(0, Math.max(0, baks.length - BACKUP_KEEP))) {
-        try { rmSync(join(backupRoot, name), { recursive: true, force: true }) } catch { /* 单个失败跳过 */ }
-      }
-    } catch { /* 清理失败不影响安装 */ }
-  }
-  try {
-    copyDirInto(bundled, target)
-  } catch (error) {
-    return { ok: false, error: `复制内核失败:${error.message}${ioHint(error)}`, backup }
-  }
-  try {
-    writeFileSync(join(target, BRIDGE_FILE), JSON.stringify({
-      baseUrl,
-      token,
-      intervalMs: intervalMs || 700,
-      installedAt: Date.now(),
-    }, null, 2), 'utf8')
-  } catch (error) {
-    return { ok: false, error: `写入桥配置失败:${error.message}${ioHint(error)}`, backup }
-  }
-  const hash = hashKernelDir(target)
-  try {
-    writeFileSync(join(target, KERNEL_MANIFEST), JSON.stringify({ hash, version: bundledKernelVersion(), build: bundledKernelBuild(), installedAt: Date.now() }, null, 2), 'utf8')
-  } catch { /* 盖章失败只影响展示,不算安装失败 */ }
-  installedHashCache = { dir: '', sig: null, hash: null }   /* 安装完成:哈希缓存立即失效 */
-  return { ok: true, target, backup, hash }
+  const result = installKernelFiles({ root: nonameDir, source: bundledKernelDir(), baseUrl, token, intervalMs,
+    version: bundledKernelVersion(), build: bundledKernelBuild() })
+  if (!result.ok) result.error += ioHint(result)
+  return result
 }
 
 /**
