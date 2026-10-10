@@ -1,6 +1,6 @@
 /*
  * B0:以下为保留的 legacy 实现背景;自动/手动发送与内容接收入口当前全部暂停。
- * 旧计数/校验/提交缺陷并未修复,不能据下述历史说明重新开启补传。
+ * B2 修正单文件计数/摘要;完整批次提交与恢复仍未实现,不能重新开启补传。
  * 自动补包(M4):房主把客人缺少的扩展自动传过去。
  * 流程:客人进房 → 清单交换(manifest)→ 房主算差集 → 自动排队补传全部缺失
  * → 客人落盘 → 提示客人重启游戏、重新输房号加入(重启后清单复查,缺的续传)。
@@ -52,6 +52,7 @@
 	var CHUNK = 48 * 1024;           /* 二进制块大小(b64 后 64KB,远小于 DC 消息上限) */
 	var BUFFER_LIMIT = 256 * 1024;   /* 通道积压超过 256KB 就等(保对局消息优先) */
 	var KERNEL_NAME = "联机助手";
+	var INTEGRITY = "sha256-v1"; /* 休眠协议拒绝无摘要的旧清单;不代表 B6 授权协议。 */
 	/* 回执上限:判的对象是"对端主线程何时跑到这条消息"——对端开局/选将
 	 * 等重载阶段主线程可能整段卡住,JS 回执跟着断供(同族教训:心跳判死
 	 * 被主线程卡顿骗)。给足余量,宁可慢判也不误报"客人没响应" */
@@ -335,7 +336,8 @@
 						if (total > limit) {
 							throw new Error("体积超过上限(" + Math.round(limit / 1048576) + "MB),取消补传——这个扩展太大,请让房主把 extension/<扩展名> 文件夹打包发给你,手动放到同样位置");
 						}
-						files.push({ rel: r, size: size, full: full });
+						var sha256 = req("crypto").createHash("sha256").update(fs.readFileSync(full)).digest("hex");
+						files.push({ rel: r, size: size, full: full, sha256: sha256 });
 					} else {
 						skipped++;
 					}
@@ -353,7 +355,7 @@
 
 		var id = ++txSeq;
 		var sendTo = (only === undefined || only === null)
-			? currentBridges().map(bridgeId).filter(function(x) { return x !== null; })
+			? enteredBridges().map(bridgeId).filter(function(x) { return x !== null; })
 			: [only];
 		if (!sendTo.length) {
 			return fail("没有可定向的客人通道(对方内核可能过旧,请双方都升级到最新内核)");
@@ -362,10 +364,11 @@
 		var ackTargets = only ? [only] : enteredBridges().map(bridgeId).filter(function(x) { return x !== null; });
 		var head = {
 			id: id,
+			integrity: INTEGRITY,
 			name: name,
 			total: total,
 			sendTo: sendTo,
-			files: files.map(function(f) { return { rel: f.rel, size: f.size }; })
+			files: files.map(function(f) { return { rel: f.rel, size: f.size, sha256: f.sha256 }; })
 		};
 		bridgeApi().emit("transfer_begin", { name: name, files: files.length, total: total });
 		console.log("[联机助手] 开始补传扩展「" + name + "」:" + files.length + " 个文件," + Math.round(total / 1024) + "KB,等客人就绪…");
@@ -386,7 +389,7 @@
 			var waiting = false;
 			var waitSince = 0;
 			var gatesBlocked = function() {
-				var bridges = currentBridges();
+				var bridges = enteredBridges().filter(function(b) { return sendTo.indexOf(bridgeId(b)) >= 0; });
 				for (var i = 0; i < bridges.length; i++) {
 					try {
 						if (bridges[i].channel && bridges[i].channel.bufferedAmount > BUFFER_LIMIT) {
@@ -420,8 +423,11 @@
 				try {
 					var file = files[fi];
 					if (!fileData) {
-						sendToBridges("nnk_tx_file", { id: id, name: name, rel: file.rel, size: file.size, sendTo: sendTo });
 						fileData = fs.readFileSync(file.full);
+						if (fileData.length !== file.size || req("crypto").createHash("sha256").update(fileData).digest("hex") !== file.sha256) {
+							return fail("文件在清单生成后发生变化,补传中止");
+						}
+						sendToBridges("nnk_tx_file", { id: id, name: name, rel: file.rel, size: file.size, sha256: file.sha256, sendTo: sendTo });
 					}
 					var end = Math.min(off + CHUNK, fileData.length);
 					sendToBridges("nnk_tx_data", { id: id, rel: file.rel, b64: bytesToB64(fileData.subarray(off, end)), sendTo: sendTo });
@@ -494,7 +500,8 @@
 					if (!rx) {
 						return;
 					}
-					if (!safeRel(msg.rel) || typeof msg.size !== "number" || msg.size < 0) {
+					var expected = rx.files[msg.rel];
+					if (!safeRel(msg.rel) || !expected || rx.received[msg.rel] || msg.size !== expected.size || msg.sha256 !== expected.sha256) {
 						/* 记一笔:被拒的文件收尾时必须让完整性收口报失败,
 						 * 不能"跳过一个文件还回 done"(假成功活路,审计实证) */
 						rx.rejectedFiles += 1;
@@ -502,6 +509,7 @@
 					}
 					rx.rel = msg.rel;
 					rx.size = msg.size;
+					rx.sha256 = expected.sha256;
 					rx.got = 0;
 					startFileWrite();
 				} catch (e) { /* 内核消息处理器必须自保(引擎派发不在 try 内) */ }
@@ -536,20 +544,16 @@
 					}
 					var id = rx.id;
 					var name = rx.name;
-					var rejected = rx.rejectedFiles;
-					var doneFiles = rx.doneFiles;
-					var expect = rx.expectCount;
-					if (rx.reported < 100) {
-						rx.reported = 100;
-						bridgeApi().emit("transfer_progress", { name: name, pct: 100, side: "guest" });
-					}
 					var ok = flushFile();
 					if (!ok) {
 						/* 落盘校验失败:明确回 fail(房主立刻收场报原因,不干等超时) */
 						sendAck(id, "fail", "落盘校验失败,文件已丢弃");
 						return;
 					}
-					/* 完整性收口:清单里每个文件都必须走到落盘(或同尺寸跳过)。
+					var rejected = rx.rejectedFiles;
+					var doneFiles = rx.doneFiles;
+					var expect = rx.expectCount;
+					/* 完整性收口:清单里每个文件都必须走到摘要验证与落盘。
 					 * 被拒条目(如文件名含 ..)照旧回 done,就是 1.9.0 修过的
 					 * "假成功"漏网活路(审计实证)——缺一个都不报成功 */
 					if (rejected > 0 || doneFiles !== expect) {
@@ -561,6 +565,7 @@
 						rx = null;
 						return;
 					}
+					if (rx.reported < 100) bridgeApi().emit("transfer_progress", { name: name, pct: 100, side: "guest" });
 					bridgeApi().emit("transfer_done", { name: name, side: "guest" });
 					console.log("[联机助手] 补包接收完成:「" + name + "」,重启游戏后重新加入");
 					sendAck(id, "done");
@@ -598,14 +603,8 @@
 			var target = path.join(root, "extension", rx.name, rx.rel);
 			fs.mkdirSync(path.dirname(target), { recursive: true });
 			rx.target = target;
-			/* 同尺寸文件视为已有:跳过写入,只走一遍计数(最后按 size 比对即通过) */
-			if (fs.existsSync(target) && fs.statSync(target).size === rx.size) {
-				rx.skip = true;
-				rx.fd = null;
-				rx.tmp = null;
-				return;
-			}
 			rx.skip = false;
+			rx.hash = req("crypto").createHash("sha256");
 			rx.tmp = target + ".nnk-part";
 			try { fs.unlinkSync(rx.tmp); } catch (e2) { /* 残留清理 */ }
 			rx.fd = fs.openSync(rx.tmp, "w");
@@ -623,7 +622,14 @@
 		if (!req || rx.fd === null) {
 			throw new Error("接收文件未就绪");
 		}
-		req("fs").writeSync(rx.fd, Buffer.from(bytes));
+		var data = Buffer.from(bytes);
+		var offset = 0;
+		while (offset < data.length) {
+			var written = req("fs").writeSync(rx.fd, data, offset, data.length - offset);
+			if (!written) throw new Error("写入没有推进");
+			offset += written;
+		}
+		rx.hash.update(data);
 	}
 
 	function abortRx() {
@@ -660,15 +666,17 @@
 				rx = null;
 				return false;
 			}
-			if (!rx.skip) {
-				fs.renameSync(rx.tmp, rx.target);
+			if (rx.hash.digest("hex") !== rx.sha256 || nodeRequire()("crypto").createHash("sha256").update(fs.readFileSync(rx.tmp)).digest("hex") !== rx.sha256) {
+				throw new Error("SHA-256 校验失败");
 			}
+			fs.renameSync(rx.tmp, rx.target);
 		} catch (err) {
 			bridgeApi().emit("transfer_failed", { name: rx.name, message: "落盘失败(磁盘空间/权限?):" + ((err && err.message) || err) + "——腾出空间或关闭占用后重试" });
-			rx = null;
+			abortRx();
 			return false;
 		}
 		rx.doneFiles += 1;   /* 完整性收口计数:tx_done 按它核对"清单里每个文件都到了" */
+		rx.received[rx.rel] = true;
 		rx.rel = null;
 		rx.skip = false;
 		return true;
@@ -769,7 +777,7 @@
 				rejectIncoming(msg, true);
 				return;
 			}
-			if (!msg || !safeName(msg.name) || !Array.isArray(msg.files)) {
+			if (!msg || msg.integrity !== INTEGRITY || !safeName(msg.name) || !Array.isArray(msg.files) || !msg.files.length) {
 				if (msg && typeof msg.id === "number") {
 					sendAck(msg.id, "fail", "补传清单格式不对");
 				}
@@ -779,26 +787,30 @@
 			var limit = limitBytes();
 			var declared = typeof msg.total === "number" && msg.total >= 0 ? msg.total : 0;
 			var filesTotal = 0;
+			var expectedFiles = Object.create(null);
 			for (var i = 0; i < msg.files.length; i++) {
 				var f = msg.files[i];
-				if (!f || !safeRel(f.rel) || typeof f.size !== "number" || f.size < 0) {
+				if (!f || !safeRel(f.rel) || !f.rel || !Number.isSafeInteger(f.size) || f.size < 0 || !/^[a-f0-9]{64}$/.test(f.sha256 || "") || expectedFiles[f.rel]) {
 					sendAck(msg.id, "fail", "补传清单里有非法条目");
 					return;   /* 清单形状不对:整单拒收并明确回绝 */
 				}
 				filesTotal += f.size;
+				expectedFiles[f.rel] = { size: f.size, sha256: f.sha256 };
 			}
 			if (filesTotal > limit || declared > limit) {
 				bridgeApi().emit("transfer_failed", { name: msg.name, message: "对方要传的体积超过本机上限(" + Math.round(limit / 1048576) + "MB),已拒绝" });
 				sendAck(msg.id, "fail", "体积超过本机上限");
 				return;
 			}
-			resetRx();
+			abortRx();
 			rx = {
 				id: msg.id,
 				name: msg.name,
 				rel: null,
 				size: 0,
 				got: 0,
+				files: expectedFiles,
+				received: Object.create(null),
 				fd: null,
 				tmp: null,
 				skip: false,

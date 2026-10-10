@@ -142,6 +142,21 @@
 	 * 一遍现存记录并包住 push;再包 game.import,每次新扩展注册都重翻一遍,
 	 * 保证无论如何最后一条注册完成后全部标志就位。
 	 */
+	/* 对象内容优先,目录特征兜底;供联机裁决与体检共同使用。 */
+	function extKind(name, obj) {
+		try {
+			var src = obj || (nnk.env.lib.extensionPack && nnk.env.lib.extensionPack[name]) || null;
+			if (src) {
+				var files = src.files;
+				if (files && ((files.character && files.character.length) || (files.card && files.card.length))) return "content";
+				var pack = src.package || src;
+				var pc = pack.character && (pack.character.character || pack.character);
+				var cc = pack.card && (pack.card.card || pack.card);
+				if (pc && Object.keys(pc).length || cc && Object.keys(cc).length) return "content";
+			}
+		} catch (e) { /* 无法读取对象时使用目录特征 */ }
+		return isContentExt(name) ? "content" : "ui";
+	}
 	var importWrapped = false;
 	function unlockExtensions() {
 		if (!enabled()) {
@@ -162,34 +177,11 @@
 			}
 			return extKind(name, obj) === "content";
 		}
-		/* 内容/美化分类:现代扩展把武将/卡牌声明在 package 里(真机实证:小游戏
-		 * 的武将在 package.character.character,磁盘上没有特征文件),所以对象
-		 * 特征优先,磁盘特征(character.js/card.js)只做兜底。判定不了按美化。 */
-		function extKind(name, obj) {
-			try {
-				var src = obj || (nnk.env.lib.extensionPack && nnk.env.lib.extensionPack[name]) || null;
-				if (src) {
-					var files = src.files || null;
-					if (files && ((files.character && files.character.length) || (files.card && files.card.length))) {
-						return "content";
-					}
-					var pc = src.character;
-					if (pc && (Array.isArray(pc) ? pc.length : Object.keys(pc).length)) {
-						return "content";
-					}
-					var cc = src.card;
-					if (cc && (Array.isArray(cc) ? cc.length : Object.keys(cc).length)) {
-						return "content";
-					}
-				}
-			} catch (e) { /* 忽略 */ }
-			return isContentExt(name) ? "content" : "ui";
-		}
 		var arr = env.lib.extensions;
 		if (Array.isArray(arr)) {
 			arr.forEach(function(ext) {
 				if (Array.isArray(ext)) {
-					ext[5] = decide(ext[0]);
+					ext[5] = decide(ext[0], ext[4]);
 				}
 			});
 			if (!arr.__nnkUnlocked) {
@@ -197,7 +189,7 @@
 				arr.push = function() {
 					for (var i = 0; i < arguments.length; i++) {
 						if (Array.isArray(arguments[i])) {
-							arguments[i][5] = decide(arguments[i][0]);
+							arguments[i][5] = decide(arguments[i][0], arguments[i][4]);
 						}
 					}
 					return origPush.apply(this, arguments);
@@ -433,7 +425,7 @@
 				}
 				/* 与闸1 共用 extKind 口径(对象特征优先):只看磁盘特征会把
 				 * "package 里声明武将/卡牌"的现代扩展误报成美化类,透视误导排查 */
-				var kind = extKind(ext[0], ext[4]) ? "content" : "ui";
+				var kind = extKind(ext[0], ext[4]);
 				if (ext[5]) {
 					loaded.push(ext[0]);
 				} else if (kind === "content") {

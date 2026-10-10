@@ -602,6 +602,7 @@ export function apply(ctx, config) {
       schema: { type: 'object', additionalProperties: false, properties: {
         ok: { type: 'boolean', required: true },
         marked: { type: 'integer' },
+        reopened: { type: 'boolean' },
         missing: { type: 'array', items: { type: 'string' } },
         notesStored: { type: 'integer' },
         confirmed: { type: 'integer' },

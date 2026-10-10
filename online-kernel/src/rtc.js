@@ -132,6 +132,15 @@
 				lastBuffered = buf;
 			} catch (eB) { /* 读不到就算了 */ }
 			var trafficAt = 0;
+			var st = null;
+			if (pcState) {
+				try { st = pcState() || null; } catch (eS) { st = null; }
+			}
+			if (st !== "disconnected") {
+				disconnectedSince = 0;
+			} else if (!disconnectedSince) {
+				disconnectedSince = Date.now();
+			}
 			if (peerTraffic) {
 				try { trafficAt = peerTraffic() || 0; } catch (eT) { trafficAt = 0; }
 			}
@@ -142,23 +151,14 @@
 			 * **不依赖对端 JS**(SCTP ACK/STUN 都由网络进程收发,渲染线程卡住也照常),
 			 * 正是纪律里"必须留一条不依赖对端 JS 的活证"。 */
 			if (Date.now() - Math.max(lastSeen, trafficAt) > 20000) {
-				var st = null;
-				if (pcState) {
-					try { st = pcState() || null; } catch (eS) { st = null; }
-				}
 				if (st === "connected" || st === "new" || st === "connecting") {
 					lastSeen = Date.now();   /* 传输层说链路活着:重置计时继续等(对端只是忙) */
 					disconnectedSince = 0;
 				} else if (st === "disconnected") {
 					/* ICE 抖动会自愈,先给一段恢复期;持续断开才当死 */
-					if (!disconnectedSince) {
-						disconnectedSince = Date.now();
-						lastSeen = Date.now();
-					} else if (Date.now() - disconnectedSince > 20000) {
+					if (Date.now() - disconnectedSince > 20000) {
 						stop(true);
 						return;
-					} else {
-						lastSeen = Date.now();
 					}
 				} else {
 					/* failed/closed/取不到状态(pcState 缺省):维持旧行为,宁可真判死 */
