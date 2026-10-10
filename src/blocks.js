@@ -186,6 +186,8 @@ export function sectionProperties(code, open, close) {
         for (; k < close; k++) {
           const ch = code[k]
           if (ch === "'" || ch === '"' || ch === '`') { k = skipString(code, k); continue }
+          if (ch === '/' && code[k + 1] === '/') { k = skipLineComment(code, k); continue }
+          if (ch === '/' && code[k + 1] === '*') { k = skipBlockComment(code, k); continue }
           if (d === 0 && ch === ',') break
           if (ch === '{' || ch === '[' || ch === '(') d++
           else if (ch === '}' || ch === ']' || ch === ')') {
@@ -215,6 +217,8 @@ function matchBracket(text, openIndex) {
     if (c === '[') depth++
     else if (c === ']') { depth--; if (depth === 0) return i }
     else if (c === "'" || c === '"' || c === '`') i = skipString(text, i)
+    else if (c === '/' && text[i + 1] === '/') i = skipLineComment(text, i)
+    else if (c === '/' && text[i + 1] === '*') i = skipBlockComment(text, i)
   }
   return -1
 }
@@ -443,45 +447,97 @@ export function assembleBlocks(oldCode, blocks = [], edits = [], deletes = []) {
     for (const x of list) applied.push(x.key)
   }
 
-  // 6) 精确小补丁:find 必须恰好命中一次
+  // 6) 按提交顺序校验并应用精确补丁;任一失败整单返回原文。
   for (const e of edits) {
+    if (typeof e?.find !== 'string' || !e.find || typeof e.replace !== 'string') {
+      errors.push('edits:find 必须是非空原文,replace 必须是字符串')
+      continue
+    }
     let count = 0
     let idx = -1
     let pos = 0
     while ((pos = code.indexOf(e.find, pos)) >= 0) { count++; idx = pos; pos += e.find.length }
     if (count === 0) errors.push(`edits:未找到目标文本(必须从当前代码原样复制):「${e.find.slice(0, 60)}」`)
     else if (count > 1) errors.push(`edits:目标文本出现 ${count} 次,无法唯一定位:「${e.find.slice(0, 60)}」`)
+    else code = code.slice(0, idx) + e.replace + code.slice(idx + e.find.length)
   }
   if (errors.length) return { code: oldCode, applied, deleted, errors }
-  for (const e of edits) {
-    const at = code.indexOf(e.find)
-    code = code.slice(0, at) + e.replace + code.slice(at + e.find.length)
-  }
   return { code, applied, deleted, errors }
 }
 
 /**
- * 保真校验(全文模式写存量包用):scope 外的内容区块必须逐字节一致
- * (按行尾空白/回车归一后比较,避免无害差异误报)。覆盖 skill/card/character/translate
- * —— 早先只管 skill,等于卡片、武将与翻译条目在全文模式下被动过也拦不住。
+ * 全文覆盖只允许已存在、唯一的内容条目改变。其余全文(含 imports、precontent、
+ * 骨架、注释及行尾)原样比较。不把非连续翻译条目之间的文本纳入授权范围。
+ * bare ID 兼容旧调用;kind:id 可缩小到单种条目。添加/删除/歧义使用区块或精确 edits。
  */
 export function checkFidelity(oldCode, newCode, scopeIds = []) {
+  if (!Array.isArray(scopeIds) || scopeIds.some((id) => typeof id !== 'string' || !/^(?:(?:skill|card|character|translate):)?[\w-]+$/.test(id))) {
+    return { ok: false, changed: ['editScope 格式无效'] }
+  }
+  // 轻量区间扫描不是完整 JS parser。含正则/除法或模板插值时不授予推测区间,
+  // 仍允许原文不变,否则要求精确 edits(直接在旧文本组装,无需推断授权范围)。
+  const uncertain = (text) => {
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i]
+      if (c === "'" || c === '"' || c === '`') {
+        const end = skipString(text, i)
+        if (c === '`' && text.slice(i, end).includes('${')) return true
+        i = end
+      } else if (c === '/' && text[i + 1] === '/') i = skipLineComment(text, i)
+      else if (c === '/' && text[i + 1] === '*') i = skipBlockComment(text, i)
+      else if (c === '/') return true
+    }
+    return false
+  }
+  if (oldCode !== newCode && (uncertain(oldCode) || uncertain(newCode))) {
+    return { ok: false, changed: ['无法可靠划分全文授权区间,请使用精确 edits'] }
+  }
   const scope = new Set(scopeIds)
   const collect = (code) => {
-    const map = new Map()
+    const items = []
     for (const kind of [...CONTENT_KINDS, 'translate']) {
-      for (const b of virtualBlocks(code, kind)) map.set(b.key, b)
+      for (const sec of findAllSections(code, kind)) {
+        for (const p of sectionProperties(code, sec.open, sec.close)) {
+          if (kind === 'translate' ? code[p.end] === '}' : STRUCTURAL_NAMES.has(p.name) || !(kind === 'skill' ? '}' : '}]').includes(code[p.end])) continue
+          const id = kind === 'translate' ? p.name.replace(/_info$/, '') : p.name
+          items.push({ ...p, id, kind, key: kind + ':' + p.name, text: code.slice(p.start, p.end + 1) })
+        }
+      }
     }
-    return map
+    return items.sort((a, b) => a.start - b.start)
   }
-  const newBlocks = collect(newCode)
+  const oldBlocks = collect(oldCode), newBlocks = collect(newCode)
+  const allowed = (b) => scope.has(b.id) || scope.has(b.kind + ':' + b.id)
   const changed = []
-  for (const b of collect(oldCode).values()) {
-    if (scope.has(b.id)) continue
-    const nb = newBlocks.get(b.key)
-    if (!nb || normalizeForCompare(b.text) !== normalizeForCompare(nb.text)) changed.push(b.id)
+  for (const id of scope) {
+    if (!oldBlocks.some((b) => id === b.id || id === b.kind + ':' + b.id)) changed.push('editScope 未识别条目:' + id)
   }
-  return { ok: changed.length === 0, changed }
+  for (const items of [oldBlocks, newBlocks]) {
+    for (const b of items.filter(allowed)) {
+      if (items.filter((other) => other.key === b.key).length !== 1
+        || items.some((other) => other !== b && other.start <= b.end && other.end >= b.start)) {
+        changed.push('editScope 区间不唯一:' + b.key)
+      }
+    }
+  }
+  // 分段数组而非拼接哨兵字符串:原文不能伪造哨兵来吞掉未授权文本。
+  const outside = (code, items) => {
+    const parts = []
+    let at = 0
+    for (const b of items.filter(allowed)) {
+      parts.push(code.slice(at, b.start), b.key)
+      at = b.end + 1
+    }
+    parts.push(code.slice(at))
+    return JSON.stringify(parts)
+  }
+  if (outside(oldCode, oldBlocks) !== outside(newCode, newBlocks)) {
+    for (const b of oldBlocks.filter((b) => !allowed(b))) {
+      if (!newBlocks.some((nb) => nb.key === b.key && nb.text === b.text)) changed.push(b.id)
+    }
+    changed.push('文件骨架/imports/precontent/范围外文本(含行尾)')
+  }
+  return { ok: changed.length === 0, changed: [...new Set(changed)] }
 }
 
 function normalizeForCompare(code) {

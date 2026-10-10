@@ -90,13 +90,11 @@ try {
   const oldCode = "var pack = game.import('extension', function (lib, game, ui, get, ai) { return { name: '测试包' } });\npack.skill.ts_aaa = {};\npack.skill.ts_bbb = {};"
   const r1 = await writeExtension(nonameDir, { folder: '测试包', code: oldCode, style: 'classic', kind: 'character' })
   ok(r1.ok && r1.wrote, '首次写入成功(无旧代码,护栏不误伤)')
-  const lostCode = "var pack = game.import('extension', function (lib, game, ui, get, ai) { return { name: '测试包' } });\npack.skill.ts_bbb = {};"
-  const r2 = await writeExtension(nonameDir, { folder: '测试包', code: lostCode, style: 'classic', kind: 'character' })
+  const r2 = await writeExtension(nonameDir, { folder: '测试包', edits: [{ find: 'pack.skill.ts_aaa = {};\n', replace: '' }], style: 'classic', kind: 'character' })
   ok(!r2.ok && !r2.wrote && /消失/.test(r2.errors[0].message), '旧技能消失 → 拒写')
   const preserved = await readFile(join(nonameDir, 'extension', '测试包', 'extension.js'), 'utf8')
   ok(/ts_aaa/.test(preserved), '拒写后旧文件未被破坏')
-  const fullCode = "var pack = game.import('extension', function (lib, game, ui, get, ai) { return { name: '测试包' } });\npack.skill.ts_aaa = {};\npack.skill.ts_bbb = {};\npack.skill.ts_ccc = {};"
-  const r3 = await writeExtension(nonameDir, { folder: '测试包', code: fullCode, style: 'classic', kind: 'character' })
+  const r3 = await writeExtension(nonameDir, { folder: '测试包', edits: [{ find: 'pack.skill.ts_bbb = {};', replace: 'pack.skill.ts_bbb = {};\npack.skill.ts_ccc = {};' }], style: 'classic', kind: 'character' })
   ok(r3.ok && r3.wrote && r3.backup, '补回技能 → 放行,且产生备份')
 
   // ── 10) 编辑已有条目:createTask 的 target + listEntries(下拉数据源) ──
@@ -221,16 +219,16 @@ try {
     blocks: [{ kind: 'character', id: 'yxs_a', code: "yxs_a: { sex: 'male', group: 'wei', hp: 4, skills: ['yxs_s1'] }" }] })
   ok(wM.ok && wM.wrote, '多文件包:按 file 的区块写入成功')
   const mLost = await writeExtension(nonameDir, { folder: mf, file: 'character/character.js', kind: 'character', style: 'module',
-    code: "const character = {\n  yxs_a: { sex: 'male', group: 'wei', hp: 3, skills: ['yxs_s1'] },\n};\nexport default character;\n" })
-  ok(!mLost.ok && /消失/.test(mLost.errors[0].message), '多文件包:全文模式防丢护栏按目标文件生效(丢 yxs_b 拒写)')
+    edits: [{ find: (await readExt2(nonameDir, mf, { block: 'character:yxs_b' })).code, replace: '' }] })
+  ok(!mLost.ok && /消失/.test(mLost.errors[0].message), '多文件包:精确 edits 防丢护栏按目标文件生效(丢 yxs_b 拒写)')
   let backupOk = false
   try { await import('node:fs/promises').then((fs) => fs.readdir(join(nonameDir, 'extension', mf, 'character', 'backup'))).then((n) => { backupOk = n.some((x) => x.startsWith('character.')) }) } catch { }
   ok(backupOk, '多文件包:备份落在目标文件同目录 backup/')
 
   // ── 14) 备份滚动清理:每个 backup/ 只保留最新 3 个 ──
-  const charCode = "const character = {\n  yxs_a: { sex: 'male', group: 'wei', hp: 3, skills: ['yxs_s1'] },\n  yxs_b: ['female', 'shu', 4, ['yxs_s2']],\n};\nexport default character;\n"
   for (let i = 0; i < 5; i++) {
-    const wR = await writeExtension(nonameDir, { folder: mf, file: 'character/character.js', kind: 'character', style: 'module', code: charCode })
+    const currentChar = await readFile(join(nonameDir, 'extension', mf, 'character', 'character.js'), 'utf8')
+    const wR = await writeExtension(nonameDir, { folder: mf, file: 'character/character.js', kind: 'character', style: 'module', code: currentChar, editScope: [] })
     ok(wR.ok, '滚动清理:第 ' + (i + 1) + ' 次写入成功')
   }
   const { readdir: rdFs } = await import('node:fs/promises')
@@ -321,7 +319,7 @@ try {
     fsSync.mkdirSync(join(pkgDir, 'character'), { recursive: true })
     fsSync.writeFileSync(join(pkgDir, 'extension.js'), "game.import('extension', { name: '往返包', content(){} });")
     fsSync.writeFileSync(join(pkgDir, 'character', 'character.js'), 'const character = { v: 1 };\nexport { character };')
-    const w1 = await w.writeExtension(home, { folder: '往返包', file: 'character/character.js', code: 'const character = { v: 2 };\nexport { character };' })
+    const w1 = await w.writeExtension(home, { folder: '往返包', file: 'character/character.js', edits: [{ find: 'v: 1', replace: 'v: 2' }] })
     ok(w1.ok && Boolean(w1.backup), '多文件包:模块文件写入成功且有备份登记')
     const list = await w.listBackups(home, '往返包')
     ok(list.length >= 1 && list[0].includes('/backup/'), 'listBackups 输出带 backup/ 段(回滚能认):' + list[0])
@@ -344,7 +342,7 @@ try {
     fsSync.mkdirSync(pkgDir, { recursive: true })
     fsSync.writeFileSync(join(pkgDir, 'extension.js'), "game.import('extension', { name: '单文件包', v: 1 });")
     for (let v = 2; v <= 4; v++) {
-      await w.writeExtension(home, { folder: '单文件包', code: `game.import('extension', { name: '单文件包', v: ${v} });` })
+      await w.writeExtension(home, { folder: '单文件包', edits: [{ find: `v: ${v - 1}`, replace: `v: ${v}` }] })
     }
     const list = await w.listBackups(home, '单文件包')
     ok(list.length === 3 && /^backup\/extension\.\d{8}-\d{6}(-\d{6})?\.js$/.test(list[0]),
@@ -361,7 +359,7 @@ try {
     // 中文子目录 + 中文模块名(写入侧放行,回滚侧原先用 \w 白名单拒绝)
     fsSync.mkdirSync(join(pkgDir, '武将'), { recursive: true })
     fsSync.writeFileSync(join(pkgDir, '武将', '武将.js'), 'const character = { v: 1 };\nexport { character };')
-    await w.writeExtension(home, { folder: '单文件包', file: '武将/武将.js', code: 'const character = { v: 2 };\nexport { character };' })
+    await w.writeExtension(home, { folder: '单文件包', file: '武将/武将.js', edits: [{ find: 'v: 1', replace: 'v: 2' }] })
     const list3 = await w.listBackups(home, '单文件包')
     const zh = list3.find((n) => n.includes('武将/backup/'))
     ok(Boolean(zh), '中文子目录备份能被列出:' + zh)

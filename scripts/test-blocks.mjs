@@ -176,8 +176,8 @@ try {
   // ── 13) 防丢护栏仍生效(block 模式 deletes 豁免)──
   const w5 = await writeExtension(nonameDir, { folder: '老包', kind: 'character', style: 'classic', deletes: ['skill:cs_a', 'translate:cs_a'] })
   ok(w5.ok && w5.wrote, '集成:block 模式声明删除放行')
-  const w6 = await writeExtension(nonameDir, { folder: '老包', kind: 'character', style: 'classic', code: LEGACY.replace('cs_b:', 'cs_b_renamed:') })
-  ok(!w6.ok && /消失/.test(w6.errors[0].message), '集成:全文模式防丢护栏仍拦截')
+  const w6 = await writeExtension(nonameDir, { folder: '老包', kind: 'character', style: 'classic', edits: [{ find: 'cs_b: {', replace: 'cs_b_renamed: {' }] })
+  ok(!w6.ok && /消失/.test(w6.errors[0].message), '集成:精确 edits 仍不能绕过 ID 防丢护栏')
 
   // ── 14) package 描述符布局(真实测试包结构:技能藏在 package.skill.skill)──
   const PKG = `import { lib, game, ui, get, ai, _status } from "../../noname.js";

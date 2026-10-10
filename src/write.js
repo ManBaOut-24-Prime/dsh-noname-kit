@@ -186,27 +186,38 @@ export async function writeExtension(nonameDir, { folder, file, code, blocks, ed
 
   // 旧文件:两种模式都先读(区块模式组装、全文模式保真/防丢都依赖它)
   let oldCode = null
-  try { oldCode = await readFile(target, 'utf8') } catch { /* 首次写入,无旧文件 */ }
+  try {
+    const bytes = await readFile(target)
+    oldCode = bytes.toString('utf8')
+    if (!bytes.equals(Buffer.from(oldCode, 'utf8'))) {
+      return { ok: false, wrote: false, errors: [{ message: '旧文件不是可无损读写的 UTF-8,拒绝覆盖;请先由用户备份并确认编码。' }], warnings: [] }
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
   await mkdir(dirname(target), { recursive: true })
 
   let finalCode = code
   const preErrors = []
   if (blockMode) {
-    if (!oldCode) preErrors.push('区块模式用于已有扩展:新包首写请用全文模式(提交 code 参数,骨架模板自带锚点)。')
-    else if (!scanAnchored(oldCode).length) preErrors.push('该文件尚未建立区块索引:请在工坊点「建立区块索引」,或用全文模式写入一次后重试。')
+    if (oldCode === null) preErrors.push('区块模式用于已有扩展:新包首写请用全文模式(提交 code 参数,骨架模板自带锚点)。')
+    else if (((blocks || []).length || (deletes || []).length) && !scanAnchored(oldCode).length) preErrors.push('该文件尚未建立区块索引:请在工坊点「建立区块索引」;非区块区域可用唯一原文 edits 精确修改。')
     else {
       const r = assembleBlocks(oldCode, blocks || [], edits || [], deletes || [])
       if (r.errors.length) preErrors.push(...r.errors)
       else finalCode = r.code
     }
     if (preErrors.length) return { ok: false, wrote: false, errors: preErrors.map((m) => ({ message: m })), warnings: [] }
-  } else if (oldCode && Array.isArray(editScope)) {
-    // 全文模式保真校验:范围外区块逐字节一致(虚拟区块,只读不写)
+  } else if (oldCode !== null) {
+    if (!Array.isArray(editScope)) {
+      return { ok: false, wrote: false, errors: [{ message: '覆盖已有文件必须显式提供 editScope(无内容条目改动时为 []);建议用 blocks 或精确 edits 保留其他原文。' }], warnings: [] }
+    }
+    // 比较全部未授权文本,不是只检查被识别出的内容块。
     const f = checkFidelity(oldCode, code, editScope)
     if (!f.ok) {
       return {
         ok: false, wrote: false,
-        errors: f.changed.map((id) => ({ message: `区块「${id}」不在本次申报范围(editScope)内却被修改——未申报的改动一律拒写;如确要修改,请把它加入 editScope 后重试。` })),
+        errors: f.changed.map((id) => ({ message: `全文保真检查拒写:「${id}」。editScope 只允许唯一的既有内容条目;范围外原文必须完全一致,其他修改请使用精确 edits。` })),
         warnings: [],
       }
     }
@@ -228,7 +239,7 @@ export async function writeExtension(nonameDir, { folder, file, code, blocks, ed
   // 防丢技能护栏:旧代码里定义、新代码里消失的内部 ID → 拒写。
   // 比对前剥掉锚点注释行(锚点是纯注释,ID 语义不变,但会隔断 collectDefinedIds 的匹配)。
   // 区块模式下 deletes[] 声明的删除豁免;多技能逐个实现时这是安全网。
-  if (oldCode) {
+  if (oldCode !== null) {
     const oldIds = collectDefinedIds(stripAnchors(oldCode))
     const newIds = new Set(collectDefinedIds(stripAnchors(finalCode)))
     const declared = new Set((deletes || []).map((k) => String(k).split(':')[1] || k))
@@ -248,7 +259,7 @@ export async function writeExtension(nonameDir, { folder, file, code, blocks, ed
   // 覆盖前备份(路径记成相对 nonameDir 的全相对路径——render 直接展示给 AI/用户,
   // 只给 "backup/x.js" 的话对方不知道该在哪个目录下找,实测要试错一次)
   let backup = ''
-  if (oldCode) {
+  if (oldCode !== null) {
     const backupDir = join(dirname(target), 'backup')
     await mkdir(backupDir, { recursive: true })
     backup = join(relative(nonameDir, backupDir), `${basename(target, '.js')}.${timestamp()}.js`).split(sep).join('/')

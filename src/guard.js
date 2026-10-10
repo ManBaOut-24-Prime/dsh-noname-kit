@@ -50,26 +50,33 @@ export function msysToNative(p) {
 /** Win32 分量归一:尾部的点与空格在 Win32 解析时被忽略(「extension.」==「extension」),
  *  不归一的话「写 …\extension.\包\x.js」这类写法就能绕过写保护(实测 PowerShell 可解析)。 */
 function stripWin32Tail(seg) {
-  if (!seg || seg === '.' || seg === '..') return seg
+  const noSpaces = seg.replace(/ +$/, '')
+  if (!seg || noSpaces === '.' || noSpaces === '..') return noSpaces
   return seg.replace(/[. ]+$/, '')
+}
+
+function nativeGuardPath(p) {
+  let raw = String(p ?? '').trim()
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) raw = raw.slice(1, -1)
+  raw = raw.replace(/^(?:Microsoft\.PowerShell\.Core\\)?FileSystem::/i, '')
+  return msysToNative(raw).replace(/\//g, '\\')
 }
 
 /** 归一化:去引号、统一分隔符、折叠 ..、去尾分隔符、Win32 尾点/尾空格;小写便于比较。 */
 export function normalizePath(p, baseDir) {
-  const raw0 = msysToNative(String(p ?? '').trim().replace(/^"|"$/g, ''))
-  if (!raw0) return null
-  const raw = raw0.replace(/\//g, '\\')
+  const raw = nativeGuardPath(p)
+  if (!raw) return null
   const full = isAbsolute(raw) ? raw : resolve(baseDir || process.cwd(), raw)
   let n = normalize(full)
   if (n.length > 3 && (n.endsWith('\\') || n.endsWith('/'))) n = n.slice(0, -1)
   n = n.split('\\').map(stripWin32Tail).join('\\')
-  return n.toLowerCase()
+  return normalize(n).toLowerCase()
 }
 
 /** UNC(\\server\share)与 \\?\ 前缀:无法与保护前缀可靠比对(`\\?\` 更是把 Win32 归一
  *  整个关掉,短名/尾点都成了字面量),按守卫「宁可多拦不漏拦」的既有取舍一律当命中。 */
 function isAliasForm(candidate) {
-  const raw = msysToNative(String(candidate ?? '').trim().replace(/^"|"$/g, '')).replace(/\//g, '\\')
+  const raw = nativeGuardPath(candidate)
   return /^\\\\/.test(raw)
 }
 
@@ -90,13 +97,14 @@ export function isProtectedPath(candidate, protectRoot) {
 export function pathHitsProtected(candidate, protectRoot, baseDirs) {
   const raw = String(candidate ?? '').trim()
   if (!raw) return false
-  const native = msysToNative(raw)
+  const native = nativeGuardPath(raw)
+  if (isAliasForm(native)) return true
   if (isAbsolute(native.replace(/\//g, '\\'))) {
     return isProtectedPath(native, protectRoot)
   }
   for (const base of baseDirs || []) {
     if (!base) continue
-    const abs = resolve(base, native.replace(/\//g, '\\'))
+    const abs = normalizePath(native, base)
     if (isProtectedPath(abs, protectRoot)) return true
   }
   return false
@@ -295,10 +303,10 @@ export function powershellGuardReason(command, protectRoot, baseDirs) {
   const cmd = String(command ?? '')
   const bases = (baseDirs || []).filter(Boolean).slice()
   let locationBases = bases.slice()
-  const location = /(?:^|[\s;&|()])(?:Set-Location|Push-Location|cd|chdir|sl|pushd)\s+(?:(?:-Path|-LiteralPath)\s+)?("([^"]+)"|'([^']+)'|([^\s;|&()]+))/gi
+  const location = /(?:^|[\s;&|()])(?:Microsoft\.PowerShell\.Management\\)?(?:Set-Location|Push-Location|cd|chdir|sl|pushd)\s+(?:(?:-Path|-LiteralPath)\s+)?("([^"]+)"|'([^']+)'|([^\s;|&()]+))/gi
   let m
   while ((m = location.exec(cmd)) !== null) {
-    const dir = msysToNative(m[2] ?? m[3] ?? m[4]).replace(/\//g, '\\')
+    const dir = nativeGuardPath(m[2] ?? m[3] ?? m[4])
     // 累积候选目录(不假装能精确执行分支/子作用域),避免相对路径遗漏。
     const next = isAbsolute(dir) ? [dir] : locationBases.map((base) => resolve(base, dir))
     locationBases = [...new Set(next)]
@@ -306,10 +314,11 @@ export function powershellGuardReason(command, protectRoot, baseDirs) {
   }
   const bashReason = bashGuardReason(cmd, protectRoot, bases)
   if (bashReason) return `pwsh 脚本:${bashReason}`
-  const mutation = /(?:^|[\s;&|()])(?:Set-Content|Add-Content|Out-File|Tee-Object|(?:Set|New|Remove|Clear|Copy|Move|Rename)-Item(?:Property)?|sc|ac|ni|ri|ci|mi|si|sp)\b([^\n;|&]*)/gi
+  const mutation = /(?:^|[\s;&|()])["']?(?:Microsoft\.PowerShell\.(?:Management|Utility)\\)?(?:Set-Content|Add-Content|Out-File|Tee-Object|(?:Set|New|Remove|Clear|Copy|Move|Rename)-Item(?:Property)?|sc|ac|ni|ri|ci|mi|si|sp)\b["']?([^\n;|&]*)/gi
   const fragments = []
   while ((m = mutation.exec(cmd)) !== null) fragments.push(m[1])
   if (/\[(?:System\.)?IO\.(?:File|Directory)\]\s*::\s*(?:Write\w*|Append\w*|OpenWrite|Create\w*|Delete|Move|Copy|Replace)\s*\(/i.test(cmd)) fragments.push(cmd)
+  if (/\[(?:System\.)?IO\.StreamWriter\]\s*::\s*new\s*\(|\bNew-Object\s+(?:(?:-TypeName)\s+)?(?:System\.)?IO\.StreamWriter\b/i.test(cmd)) fragments.push(cmd)
   for (const fragment of fragments) {
     const tokens = new RegExp(PATH_TOKEN_RE.source, 'g')
     while ((m = tokens.exec(fragment)) !== null) {

@@ -393,7 +393,7 @@ export function apply(ctx, config) {
         replace: { type: 'string', required: true },
       } } },
       deletes: { type: 'array', items: { type: 'string' }, description: 'Block keys to remove, e.g. skill:cs_old. Declared deletions bypass the loss guard.' },
-      editScope: { type: 'array', items: { type: 'string' }, description: 'Full-text mode on existing files: internal IDs allowed to change; anything else that differs from the old file is rejected.' },
+      editScope: { type: 'array', items: { type: 'string' }, description: 'Required for full-text overwrites of existing files, including manual mode. Existing unique IDs (or kind:id) allowed to change; ALL other bytes, including imports, precontent, scaffolding and line endings, must remain exact. Use [] for unchanged content. Use exact edits for non-block changes; use blocks for additions/deletions.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: {
