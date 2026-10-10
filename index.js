@@ -34,7 +34,7 @@ import { cachedUpdate, checkForUpdate, detectInstall, installHint } from './src/
 import { bashGuardReason, powershellGuardReason, guardMessage, pathHitsProtected } from './src/guard.js'
 import { readJsonSafeSync, writeJsonAtomicSync } from './src/store.js'
 import pkg from './package.json' with { type: 'json' }
-import {batchPending, batchStatus, recoverBatch} from './src/batch.js'
+import {batchPending, batchStatus, recoverBatch, revokeBatch} from './src/batch.js'
 
 /** bash 单次输出上限的出厂默认与允许范围(与 custom-bash.mjs 保持一致)。
  * 默认 64K=下限:阀门太小会增加调用轮数,总上下文消耗反而更大;256K 上限
@@ -1046,9 +1046,9 @@ export function apply(ctx, config) {
         }
         if (req.method === 'POST' && url.pathname === '/noname-kit-api/online/command') {
           const body = await readBody()
-          const actions = new Set(['create_room', 'join_room', 'invite_refresh', 'accept_answer', 'join_invite', 'transfer_pack', 'batch_decision', 'batch_cancel', 'clear_quarantine', 'set_config', 'set_identity', 'restart_room', 'set_mode', 'cancel'])
+          const actions = new Set(['create_room', 'join_room', 'invite_refresh', 'accept_answer', 'join_invite', 'transfer_pack', 'batch_decision', 'batch_cancel', 'batch_reload', 'batch_retry', 'clear_quarantine', 'set_config', 'set_identity', 'restart_room', 'set_mode', 'cancel'])
           if (!actions.has(body.action)) return json(400, { ok: false, error: `未知命令: ${body.action}` })
-          if (body.action === 'batch_decision' || body.action === 'batch_cancel') {
+          if (['batch_decision','batch_cancel','batch_reload','batch_retry'].includes(body.action)) {
             const a = body.args
             if (!a || !['session', 'peerSession', 'proposal'].every(k => typeof a[k] === 'string' && /^[a-f0-9]{32}$/.test(a[k])) || !/^[a-f0-9]{64}$/.test(a.digest) || (body.action === 'batch_decision' && typeof a.yes !== 'boolean')) return json(400, { ok: false, error: '补传提议标识或明确授权值无效' })
           }
@@ -1057,6 +1057,7 @@ export function apply(ctx, config) {
             ok: false, code: 'TRANSFER_PAUSED',
             error: '补传已暂停：旧协议缺少客人逐请求授权与整批完整性／回滚保障。正常联机及扩展体检仍可使用，缺包可能影响对局兼容性；安全补传协议完成前不允许 legacy 降级。',
           })
+          if(body.action==='batch_cancel'||body.action==='cancel')revokeBatch(nonameDir,body.action==='batch_cancel'?body.args:null)
           if (body.action === 'set_config' && body.args?.key === 'mqttUrl') {
             // 自定义信令服务器:ws(s):// 开头才收;存 noname-kit.json 跨游戏目录
             const url = String(body.args.value || '').trim().slice(0, 200)

@@ -78,6 +78,12 @@
 			case "batch_cancel":
 				if (nnk.modules.consent) nnk.modules.consent.cancel(args);
 				break;
+			case "batch_reload":
+				if (nnk.modules.batch && !nnk.modules.batch.reload(args)) emit("error", { message: "整批启用尚未完成或当前对局不允许重启。" });
+				break;
+			case "batch_retry":
+				if (nnk.modules.batch) nnk.modules.batch.retry(args);
+				break;
 			case "clear_quarantine":
 				if (nnk.modules.compat) {
 					nnk.modules.compat.clearQuarantine();
@@ -178,6 +184,8 @@
 					 * 工坊读 bridge.state.*,并跟着房间状态一起过期(30 秒宽限) */
 					state: Object.assign({}, state, {
 						batchProposals: nnk.modules.consent ? nnk.modules.consent.summaries() : [],
+						fileBatches: nnk.modules.batch ? nnk.modules.batch.snapshot() : [],
+						batchFilesPaused: !nnk.modules.batch || nnk.modules.batch.paused,
 						invites: (function() {
 							try {
 								var hs = nnk.state.host;

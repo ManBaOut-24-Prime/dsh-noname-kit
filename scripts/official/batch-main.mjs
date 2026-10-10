@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const label=process.argv.at(-1),batch=process.env.NNK_BATCH_PROBE||'b6';
-if(!['Old','Latest'].includes(label)||!['b6','b7'].includes(batch))throw new Error('Invalid probe selector');
+if(!['Old','Latest'].includes(label)||!['b6','b7','b8'].includes(batch))throw new Error('Invalid probe selector');
 const root=process.env.NNK_ENGINE_ROOT||testPaths.officialRoot(label);
 process.env.NNK_ENGINE_ROOT=root;process.env.NNK_SOURCE_ROOT||=fileURLToPath(new URL('../../',import.meta.url));
 const out=`${testPaths.logsDir()}/${batch}-official-${label}.json`;
@@ -18,7 +18,8 @@ app.whenReady().then(async()=>{
         if(pathname==='/__probe.html') {res.setHeader('Content-Type','text/html');const map=readFileSync(root+'/index.html','utf8').match(/<script type="importmap">[\s\S]*?<\/script>/)[0];return res.end('<!doctype html><html><head>'+map+'</head><body>Programmatic batch probe</body></html>')}
         const fixture=process.env.NNK_GATE_ROOT;
         const isFixture=batch==='b7'&&fixture&&pathname.startsWith('/extension/B7-');
-        const base=isFixture?fixture:root;
+        const isB8=batch==='b8'&&pathname.startsWith('/extension/B8-');
+        const base=isFixture?fixture:isB8?process.env.NNK_B8_ROOT+'/guest':root;
         const path=resolve(base,'.'+pathname);if(!path.startsWith(resolve(base)+'\\'))throw new Error('Invalid path');
         res.setHeader('Content-Type',extname(path)==='.js'?'text/javascript':'application/octet-stream');res.end(readFileSync(path));
       }catch(e){res.statusCode=404;res.end(e.message)}

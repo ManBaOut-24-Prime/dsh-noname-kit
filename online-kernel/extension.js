@@ -14,7 +14,7 @@
 	}
 	window.__nnkLoaded = true;
 	if (!window.__nnk__) {
-		window.__nnk__ = { version: "0.3.83", build: "b7-files-1", modules: {}, env: null, state: {} };
+		window.__nnk__ = { version: "0.3.84", build: "b8-batch-1", modules: {}, env: null, state: {} };
 	}
 
 	game.import("extension", function(lib, game, ui, get, ai, _status) {
@@ -50,7 +50,7 @@
 			document.head.appendChild(s);
 		});
 		nnk.state.bootStage = "mqtt-loaded";
-		var files = ["config", "rtc", "signaling", "host", "guest", "bridge", "compat", "consent", "manifest", "transfer"];
+		var files = ["config", "rtc", "signaling", "host", "guest", "bridge", "compat", "isolation", "consent", "batch", "manifest", "transfer"];
 		for (var i = 0; i < files.length; i++) {
 			var name = files[i];
 			if (nnk.modules[name]) {

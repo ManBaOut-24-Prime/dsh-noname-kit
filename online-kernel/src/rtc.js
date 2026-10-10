@@ -246,6 +246,7 @@
 			if (self._disposed) return;
 			self._lastIn = Date.now();
 			if (nnk.modules.consent && nnk.modules.consent.handle(self, e.data)) return;
+			if (nnk.modules.batch && nnk.modules.batch.handle(self, e.data)) return;
 			if (self.onmessage) {
 				self.onmessage({ data: e.data });
 			} else {
@@ -320,6 +321,7 @@
 		this._downHooks = [];
 		channel.onmessage = function(e) {
 			if (nnk.modules.consent && nnk.modules.consent.handle(self, e.data)) return;
+			if (nnk.modules.batch && nnk.modules.batch.handle(self, e.data)) return;
 			if (self.onmessage) {
 				self.onmessage(e.data);
 			}

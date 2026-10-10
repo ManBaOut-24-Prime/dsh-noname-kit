@@ -1,4 +1,5 @@
-/* B6: metadata-only protocol. No content transport, file writes or legacy fallback. */
+/* B6 authority protocol. B8 consumes local grants through private socket hooks;
+ * this module still carries metadata only, with no legacy fallback. */
 (function() {
 	var nnk = window.__nnk__;
 	var VERSION = 2, TTL = 120000, MAX_FILES = 4096, MAX_META = 1048576;
@@ -48,9 +49,10 @@
 		var q = p.proposal;
 		return { session: p.local, peerSession: p.remote, proposal: q.id, digest: q.digest, role: p.role,
 			status: q.status, source: q.source, batch: q.batch ? (summary ? { extensions: q.batch.extensions.map(function(e) { return { name: e.name, fileCount: e.files.length }; }), total: q.batch.total, count: q.batch.count } : JSON.parse(JSON.stringify(q.batch))) : null,
-			expires: q.expires, reason: q.reason || "", transferPaused: true };
+			expires: q.expires, reason: q.reason || "", transferPaused: !nnk.modules.batch || nnk.modules.batch.paused };
 	}
-	function changed(p) { var q = p.proposal; emit("batch_consent", { session: p.local, proposal: q.id, status: q.status, reason: q.reason || "" }); }
+	function changed(p) { var q = p.proposal; emit("batch_consent", { session: p.local, proposal: q.id, status: q.status, reason: q.reason || "" }); if (nnk.modules.batch) nnk.modules.batch.changed(p.socket); }
+	function hello(p) { return { role: p.role, files: nnk.modules.batch ? nnk.modules.batch.capability : 0 }; }
 	function send(p, kind, fields) {
 		if (p.closed || p.socket.channel.readyState !== "open") throw new Error("补传连接已断开");
 		p.socket.send(JSON.stringify(Object.assign({ nnk_batch: VERSION, kind: kind, from: p.local, to: p.remote }, fields || {})));
@@ -73,24 +75,28 @@
 		var p = peers.get(socket); if (!p || p.closed) return;
 		finish(p, "disconnected", "连接结束，授权失效", false); p.closed = true;
 		clearTimeout(p.helloTimer); live.delete(p);
+		if (nnk.modules.batch) nnk.modules.batch.detach(socket);
 	}
 	function attach(socket, role) {
 		if (peers.has(socket)) return;
 		var p = { socket: socket, role: role, local: id(), remote: null, closed: false, proposal: null, used: new Set() };
 		peers.set(socket, p); live.add(p); if (role === "guest") guest = p;
+		if (nnk.modules.batch) nnk.modules.batch.attach(socket, role);
 		socket.onDown(function() { detach(socket); });
 		// A single delayed hello lets both bridge constructors finish. No engine slots are replaced.
 		p.helloTimer = setTimeout(function() {
-			try { send(p, "hello", { role: role }); } catch (e) { /* channel not open yet */ }
+			try { send(p, "hello", hello(p)); } catch (e) { /* channel not open yet */ }
 		}, 0);
-		if (role === "guest") socket.onUp(function() { try { send(p, "hello", { role: role }); } catch (e) {} });
+		if (role === "guest") socket.onUp(function() { try { send(p, "hello", hello(p)); } catch (e) {} });
 	}
 	async function receive(p, m) {
 		if (m.nnk_batch !== VERSION) { finish(p, "failed", "对端协议版本不兼容", true); emit("batch_upgrade", { message: "双方需升级到支持批次授权的新内核；补传不降级。" }); return; }
 		if (m.kind === "hello") {
 			if (!validId(m.from) || m.role !== (p.role === "host" ? "guest" : "host")) return;
 			if (p.remote && p.remote !== m.from) { finish(p, "failed", "连接上的会话标识变化", true); return; }
-			if (!p.remote) { p.remote = m.from; send(p, "hello", { role: p.role }); }
+			if (p.files !== undefined && p.files !== (m.files === 1 ? 1 : 0)) { finish(p, "failed", "连接上的文件能力发生变化", true); return; }
+			p.files = m.files === 1 ? 1 : 0;
+			if (!p.remote) { p.remote = m.from; send(p, "hello", hello(p)); }
 			return;
 		}
 		if (!p.remote || m.from !== p.remote || m.to !== p.local) return;
@@ -197,7 +203,7 @@
 		var p = guest, q = p && p.proposal;
 		if (!p || p.closed || !q || q.status !== "pending" || Date.now() >= q.expires || typeof args.yes !== "boolean"
 			|| args.session !== p.local || args.peerSession !== p.remote || args.proposal !== q.id || args.digest !== q.digest) return false;
-		q.status = args.yes ? "accepting" : "rejecting";
+		q.choice = args.yes; q.status = args.yes ? "accepting" : "rejecting";
 		changed(p);
 		var attempts = 0;
 		function deliver() {
@@ -218,7 +224,16 @@
 		}
 		return false;
 	}
+	function retry(socket,args) {
+		var p=peers.get(socket),q=p && p.proposal;
+		if(!p || p.closed || p.role!=="host" || !q || !q.batch || q.status==="declined" || args.session!==p.local || args.peerSession!==p.remote || args.proposal!==q.id || args.digest!==q.digest)return false;
+		finish(p,"cancelled","房主明确重新提议，须再次授权",true);p.lastOffered=null;
+		return propose(socket,q.batch.extensions.map(function(e){return e.name}));
+	}
 	nnk.modules.consent = { attach: attach, detach: detach, handle: handle, propose: propose, decide: decide, cancel: cancel,
+		retry: retry,
+		authorization: function(socket) { var p=peers.get(socket), q=p && p.proposal; return p && !p.closed && q && q.status === "authorized_paused" && q.choice === true && Date.now() < q.expires ? view(p, false) : null; },
+		fileCapable: function(socket) { var p=peers.get(socket); return !!(p && p.files === 1); },
 		cancelAll: function() { live.forEach(function(p) { finish(p, "cancelled", "用户取消", true); }); },
 		snapshot: function() { return Array.from(live).concat(guest && !live.has(guest) ? [guest] : []).map(function(p) { return view(p, false); }).filter(Boolean); },
 		summaries: function() { return Array.from(live).concat(guest && !live.has(guest) ? [guest] : []).map(function(p) { return view(p, true); }).filter(Boolean); },

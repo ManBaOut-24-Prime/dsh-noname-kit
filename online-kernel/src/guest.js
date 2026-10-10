@@ -83,6 +83,10 @@
 		if (!session || !session.fake || (env.game.online && !force)) {
 			return;
 		}
+		if (nnk.modules.batch && !nnk.modules.batch.canEnter(session.fake)) {
+			bridgeApi().emit("info", { message: "补传事务正在处理或整批文件已更新；请先完成恢复／启用，并在对局结束后重启游戏再加入。当前通道保留。" });
+			return;
+		}
 		if (nnk.modules.compat) {
 			nnk.modules.compat.unlockPacks();   /* 本地扩展包进联机选将池(闸2) */
 			nnk.modules.compat.dumpExtensions();   /* 透视:本次联机实际加载/跳过了哪些扩展 */

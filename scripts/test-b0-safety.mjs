@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import testPaths from './fixtures/test-paths.cjs';
 /* B0 行为回归:执行真实入口代码,所有传输/文件系统/游戏均为内存桩。
  * 不执行 shell,不安装内核,不写任何游戏目录。不是完整 DSH/Electron 集成测试。 */
 import assert from 'node:assert/strict'
@@ -238,6 +239,7 @@ async function command(action) {
     req: { method: 'POST' }, url: { pathname: '/noname-kit-api/online/command' },
     readBody: async () => ({ action, args: { name: '包' } }), json: (status, body) => ({ status, body }),
     bridge: { pushCommand: (a, args) => { pushes.push({ a, args }); return { id: 1 } } },
+    nonameDir:testPaths.testPath("temp/b0-no-batch"),revokeBatch:()=>false,
   })
   return { result: await fn(), pushes }
 }
@@ -282,7 +284,7 @@ for (const host of [true, false]) test('体检卡片 ' + (host ? '主机' : '客
 
 const current = { online: true, kernelVersion: bundledKernelVersion(), kernelBuild: bundledKernelBuild(), transferPaused: true, bootStage: 'ready' }
 test('安装与运行版本具有独立 B0 标识', () => {
-  assert.equal(current.kernelVersion, '0.3.83')
+  assert.equal(current.kernelVersion, '0.3.84')
   assert.equal(current.kernelBuild, bundledKernelBuild())
   assert.ok(current.kernelBuild)
   assert.equal(kernelRuntimeStatus({ state: 'ok' }, current), 'b0_active')

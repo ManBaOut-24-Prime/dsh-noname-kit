@@ -1310,7 +1310,7 @@ window.__ModuleLoader__.load({
         fetch('/noname-kit-api/online/batch/recover', {method:'POST'})
           .then(function(r) {return r.json()})
           .then(function(d) {
-            setNote(d.status==='committed' ? '✅ 完整新版批次已恢复。请在没有进行中对局时重启游戏。' : d.status==='rolled_back' || d.status==='none' ? '✅ 已恢复整批旧文件。' : '❌ 恢复尚未完成：'+(d.error || '批次仍在使用中，请等待或完全退出原游戏进程后重试。'));
+            setNote(d.status==='committed' ? '完整新版文件已恢复；启用状态需检查。请核对本批全部扩展并启用，在没有进行中对局时重启游戏：'+((d.batch && d.batch.extensions)||[]).map(function(e){return e.name}).join('、') : d.status==='rolled_back' ? '✅ 已恢复整批旧文件。' : d.status==='none' ? '当前没有待恢复批次。' : '❌ 恢复尚未完成：'+(d.error || '批次仍在使用中，请等待或完全退出原游戏进程后重试。'));
           }, function() {setNote('❌ 插件服务不可达');})
           .then(function() {setInstallBusy(false);});
       };
@@ -1489,10 +1489,13 @@ window.__ModuleLoader__.load({
 
       function renderBatchProposals() {
         var proposals = (bridge.state && bridge.state.batchProposals) || [];
-        var labels = { preparing: '正在核验提议', pending: '等待客人选择', accepting: '等待房主确认授权', rejecting: '等待房主确认拒绝', authorized_paused: '本批已授权；文件发送仍暂停', declined: '已拒绝', cancelled: '已取消', expired: '已超时', disconnected: '连接结束，授权失效', failed: '提议失败' };
+        var labels = { preparing: '正在核验提议', pending: '等待客人选择', accepting: '等待房主确认授权', rejecting: '等待房主确认拒绝', authorized_paused: '本批已授权；等待文件协议', declined: '已拒绝', cancelled: '已取消', expired: '已超时', disconnected: '连接结束，授权失效', failed: '提议失败' };
+        var fileBatches=(bridge.state && bridge.state.fileBatches)||[];
+        var fileLabels={starting:'准备完整事务',waiting_receiver:'等待客人准备接收',receiving:'接收至独立暂存区',sending:'发送已授权文件',committing:'核验并提交整批文件',committed:'整批文件已提交并启用',committed_activation_required:'整批文件已提交，启用尚未完成',unknown:'最终回执未收到，客人提交结果待确认',recovery_required:'必须先完成离线恢复',failed:'文件事务失败',cancelled:'文件事务已取消',expired:'文件授权已超时',disconnected:'文件连接已断开'};
         return proposals.map(function (q) {
           var binding = { session: q.session, peerSession: q.peerSession, proposal: q.proposal, digest: q.digest };
           var batch = q.batch || { extensions: [], total: 0, count: 0 };
+          var file=fileBatches.find(function(f){return f.session===q.session && f.proposal===q.proposal && f.digest===q.digest});
           var choice = bridgeOnline && q.role === 'guest' && q.status === 'pending';
           var cancellable = bridgeOnline && ['pending', 'accepting', 'rejecting', 'authorized_paused'].indexOf(q.status) >= 0;
           return h('div', { className: 'nnk-card', key: q.session + q.proposal },
@@ -1500,7 +1503,11 @@ window.__ModuleLoader__.load({
             e('div', 'nnk-hint', '来源：' + q.source + ' · ' + batch.extensions.length + ' 个扩展 · ' + batch.count + ' 个文件 · ' + batch.total + ' 字节'),
             batch.extensions.map(function (ext) { return e('div', 'nnk-break', ext.name + '（' + (ext.files ? ext.files.length : ext.fileCount) + ' 个文件）'); }),
             e('div', 'nnk-err', '扩展可执行代码。是否信任房主并授权这一完整批次？点击“是”仅授权当前提议，不授权后续批次。文件事务安全验证完成前不会发送文件，也不会写入游戏目录。'),
-            e('div', 'nnk-hint', labels[q.status] || '未知状态'),
+            e('div', 'nnk-hint', file ? (fileLabels[file.status]||file.status)+' · '+file.received+'/'+file.total+' 字节' : labels[q.status] || '未知状态'),
+            bridge.state && bridge.state.batchFilesPaused ? e('div','nnk-hint','新文件通路仍待独立审查与最终回归，当前保持暂停。') : null,
+            file && file.reason ? e('div','nnk-hint',file.reason) : null,
+            file && file.role==='guest' && file.status==='committed' ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('batch_reload',binding)}},'重启游戏并重新体检') : null,
+            file && file.role==='host' && ['failed','cancelled','expired'].indexOf(file.status)>=0 ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('batch_retry',binding)}},'重新提议并请求授权') : null,
             q.reason ? e('div', 'nnk-hint', q.reason) : null,
             choice ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: true })); } }, '是') : null,
             choice ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: false })); } }, '否') : null,

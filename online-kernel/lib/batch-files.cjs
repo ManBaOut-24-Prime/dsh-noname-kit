@@ -35,6 +35,14 @@ function rootOf(root){
 }
 function durable(file,bytes,flags='wx'){const fd=fs.openSync(file,flags);try{let n=0;while(n<bytes.length)n+=fs.writeSync(fd,bytes,n,bytes.length-n);fs.fsyncSync(fd)}finally{fs.closeSync(fd)}}
 function helperEnvironment(extra={}){const env={SystemRoot:process.env.SystemRoot,...extra};for(const key of ['TEMP','TMP','PATH','WINDIR','USERPROFILE'])if(process.env[key])env[key]=process.env[key];return env}
+// Chromium renderer contexts may lack SharedArrayBuffer or forbid Atomics.wait.
+// Keep synchronous publication/cancellation checks, using the existing platform
+// runtime for its short readiness waits rather than changing engine/browser flags.
+function pause(ms){
+  if(process.type!=='renderer'&&typeof SharedArrayBuffer!=='undefined'){Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,ms);return}
+  const r=spawnSync(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-Command','[Threading.Thread]::Sleep('+ms+')'],{env:helperEnvironment(),stdio:'ignore',windowsHide:true,timeout:5000});
+  if(r.error||r.status!==0)fail('Native lease readiness wait failed');
+}
 function lease(root,ordinary=false){
   const base=path.join(root,BASE);if(!fs.existsSync(base))fs.mkdirSync(base);identity(base);
   const folder=path.join(base,'leases');if(!fs.existsSync(folder))fs.mkdirSync(folder);identity(folder);
@@ -43,15 +51,15 @@ function lease(root,ordinary=false){
   durable(control,Buffer.alloc(1));durable(request,Buffer.from(JSON.stringify({root,lock,ready,control,done,active:path.join(base,'active'),pid:process.pid,ordinary})));
   const script=LOCK_SCRIPT;
   const child=spawn(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-Command','& { '+script+' } $env:NNK_BATCH_LOCK_REQUEST'],{env:helperEnvironment({NNK_BATCH_LOCK_REQUEST:request}),stdio:'ignore',windowsHide:true});child.unref();
-  const deadline=Date.now()+6000,pause=new Int32Array(new SharedArrayBuffer(4));
-  while(!fs.existsSync(ready)&&Date.now()<deadline)Atomics.wait(pause,0,0,25);
+  const deadline=Date.now()+6000;
+  while(!fs.existsSync(ready)&&Date.now()<deadline)pause(25);
   if(!fs.existsSync(ready)){child.kill();fail('Filesystem lease did not start')}
   let response;try{response=readJSON(ready,4096)}catch(error){child.kill();throw error}if(response.ok!==true){child.kill();fail(response.error||'Filesystem lease rejected')}
   if(response.unsupported)return {release:()=>{},check:()=>{},pid:null};
   return {release:()=>{
     const fd=fs.openSync(control,'r+');try{fs.writeSync(fd,Buffer.from([1]),0,1,0)}finally{fs.closeSync(fd)}
-    const until=Date.now()+3000;while(!fs.existsSync(done)&&Date.now()<until)Atomics.wait(pause,0,0,10);
-    child.kill();while(alive(child.pid)&&Date.now()<until)Atomics.wait(pause,0,0,10);
+    const until=Date.now()+3000;while(!fs.existsSync(done)&&Date.now()<until)pause(10);
+    child.kill();while(alive(child.pid)&&Date.now()<until)pause(10);
     if(!fs.existsSync(done)||alive(child.pid))fail('Filesystem lease helper did not stop');
   },check:()=>{if(!alive(child.pid))fail('Filesystem lease ended')},pid:child.pid,born:response.started,ownerId:response.ownerId,ownerAlive:response.ownerAlive};
 }
@@ -186,16 +194,35 @@ class Transaction{
     durable(path.join(this.folder,'owner.json'),Buffer.from(JSON.stringify({v:1,id:this.id,pid:process.pid,born:this.lock.born})));
     fs.linkSync(path.join(this.folder,'owner.json'),path.join(base,'active'));
     for(const ext of this.batch.extensions)for(const file of ext.files)this.files.push({name:ext.name,...file});
-    this.received=new Set();this.descriptor=null;
+    this.received=new Set();this.streams=new Map();this.descriptor=null;
     }catch(error){this.lock.release();throw error}
   }
   current(){this.lock.check();const a=active(this.root);if(!a||a.owner.id!==this.id||a.owner.pid!==process.pid||a.owner.born!==this.lock.born)fail('Transaction ownership changed')}
   putFile(index,bytes){
     this.current();
     if(this.closed||this.state.phase!=='receiving'||!Number.isInteger(index)||!this.files[index])fail('Attempt is not receiving');
+    if(this.streams.has(index))fail('Cannot mix whole-file and streaming writes');
     const f=this.files[index];if(!Buffer.isBuffer(bytes))bytes=Buffer.from(bytes);if(bytes.length!==f.size||sha(bytes)!==f.sha256)fail('File SHA-256/size mismatch');
     const dest=path.join(this.folder,'received',f.name,...f.path.split('/'));if(this.received.has(index)){if(hashFile(dest)!==f.sha256)fail('Duplicate content changed');return}
     fs.mkdirSync(path.dirname(dest),{recursive:true});durable(dest,bytes);this.received.add(index);this.hook?.('received:'+index);
+  }
+  /** B8 chunks name only a manifest index. No incoming path is used for I/O. */
+  putChunk(index,offset,bytes,end){
+    this.current();if(this.closed||this.state.phase!=='receiving'||!Number.isInteger(index)||!this.files[index]||!Number.isSafeInteger(offset)||offset<0||typeof end!=='boolean'||!Buffer.isBuffer(bytes)||bytes.length>32768)fail('Invalid bounded chunk');
+    const f=this.files[index],dest=path.join(this.folder,'received',f.name,...f.path.split('/'));
+    if(offset+bytes.length>f.size||end&&offset+bytes.length!==f.size||!end&&(bytes.length===0||offset+bytes.length===f.size))fail('Chunk outside file');
+    let stream=this.streams.get(index);
+    if(this.received.has(index)||stream&&offset<stream.offset){
+      if(!this.received.has(index)&&offset+bytes.length>stream.offset)fail('Overlapping chunk');
+      const fd=this.received.has(index)?fs.openSync(dest,'r'):stream.fd,previous=Buffer.alloc(bytes.length);
+      try{if(fs.readSync(fd,previous,0,bytes.length,offset)!==bytes.length||!previous.equals(bytes))fail('Conflicting duplicate chunk')}finally{if(this.received.has(index))fs.closeSync(fd)}
+      return {offset:this.received.has(index)?f.size:stream.offset,complete:this.received.has(index)};
+    }
+    if(!stream){if(offset!==0||this.streams.size>=16)fail('Chunk starts out of order');fs.mkdirSync(path.dirname(dest),{recursive:true});stream={fd:fs.openSync(dest,'wx+'),offset:0};this.streams.set(index,stream)}
+    if(offset!==stream.offset)fail('Chunk offset out of order');
+    let written=0;while(written<bytes.length)written+=fs.writeSync(stream.fd,bytes,written,bytes.length-written,offset+written);stream.offset+=bytes.length;
+    if(end){fs.fsyncSync(stream.fd);fs.closeSync(stream.fd);this.streams.delete(index);if(hashFile(dest)!==f.sha256)fail('File SHA-256 mismatch');this.received.add(index);this.hook?.('received:'+index)}
+    return {offset:stream.offset,complete:this.received.has(index)};
   }
   prepare(){
     this.current();if(this.closed||this.state.phase!=='receiving'||this.received.size!==this.files.length)fail('Full authorized batch has not arrived');
@@ -225,6 +252,7 @@ class Transaction{
   commit(stillAuthorized){
     this.current();
     if(this.closed||this.state.phase!=='prepared'||typeof stillAuthorized!=='function'||!stillAuthorized())fail('Authorization is no longer current');
+    let published=null;
     try{
       const d=this.descriptor,freeze=[];
       for(const e of d.entries){const p=positions(this.root,this.folder,e);if(identity(p.target)!==e.oldId||identity(p.next)!==e.nextId)fail('Directory changed before commit')}
@@ -245,14 +273,18 @@ class Transaction{
       }
       if(!stillAuthorized())fail('Authorization ended before commit');
       this.state=stateWrite(this.folder,this.state,'committed',this.hash,this.hook);
-      const result=recover(this.root,{owned:true,expectedId:this.id,lock:this.lock,hook:this.hook});this.closed=true;this.lock.release();return result;
+      const result=recover(this.root,{owned:true,expectedId:this.id,lock:this.lock,hook:this.hook});published=result;this.closed=true;this.lock.release();return result;
     }catch(error){
+      // Publication is already durable and visible. A helper cleanup error must
+      // not relabel it rolled back, clear a later owner's record or allow reuse
+      // of old in-memory extensions. Retain the commit truth and report cleanup.
+      if(published?.status==='committed')return {...published,warning:'整批文件已提交，租约收尾需确认：'+error.message};
       try{const result=recover(this.root,{owned:true,expectedId:this.id,lock:this.lock});this.closed=true;error.outcome=result;this.lock.release();if(result.status==='committed')return result}
       catch(recoveryError){error.outcome={status:'recovery_required',id:this.id,error:recoveryError.message}}
       throw error;
     }
   }
-  abort(){if(this.closed)return {status:'closed'};this.current();try{const result=recover(this.root,{owned:true,expectedId:this.id,lock:this.lock});this.closed=true;return result}finally{this.lock.release()}}
+  abort(){if(this.closed)return {status:'closed'};this.current();for(const stream of this.streams.values())fs.closeSync(stream.fd);this.streams.clear();try{const result=recover(this.root,{owned:true,expectedId:this.id,lock:this.lock});this.closed=true;return result}finally{this.lock.release()}}
 }
 function inspect(root){root=rootOf(root);const a=active(root);if(!a)return {status:'none'};return {status:['complete','rolled_back'].includes(a.state.phase)?a.state.phase:'pending',id:a.owner.id,phase:a.state.phase,ownerAlive:alive(a.owner.pid),binding:a.state.descriptorHash?descriptorAt(a).binding:null}}
 module.exports={Transaction,recover,inspect,normalize,manifestDigest:batch=>sha(Buffer.from(JSON.stringify(normalize(batch)))),acquireWriteLease:root=>lease(fs.realpathSync.native(root),true),_test:{tree,stateRead,acl,capture,rowsAt}};
