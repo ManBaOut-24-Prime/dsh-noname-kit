@@ -1,4 +1,17 @@
 {
   "version": 1,
-  "reviewedBinary": {}
+  "reviewedBinary": {
+    "docs/screenshots/workshop.png": {
+      "sha256": "585ee4d0cf7d73dbc2fd9ea3aec75c323b64416d783972e922d8a41dda4fb65f",
+      "reason": "Original upstream product workshop screenshot; visually reviewed, no credentials or private working records."
+    },
+    "docs/screenshots/history.png": {
+      "sha256": "a9fbfe55932232e6c8b0afb4ee49c94be5d147fbc1805a295c4f669c6c262c22",
+      "reason": "Original upstream product history screenshot; visually reviewed, no credentials or private working records."
+    },
+    "docs/screenshots/online.png": {
+      "sha256": "1f75934f2c96dddf38536a871b7bb7af05a732728227937737b51e588026da22",
+      "reason": "Original upstream product online screenshot; visually reviewed, no credentials or private working records."
+    }
+  }
 }
