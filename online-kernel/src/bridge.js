@@ -76,13 +76,14 @@
 				if (nnk.modules.consent && !nnk.modules.consent.decide(args)) emit("error", { message: "提议已失效，授权未生效。" });
 				break;
 			case "batch_cancel":
-				if (nnk.modules.consent) nnk.modules.consent.cancel(args);
+				if (nnk.modules.batch && nnk.modules.batch.cancel) nnk.modules.batch.cancel(args);
+				else if (nnk.modules.consent) nnk.modules.consent.cancel(args);
 				break;
 			case "batch_reload":
 				if (nnk.modules.batch && !nnk.modules.batch.reload(args)) emit("error", { message: "整批启用尚未完成或当前对局不允许重启。" });
 				break;
 			case "batch_retry":
-				if (nnk.modules.batch) nnk.modules.batch.retry(args);
+				if (nnk.modules.batch) Promise.resolve(nnk.modules.batch.retry(args)).then(function(ok){if(!ok)emit("error",{message:"本批文件已提交、结果待确认或提议不允许重新补传；不会重新下载。"});}).catch(function(err){emit("error",{message:"重新补传未启动："+err.message});});
 				break;
             case "manifest_recheck":
                 if (nnk.modules.manifest) nnk.modules.manifest.recheck();

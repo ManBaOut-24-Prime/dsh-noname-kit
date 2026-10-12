@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const core=require('./batch-files.cjs'),{Channel}=require('./batch-wire.cjs');
+const core=require('./batch-files.cjs'),{Channel,VERSION}=require('./batch-wire.cjs');
 const keys=['session','peerSession','proposal','digest'];
 const matches=(a,b)=>a&&b&&keys.every(k=>a[k]===b[k]);
 function hashFd(fd){const h=crypto.createHash('sha256'),b=Buffer.alloc(65536);let n;while((n=fs.readSync(fd,b,0,b.length,null)))h.update(b.subarray(0,n));return h.digest('hex')}
@@ -72,24 +72,27 @@ function createRuntime(nnk,{enabled=false,storage,activateBatch=names=>activate(
   function receiver(grant,socket){validRuntime(nnk);checkBatch(grant.batch);
     if(needsReload)throw Error('已有整批文件完成提交，须先重启并重新体检再补传');
     const tx=new core.Transaction(root(),grant.batch,Object.fromEntries(keys.map(k=>[k,grant[k]])),coreOptions);
+    let committedResult=null;
     try{durable(path.join(tx.folder,'grant.json'),JSON.stringify(Object.fromEntries(keys.map(k=>[k,grant[k]]))));durable(path.join(tx.folder,'cancel.bin'),Buffer.from([0]))}
     catch(error){try{tx.abort()}catch(recoveryError){error.code='BATCH_RECOVERY_REQUIRED';error.message+='；恢复未完成：'+recoveryError.message}throw error}
     function authorized(){const a=nnk.modules.consent.authorization(socket);return matches(a,grant)&&Date.now()<grant.expires&&socket.channel.readyState==='open'&&idle(nnk)&&fs.readFileSync(path.join(tx.folder,'cancel.bin'))[0]===0}
     function classify(error){if(error.outcome?.status==='recovery_required')error.code='BATCH_RECOVERY_REQUIRED';else if(fs.readFileSync(path.join(tx.folder,'cancel.bin'))[0]===1)error.code='BATCH_CANCELLED';else if(Date.now()>=grant.expires)error.code='BATCH_EXPIRED';return error}
     return {chunk(index,offset,bytes,end){try{if(!authorized())throw Error('文件接收授权已经失效');return tx.putChunk(index,offset,bytes,end)}catch(error){throw classify(error)}},
-      async commit(isLive){let result;try{if(!isLive()||!authorized())throw Error('整批提交授权已经失效');tx.prepare();result=observe(tx.commit(()=>isLive()&&authorized()))}catch(error){throw classify(error)}
+      async commit(isLive,onCommitted){let result;try{if(!isLive()||!authorized())throw Error('整批提交授权已经失效');tx.prepare();result=observe(tx.commit(()=>isLive()&&authorized()));committedResult=result}catch(error){throw classify(error)}
         needsReload=true;
+        onCommitted?.(result);
         if(result.warning)return {activated:false,reason:result.warning};
         if(!authorized())return {activated:false,reason:'整批文件已提交，随后授权结束；尚未自动启用。请检查完整批次并在对局结束后重启。'};
         try{await activateBatch(grant.batch.extensions.map(e=>e.name));return {activated:true,reason:'文件已整批提交并启用；重启游戏后重新体检，当前缺包提示不会提前清除。'}}
         catch(error){return {activated:false,reason:'整批文件已提交，启用配置未完成：'+error.message+'。请检查后启用并重启。'}}
-      },abort(){return observe(tx.abort())}};
+      },abort(){return committedResult||observe(tx.abort())}};
   }
-  function remember(q){if(!q)return;history.set(q.session+':'+q.proposal,q);while(history.size>16)history.delete(history.keys().next().value)}
+  function batchKey(q){return keys.map(k=>q[k]).join(':')}
+  function remember(q){if(!q)return;history.set(batchKey(q),q);while(history.size>16){const key=[...history].find(([,v])=>!(v.role==='guest'&&v.fileCommitted))?.[0];if(!key)break;history.delete(key)}}
   function release(c){const done=c.close();live.delete(c);const save=()=>remember(c.snapshot());save();Promise.resolve(done).then(save,save)}
   function attach(socket,role){if(channels.has(socket))return;const c=new Channel({role,authorize:()=>nnk.modules.consent.authorization(socket),
     send:raw=>{if(socket.channel.readyState!=='open')throw Error('文件通道已关闭');if(socket.channel.bufferedAmount>2*1048576)throw Error('文件通道积压超过上限');socket.send(raw)},
-    source,receiver:g=>receiver(g,socket),report:s=>{emit('batch_files',s);if(!live.has(c))remember(s);setTimeout(()=>nnk.modules.guest?.resumeEntry?.(socket),0)}});channels.set(socket,c);sockets.set(c,socket);live.add(c);socket.onDown(()=>release(c))}
+    source,receiver:g=>receiver(g,socket),report:s=>{emit('batch_files',s);remember(s);setTimeout(()=>nnk.modules.guest?.resumeEntry?.(socket),0)}});channels.set(socket,c);sockets.set(c,socket);live.add(c);socket.onDown(()=>release(c))}
   function changed(socket){const c=channels.get(socket);if(!c)return;
     const grant=nnk.modules.consent.authorization(socket);
     if(!grant){c.stop('cancelled','提议授权已终止');setTimeout(()=>nnk.modules.guest?.resumeEntry?.(socket),0);return}
@@ -97,21 +100,27 @@ function createRuntime(nnk,{enabled=false,storage,activateBatch=names=>activate(
     if(!nnk.modules.consent.fileCapable(socket)){emit('batch_upgrade',{message:'对端未协商整批文件协议，补传停止且不降级。'});return}
     c.granted();
   }
-  function reload(binding){for(const c of live){const q=c.snapshot();if(matches(q,binding)&&c.role==='guest'&&q.status==='committed'){
+  function snapshots(){const all=new Map(history);for(const c of live){const q=c.snapshot();if(q)all.set(batchKey(q),q)}return [...all.values()]}
+  function reload(binding){for(const q of snapshots()){if(matches(q,binding)&&q.role==='guest'&&q.status==='committed'){
       if(!rootReady()||!idle(nnk)){emit('error',{message:'对局或文件恢复正在进行，不能重启游戏。'});return false}
+      if(q.transactionId&&core.generation(root())!==q.transactionId)return false;
       // Activation has completed before this button becomes available.
       nnk.env.game.reload();return true;
     }}return false}
-  function retry(binding){for(const c of live){const q=c.snapshot();if(c.role==='host'&&matches(q,binding))return ['failed','cancelled','expired'].includes(q.status)?nnk.modules.consent.retry(sockets.get(c),binding):false}return nnk.modules.consent.retryPending(binding)}
+  function canCancel(binding){return !snapshots().some(q=>matches(q,binding)&&(q.fileCommitted||['activation_pending','committed','committed_activation_required','unknown','recovery_required'].includes(q.status)))}
+  function cancel(binding){if(!canCancel(binding)){emit('error',{message:'文件已提交或结果待确认，不能撤销文件更新；请等待启用结果或完成恢复。'});return false}return nnk.modules.consent.cancel(binding)}
+  function canRetry(binding){if(needsReload)return false;const q=snapshots().find(q=>matches(q,binding));return !q||!q.fileCommitted&&['failed','cancelled','expired'].includes(q.status)}
+  function canPropose(socket){const q=channels.get(socket)?.snapshot();return !needsReload&&(!q||!q.fileCommitted&&!['activation_pending','committed','committed_activation_required','unknown','recovery_required'].includes(q.status))}
+  function retry(binding){if(!canRetry(binding))return false;for(const c of live){const q=c.snapshot();if(c.role==='host'&&matches(q,binding))return nnk.modules.consent.retry(sockets.get(c),binding)}return nnk.modules.consent.retryPending(binding)}
   function canEnter(socket){const file=channels.get(socket)?.snapshot(),status=file?.status;
     const pending=enabled&&nnk.modules.consent.waiting?.(socket)&&!(matches(file,nnk.modules.consent.current(socket))&&['failed','cancelled','expired','disconnected'].includes(status));
     return rootReady()&&!needsReload&&!['starting','receiving','committing'].includes(status)&&!pending;
   }
-  function canStart(){return rootReady()&&!needsReload&&![...live].some(c=>['starting','waiting_receiver','sending','receiving','committing'].includes(c.snapshot()?.status))}
-  return {capability:enabled?1:0,paused:!enabled,attach,changed,retry,detach:socket=>{const c=channels.get(socket);if(c)release(c)},
+  function canStart(){return rootReady()&&!needsReload&&![...live].some(c=>['starting','waiting_receiver','sending','receiving','committing','activation_pending'].includes(c.snapshot()?.status))}
+  return {capability:enabled?VERSION:0,paused:!enabled,attach,changed,retry,cancel,canCancel,canRetry,canPropose,detach:socket=>{const c=channels.get(socket);if(c)release(c)},
     canEnter,canStart,
     recover:()=>observe(core.recover(root())),
     handle:(socket,raw)=>{const c=channels.get(socket);if(c)return c.handle(raw);return typeof raw==='string'&&raw.includes('"nnk_files"')},
-    snapshot:()=>[...history.values(),...Array.from(live).map(c=>c.snapshot()).filter(Boolean)],reload};
+    snapshot:snapshots,reload};
 }
 module.exports={createRuntime,activate,idle,stage,matches};

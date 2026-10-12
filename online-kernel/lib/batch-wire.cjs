@@ -1,7 +1,9 @@
 'use strict';
 // Content frames are separate from B6 consent and the native game protocol.
 // Adapters provide current consent, disk operations and profile activation.
-const VERSION=1,CHUNK=32768,MAX_FRAME=65536,WINDOW=8,RETRY_MS=1500,RETRIES=5;
+// v2 separates durable publication from activation completion. v1 peers must
+// negotiate an upgrade rather than interpreting pending activation as failure.
+const VERSION=2,CHUNK=32768,MAX_FRAME=65536,WINDOW=8,RETRY_MS=1500,RETRIES=5;
 const crypto=require('node:crypto');
 const nodeTimers=require('node:timers');
 const terminal=new Set(['committed','committed_activation_required','cancelled','failed','expired','disconnected','recovery_required','unknown']);
@@ -12,21 +14,32 @@ class Channel {
   matches(a,b){return a&&b&&['session','peerSession','proposal','digest'].every(k=>a[k]===b[k])}
   currentGrant(){const a=this.authorize();return a&&a.expires>this.now()?a:null}
   frame(ctx,kind,fields={}){if(this.closed)throw Error('File channel closed');this.send(JSON.stringify({nnk_files:VERSION,from:ctx.grant.session,to:ctx.grant.peerSession,proposal:ctx.grant.proposal,digest:ctx.grant.digest,kind,...fields}))}
-  state(ctx,status,reason=''){ctx.status=status;ctx.reason=String(reason).slice(0,200);try{this.report(this.snapshot())}catch(error){/* A UI listener cannot stop resource cleanup. */}}
-  snapshot(){const c=this.current;return c?{...c.grant,batch:undefined,status:c.status,reason:c.reason||'',received:c.received||0,total:c.grant.batch.total,role:this.role}:null}
-  live(ctx){return !this.closed&&this.current===ctx&&!terminal.has(ctx.status)&&this.matches(ctx.grant,this.currentGrant())}
+  state(ctx,status,reason=''){if(ctx.fileCommitted&&['cancelled','failed','expired','disconnected'].includes(status))return;ctx.status=status;ctx.reason=String(reason).slice(0,200);try{this.report(this.snapshot(ctx))}catch(error){/* A UI listener cannot stop resource cleanup. */}}
+  snapshot(c=this.current){return c?{...c.grant,batch:{extensions:c.grant.batch.extensions.map(e=>({name:e.name,fileCount:e.files.length})),count:c.grant.batch.count,total:c.grant.batch.total},status:c.status,reason:c.reason||'',received:c.received||0,total:c.grant.batch.total,role:this.role,fileCommitted:!!c.fileCommitted,transactionId:c.transactionId}:null}
+  live(ctx){return !this.closed&&!ctx.fileCommitted&&this.current===ctx&&!terminal.has(ctx.status)&&this.matches(ctx.grant,this.currentGrant())}
+  committed(ctx,result={}){
+    ctx.fileCommitted=true;ctx.transactionId=result.id||ctx.transactionId;this.clear(ctx);
+    this.state(ctx,'activation_pending','文件已同步，正在保存扩展启用配置；文件更新已不可撤销。');
+    if(!this.closed&&this.current===ctx)this.retry(ctx,'activation',{kind:'result'},()=>this.frame(ctx,'result',{status:'activation_pending',reason:ctx.reason}));
+  }
   clear(ctx){for(const item of ctx.pending.values())this.timers.clearTimeout(item.timer);ctx.pending.clear();this.timers.clearTimeout(ctx.deadline)}
   async stop(status='cancelled',reason='授权已结束'){
     const ctx=this.current;if(!ctx||terminal.has(ctx.status))return;
+    if(ctx.fileCommitted){
+      if(this.role==='guest')try{this.frame(ctx,'result',{status:ctx.status,reason:ctx.reason})}catch(error){/* The bound activation task keeps its outcome after disconnect. */}
+      else if(status==='disconnected'){this.clear(ctx);this.state(ctx,'committed_activation_required','文件已同步，连接已结束；客人启用结果待确认。')}
+      return;
+    }
     this.state(ctx,this.role==='host'&&ctx.finishSent?'unknown':status,reason);this.clear(ctx);
     try{await ctx.source?.close?.()}catch(error){/* Sender read handles are best effort after termination. */}
-    try{const result=await ctx.receiver?.abort?.();if(result?.status==='committed')this.state(ctx,'committed_activation_required','文件已经整批提交，启用状态须确认')}
+    try{const result=await ctx.receiver?.abort?.();if(result?.status==='committed'){ctx.fileCommitted=true;ctx.transactionId=result.id;this.state(ctx,'committed_activation_required','文件已经整批提交，启用状态须确认；请检查所列扩展并启用、重启，无需重新下载。')}}
     catch(error){this.state(ctx,'recovery_required',error.message)}
     try{this.frame(ctx,this.role==='host'?'cancel':'result',{status:ctx.status,reason:ctx.reason})}catch(error){/* Peer expiry closes its own attempt. */}
   }
   close(){const done=this.stop('disconnected','连接结束，旧授权不复用');this.closed=true;if(this.current)this.clear(this.current);return done}
   async granted(){
     const grant=this.currentGrant();if(!grant||this.closed)return;
+    if(this.current&&(this.current.fileCommitted||['unknown','recovery_required'].includes(this.current.status)||this.current.finishSent&&!terminal.has(this.current.status)))return;
     if(this.current&&this.matches(this.current.grant,grant))return;
     await this.stop('cancelled','提议已更换');
     if(!this.matches(grant,this.currentGrant())||this.closed)return;
@@ -64,12 +77,17 @@ class Channel {
   async receive(ctx,m){
     if(this.current!==ctx||this.closed)return;
     if(m.kind==='result'&&this.role==='host'){
-      if(!['committed','committed_activation_required','failed','cancelled','expired','recovery_required','disconnected'].includes(m.status))throw Error('Invalid batch outcome');
-      if(m.status.startsWith('committed')&&!ctx.finishSent)throw Error('Premature successful result');
+      if(!['activation_pending','committed','committed_activation_required','failed','cancelled','expired','recovery_required','disconnected'].includes(m.status))throw Error('Invalid batch outcome');
+      if((m.status==='activation_pending'||m.status.startsWith('committed'))&&!ctx.finishSent)throw Error('Premature successful result');
+      if(m.status==='activation_pending'){
+        if(!ctx.status.startsWith('committed')){ctx.fileCommitted=true;this.clear(ctx);await ctx.source?.close?.();this.state(ctx,'activation_pending',m.reason)}
+        this.frame(ctx,'result_ack',{status:'activation_pending'});return;
+      }
+      if(m.status.startsWith('committed'))ctx.fileCommitted=true;
       if(!terminal.has(ctx.status)||ctx.status==='unknown'||m.status.startsWith('committed')){this.clear(ctx);await ctx.source?.close?.();this.state(ctx,m.status,String(m.reason||'').slice(0,200))}
       this.frame(ctx,'result_ack');return;
     }
-    if(m.kind==='result_ack'&&this.role==='guest'){this.ack(ctx,'result');return}
+    if(m.kind==='result_ack'&&this.role==='guest'){this.ack(ctx,m.status==='activation_pending'?'activation':'result');return}
     if(terminal.has(ctx.status)){
       if(this.role==='guest'&&['finish','cancel'].includes(m.kind)&&ctx.status.startsWith('committed'))this.frame(ctx,'result',{status:ctx.status,reason:ctx.reason});return;
     }
@@ -104,10 +122,10 @@ class Channel {
     if(m.kind==='finish'){
       if(ctx.rxFile!==ctx.grant.batch.count||ctx.received!==ctx.grant.batch.total)throw Error('Full batch has not arrived');
       if(ctx.finished)return;ctx.finished=true;this.ack(ctx,'ready');this.state(ctx,'committing');
-      const result=await ctx.receiver.commit(()=>this.live(ctx));
-      if(this.current!==ctx)return;
+      const result=await ctx.receiver.commit(()=>this.live(ctx),r=>this.committed(ctx,r));
+      ctx.fileCommitted=true;
       const status=result.activated?'committed':'committed_activation_required';this.clear(ctx);this.state(ctx,status,result.reason||'');
-      if(!this.closed)this.retry(ctx,'result',{kind:'result'},()=>this.frame(ctx,'result',{status:ctx.status,reason:ctx.reason}));return;
+      if(!this.closed&&this.current===ctx)this.retry(ctx,'result',{kind:'result'},()=>this.frame(ctx,'result',{status:ctx.status,reason:ctx.reason}));return;
     }
     throw Error('Unexpected host file frame');
   }

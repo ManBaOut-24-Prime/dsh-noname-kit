@@ -1493,14 +1493,17 @@ window.__ModuleLoader__.load({
         var proposals = (bridge.state && bridge.state.batchProposals) || [];
         var labels = { preparing: '正在核验提议', pending: '等待客人选择', accepting: '等待房主确认授权', rejecting: '等待房主确认拒绝', authorized_paused: '本批已授权；等待文件协议', declined: '已拒绝', cancelled: '已取消', expired: '已超时', disconnected: '连接结束，授权失效', failed: '提议失败' };
         var fileBatches=(bridge.state && bridge.state.fileBatches)||[];
-        var fileLabels={starting:'准备完整事务',waiting_receiver:'等待客人准备接收',receiving:'接收至独立暂存区',sending:'发送已授权文件',committing:'核验并提交整批文件',committed:'整批文件已提交并启用',committed_activation_required:'整批文件已提交，启用尚未完成',unknown:'最终回执未收到，客人提交结果待确认',recovery_required:'必须先完成离线恢复',failed:'文件事务失败',cancelled:'文件事务已取消',expired:'文件授权已超时',disconnected:'文件连接已断开'};
-        return proposals.map(function (q) {
+        var fileLabels={starting:'准备完整事务',waiting_receiver:'等待客人准备接收',receiving:'接收至独立暂存区',sending:'发送已授权文件',committing:'核验并提交整批文件',activation_pending:'文件已同步，正在保存扩展启用配置',committed:'整批文件已提交并启用',committed_activation_required:'文件已同步，启用尚未完成',unknown:'最终回执未收到，客人提交结果待确认',recovery_required:'必须先完成离线恢复',failed:'文件事务失败',cancelled:'文件事务已取消',expired:'文件授权已超时',disconnected:'文件连接已断开'};
+        function sameBatch(a,b){return ['session','peerSession','proposal','digest'].every(function(k){return a[k]===b[k]})}
+        var rows=proposals.slice();
+        fileBatches.forEach(function(f){if((f.fileCommitted||['activation_pending','committed','committed_activation_required'].indexOf(f.status)>=0)&&!rows.some(function(q){return sameBatch(q,f)}))rows.push(f)});
+        return rows.map(function (q) {
           var binding = { session: q.session, peerSession: q.peerSession, proposal: q.proposal, digest: q.digest };
           var batch = q.batch || { extensions: [], total: 0, count: 0 };
-          var file=fileBatches.find(function(f){return f.session===q.session && f.proposal===q.proposal && f.digest===q.digest});
-          var choice = bridgeOnline && q.role === 'guest' && q.status === 'pending';
-          var key=q.session+q.proposal,collapsed=typeof batchUi!=='undefined'&&batchUi[key];
-          var finalFile=file&&['committed','committed_activation_required','unknown','recovery_required'].indexOf(file.status)>=0;
+          var file=fileBatches.find(function(f){return sameBatch(q,f)});
+          var key=q.session+q.peerSession+q.digest+q.proposal,collapsed=typeof batchUi!=='undefined'&&batchUi[key];
+          var finalFile=file&&(file.fileCommitted||['activation_pending','committed','committed_activation_required','unknown','recovery_required'].indexOf(file.status)>=0);
+          var choice = bridgeOnline && !finalFile && q.role === 'guest' && q.status === 'pending';
           var cancellable = bridgeOnline && !finalFile && ['pending', 'accepting', 'rejecting', 'authorized_paused'].indexOf(q.status) >= 0;
           var retryable=bridgeOnline&&!finalFile&&q.role==='host'&&(['cancelled','expired','failed'].indexOf(q.status)>=0 || file&&['failed','cancelled','expired'].indexOf(file.status)>=0);
           if(collapsed)return h('div',{className:'nnk-card',key:key},e('div','nnk-hint','补传提示已收起；提议和文件事务仍按原状态运行。'),h('button',{className:'nnk-copy',onClick:function(){setBatchUi(Object.assign({},batchUi,{[key]:false}))}},'展开补传提示'));
@@ -1513,9 +1516,10 @@ window.__ModuleLoader__.load({
             e('div', 'nnk-hint', file ? (fileLabels[file.status]||file.status)+' · '+file.received+'/'+file.total+' 字节' : labels[q.status] || '未知状态'),
             bridge.state && bridge.state.batchFilesPaused ? e('div','nnk-hint','新文件通路仍待独立审查与最终回归，当前保持暂停。') : null,
             file && file.reason ? e('div','nnk-hint',file.reason) : null,
+            file && file.role==='guest' && file.status==='committed_activation_required' ? e('div','nnk-hint','请在无名杀扩展设置中检查并启用所列扩展，随后重启并重新体检；无需再次下载。') : null,
             file && file.role==='guest' && file.status==='committed' ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('batch_reload',binding)}},'重启游戏并重新体检') : null,
             retryable ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('batch_retry',binding)}},'重新申请补传') : null,
-            q.reason ? e('div', 'nnk-hint', q.reason) : null,
+            !finalFile && q.reason ? e('div', 'nnk-hint', q.reason) : null,
             choice ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: true })); } }, '是') : null,
             choice ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: false })); } }, '否') : null,
             h('button',{className:'nnk-copy',onClick:function(){setBatchUi(Object.assign({},batchUi,{[key]:true}))}},'收起提示'),

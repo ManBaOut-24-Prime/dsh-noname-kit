@@ -1053,6 +1053,11 @@ export function apply(ctx, config) {
           if (['batch_decision','batch_cancel','batch_reload','batch_retry'].includes(body.action)) {
             const a = body.args
             if (!a || !['session', 'peerSession', 'proposal'].every(k => typeof a[k] === 'string' && /^[a-f0-9]{32}$/.test(a[k])) || !/^[a-f0-9]{64}$/.test(a.digest) || (body.action === 'batch_decision' && typeof a.yes !== 'boolean')) return json(400, { ok: false, error: '补传提议标识或明确授权值无效' })
+            if (['batch_cancel','batch_retry'].includes(body.action)) {
+              const batches = bridge.snapshot().state?.fileBatches
+              const known = Array.isArray(batches) && batches.find(f => f && ['session','peerSession','proposal','digest'].every(k => f[k] === a[k]))
+              if (known && (known.fileCommitted || ['activation_pending','committed','committed_activation_required','unknown','recovery_required'].includes(known.status))) return json(409, { ok: false, code: 'BATCH_COMMITTED_OR_UNCONFIRMED', error: '文件已提交或结果待确认，不能取消文件更新或重新补传。请等待启用结果或完成恢复。' })
+            }
           }
           // B0:旧 UI 或旧内核也不能经工坊命令恢复 legacy 补传。
           if (body.action === 'transfer_pack') return json(409, {
