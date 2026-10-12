@@ -68,11 +68,15 @@ await test('cancel racing asynchronous digest cannot show fresh pending proposal
 await test('actual UI renders choices without implicit yes and sends immutable binding',async()=>{
   const source=readFileSync(new URL('../client.js',import.meta.url),'utf8'),start=source.indexOf('function renderBatchProposals()'),end=source.indexOf('\n      function renderManifestCard',start),commands=[];
   const k=fixture();await k.offer();const q=k.snapshot(k.guest),bridge={state:{batchProposals:[q]}},h=(t,p,...children)=>({t,p,children:children.flat()}),e=(t,c,x)=>h(t,{className:c},x);
-  let confirmed=false;const renderImpl=new Function('bridge','bridgeOnline','h','e','sendCmd','window','batchUi','setBatchUi',source.slice(start,end)+';return renderBatchProposals();');
-  const render=(...args)=>renderImpl(...args,{confirm:()=>confirmed},{},()=>{});const tree=render(bridge,true,h,e,(...args)=>commands.push(args));assert.equal(commands.length,0);
+  let confirmed=false,confirmCalls=0;const renderImpl=new Function('bridge','bridgeOnline','h','e','sendCmd','window','batchUi','setBatchUi',source.slice(start,end)+';return renderBatchProposals();');
+  const render=(...args)=>renderImpl(...args,{confirm:()=>{confirmCalls++;return confirmed}},{},()=>{});const tree=render(bridge,true,h,e,(...args)=>commands.push(args));assert.equal(commands.length,0);
   const all=[];function walk(n){if(!n||typeof n!=='object')return;all.push(n);n.children?.forEach(walk)}tree.forEach(walk);
   const yes=all.find(n=>n.t==='button'&&n.children[0]==='是'),no=all.find(n=>n.t==='button'&&n.children[0]==='否'),cancel=all.find(n=>n.t==='button'&&n.children[0]==='终止本次补传');assert.ok(yes&&no&&cancel);
-  yes.p.onClick();assert.equal(commands[0][0],'batch_decision');assert.deepEqual(commands[0][1],{...k.binding(k.guest),yes:true});no.p.onClick();assert.equal(commands[1][1].yes,false);cancel.p.onClick();assert.equal(commands.length,2);confirmed=true;cancel.p.onClick();assert.equal(commands[2][0],'batch_cancel');assert.deepEqual(commands[2][1],k.binding(k.guest));
+  const notice='选择‘是’将接收或更新所列扩展，并自动启用它们；部分扩展需要重启无名杀后生效。';
+  const copy=all.flatMap(n=>n.children.filter(c=>typeof c==='string'));
+  assert.ok(copy.includes(notice),'Guest must see synchronization and activation disclosure before choosing');assert.ok(copy.indexOf(notice)<copy.indexOf('是'));
+  for(const name of ['甲包','乙包'])assert.ok(copy.some(s=>s.includes(name)));assert.ok(copy.some(s=>s.includes('来源：')&&s.includes('个文件')&&s.includes('字节')));
+  yes.p.onClick();assert.equal(confirmCalls,0,'Yes must not introduce a second activation confirmation');assert.equal(commands[0][0],'batch_decision');assert.deepEqual(commands[0][1],{...k.binding(k.guest),yes:true});no.p.onClick();assert.equal(commands[1][1].yes,false);cancel.p.onClick();assert.equal(commands.length,2);confirmed=true;cancel.p.onClick();assert.equal(commands[2][0],'batch_cancel');assert.deepEqual(commands[2][1],k.binding(k.guest));
   q.status='declined';assert.ok(JSON.stringify(render(bridge,true,h,e,()=>{})).includes('已拒绝'));assert.ok(!JSON.stringify(render(bridge,false,h,e,()=>{})).includes('终止本次补传'))
 })
 console.log(`\n${failed?'失败 '+failed:'全部通过: '+passed+' 项'}; fixture retained at ${root}`);if(failed)process.exitCode=1

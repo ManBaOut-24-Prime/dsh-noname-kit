@@ -1509,6 +1509,7 @@ window.__ModuleLoader__.load({
             e('div', 'nnk-hint', '来源：' + q.source + ' · ' + batch.extensions.length + ' 个扩展 · ' + batch.count + ' 个文件 · ' + batch.total + ' 字节'),
             batch.extensions.map(function (ext) { return e('div', 'nnk-break', ext.name + '（' + (ext.files ? ext.files.length : ext.fileCount) + ' 个文件）'); }),
             e('div', 'nnk-err', '扩展可执行代码。是否信任房主并授权这一完整批次？点击“是”仅授权当前提议，不授权后续批次。文件事务安全验证完成前不会发送文件，也不会写入游戏目录。'),
+            choice ? e('div', 'nnk-hint', '选择‘是’将接收或更新所列扩展，并自动启用它们；部分扩展需要重启无名杀后生效。') : null,
             e('div', 'nnk-hint', file ? (fileLabels[file.status]||file.status)+' · '+file.received+'/'+file.total+' 字节' : labels[q.status] || '未知状态'),
             bridge.state && bridge.state.batchFilesPaused ? e('div','nnk-hint','新文件通路仍待独立审查与最终回归，当前保持暂停。') : null,
             file && file.reason ? e('div','nnk-hint',file.reason) : null,
