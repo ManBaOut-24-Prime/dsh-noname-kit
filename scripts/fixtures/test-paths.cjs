@@ -10,7 +10,11 @@ function same(a, b) {
 function noLinks(target, boundary) {
   let current = target;
   while (true) {
-    if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) throw Error('Test path traverses a link');
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) throw Error('Test path traverses a link');
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error;
+    }
     if (same(current, boundary)) break;
     const parent = path.dirname(current);
     if (parent === current) throw Error('Test path escaped its boundary');

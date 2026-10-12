@@ -11,3 +11,22 @@ HANDOFF.md
 backup/
 *.bak*
 _noname-kit-test-*/
+
+# Credentials and private working records. Reviewed examples remain trackable.
+.env
+.env.*
+!.env.example
+nnk-bridge.json
+/ai-records/
+/audit-records/
+/private-records/
+/raw-audits/
+/logs/
+/nnk-batches/
+AI-CHAT*.md
+CHAT-TRANSCRIPT*.md
+SESSION-TRANSCRIPT*.md
+REVIEW-PROGRESS.md
+FINAL-REVIEW.md
+docs/B5-PAUSED.md
+docs/B6-B8-REVIEW-HANDOFF.md

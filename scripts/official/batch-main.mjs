@@ -6,7 +6,7 @@ import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const label=process.argv.at(-1),batch=process.env.NNK_BATCH_PROBE||'b6';
 if(!['Old','Latest'].includes(label)||!['b6','b7','b8'].includes(batch))throw new Error('Invalid probe selector');
-const root=process.env.NNK_ENGINE_ROOT||testPaths.officialRoot(label);
+const root = process.env.NNK_ENGINE_ROOT ? testPaths.requiredTestPath('NNK_ENGINE_ROOT') : testPaths.officialRoot(label);
 process.env.NNK_ENGINE_ROOT=root;process.env.NNK_SOURCE_ROOT||=fileURLToPath(new URL('../../',import.meta.url));
 const out=`${testPaths.logsDir()}/${batch}-official-${label}.json`;
 app.setPath('userData',`${testPaths.tempDir()}/${batch}-electron-${label}`);

@@ -5,7 +5,8 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {resolve,extname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const options=JSON.parse(process.env.NNK_GATE_OPTIONS);
-app.setPath('userData',options.userData);
+testPaths.assertTestPath(options.fixture);testPaths.assertTestPath(options.engineRoot);
+app.setPath('userData',testPaths.assertTestPath(options.userData));
 app.whenReady().then(async()=>{
   try{
     let nativeServer;

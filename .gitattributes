@@ -1,0 +1,2 @@
+# Git hooks must run consistently under Git for Windows and Unix shells.
+.githooks/* text eol=lf

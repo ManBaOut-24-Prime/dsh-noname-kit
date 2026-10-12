@@ -6,7 +6,7 @@ import { resolve, extname } from 'node:path';
 import {fileURLToPath} from 'node:url';
 const label = process.argv.at(-1);
 if (!['Old','Latest'].includes(label)) throw new Error('Expected Old or Latest argument');
-const root = process.env.NNK_ENGINE_ROOT || testPaths.officialRoot(label);
+const root = process.env.NNK_ENGINE_ROOT ? testPaths.requiredTestPath('NNK_ENGINE_ROOT') : testPaths.officialRoot(label);
 process.env.NNK_ENGINE_ROOT=root;
 process.env.NNK_SOURCE_ROOT ||= fileURLToPath(new URL('../../',import.meta.url));
 const variant=process.env.NNK_PROBE_VARIANT || "fixed";
