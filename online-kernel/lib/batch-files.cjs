@@ -150,23 +150,37 @@ function publishGeneration(root,a,d,which,base,formal,options){
   const prefix=path.join(a.folder,'publication-'+id()),request=prefix+'.json',ready=prefix+'.ready',control=prefix+'.control',done=prefix+'.done';durable(control,Buffer.alloc(1));
   durable(request,Buffer.from(JSON.stringify({root,from:base,to:formal,roots,entries,ready,control,done,pid:process.pid,born:options.lock.born})));
   const child=spawn(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-Command','& { '+PUBLISH_SCRIPT+' } $env:NNK_BATCH_PUBLISH_REQUEST'],{env:helperEnvironment({NNK_BATCH_PUBLISH_REQUEST:request}),windowsHide:true,stdio:'ignore'});child.unref();
-  const deadline=Date.now()+120000;
+  const deadline=Date.now()+120000;let failure=null,requested=false;
+  function command(byte){const fd=fs.openSync(control,'r+');try{fs.writeSync(fd,Buffer.from([byte]),0,1,0);fs.fsyncSync(fd)}finally{fs.closeSync(fd)}}
   try{
     while(!fs.existsSync(ready)&&alive(child.pid)&&Date.now()<deadline)pause(25);
-    if(!fs.existsSync(ready))fail('Publication validator did not start');const result=readJSON(ready,4096);if(!result.ok)fail(result.error||'Generation integrity failed');
+    if(!fs.existsSync(ready))fail('Publication validator did not start');const result=readJSON(ready,4096);if(result.ok!==true||result.protocol!==2)fail(result.error||'Generation integrity failed');
     options.lock.check();if(!alive(child.pid)||identity(base)!==d.extensionRootId)fail('Publication protection ended');
     options.hook?.('verified:'+which);
     if(which==='new'){
       const temporary=path.join(root,BASE,'generation-'+id()+'.json');sealedWrite(temporary,{v:1,id:a.owner.id,descriptorHash:a.state.descriptorHash});fs.renameSync(temporary,path.join(root,BASE,'generation.json'));
     }
-    if(base!==formal){fs.renameSync(base,formal);options.hook?.('publish:'+which)}
-  }finally{
-    const fd=fs.openSync(control,'r+');try{fs.writeSync(fd,Buffer.from([1]),0,1,0);fs.fsyncSync(fd)}finally{fs.closeSync(fd)}
+    // Ready is only permission to request publication, never proof that a
+    // parent-side rename is safe. The same helper validates, guards and moves.
+    command(1);requested=true;
+  }catch(error){failure=error}
+  if(!requested)try{command(2)}catch(error){failure=failure||error}
+  try{
     const until=Date.now()+120000;while(!fs.existsSync(done)&&alive(child.pid)&&Date.now()<until)pause(25);
-    if(!fs.existsSync(done)){child.kill();fail('Publication protection did not finish')}
-    const finished=readJSON(done,4096);if(!finished.ok)fail(finished.error||'Publication permissions need recovery');
-    const exitDeadline=Date.now()+3000;while(alive(child.pid)&&Date.now()<exitDeadline)pause(10);if(alive(child.pid)){child.kill();fail('Publication validator did not stop')}
+    if(!fs.existsSync(done))fail('Publication protection did not finish');
+    const finished=readJSON(done,4096);if(finished.ok!==true||finished.protocol!==2||finished.published!==true)fail(finished.error||'Generation was not published');
+    options.lock.check();if(identity(formal)!==d.extensionRootId)fail('Published directory identity changed');
+  }catch(error){failure=failure||error}
+  finally{
+    const exitDeadline=Date.now()+3000;while(alive(child.pid)&&Date.now()<exitDeadline)pause(10);
+    if(alive(child.pid)){
+      child.kill();const stopped=Date.now()+3000;while(alive(child.pid)&&Date.now()<stopped)pause(10);
+      failure=failure||Error('Publication validator did not stop');
+      if(alive(child.pid))fail('Publication validator termination is unconfirmed');
+    }
   }
+  if(failure)throw failure;
+  if(base!==formal)options.hook?.('publish:'+which);
 }
 function handoff(root,expected,lock){
   lock.check();const file=path.join(root,BASE,'active'),owner=readJSON(file,4096);
@@ -340,5 +354,7 @@ class Transaction{
     catch(error){if(!this.closed){handoff(this.root,this.id,this.lock);this.detached=true;this.lock.release()}throw error}
   }
 }
-function inspect(root){root=rootOf(root);const a=active(root);if(!a)return {status:'none'};return {status:['complete','rolled_back'].includes(a.state.phase)?a.state.phase:'pending',id:a.owner.id,phase:a.state.phase,ownerAlive:alive(a.owner.pid),binding:a.state.descriptorHash?descriptorAt(a).binding:null}}
+// A durable decision/restore phase is not completed publication while active
+// remains. Only successful recovery may detach the index and report completion.
+function inspect(root){root=rootOf(root);const a=active(root);if(!a)return {status:'none'};return {status:'pending',id:a.owner.id,phase:a.state.phase,ownerAlive:alive(a.owner.pid),binding:a.state.descriptorHash?descriptorAt(a).binding:null}}
 module.exports={Transaction,recover,inspect,generation,normalize,manifestDigest:batch=>sha(Buffer.from(JSON.stringify(normalize(batch)))),acquireWriteLease:root=>lease(fs.realpathSync.native(root),true),_test:{tree,stateRead,acl,capture,rowsAt}};

@@ -6,12 +6,16 @@ $section=[Security.AccessControl.AccessControlSections]::Access -bor [Security.A
 $everyone=[Security.Principal.SecurityIdentifier]::new('S-1-1-0')
 $streams=[Collections.Generic.List[IO.FileStream]]::new()
 $guarded=[Collections.Generic.List[object]]::new()
-$acquired=$false;$failure=$null
+$acquired=$false;$failure=$null;$published=$false
 function Reply($file,$value){$tmp=$file+'.tmp';[IO.File]::WriteAllText($tmp,(ConvertTo-Json -Compress $value),[Text.UTF8Encoding]::new($false));[IO.File]::Move($tmp,$file)}
 function ControlByte {
-    # The controller may hold its write handle while flushing the stop byte.
+    # 0 waits, 1 publishes, 2 cancels; a shared reader permits controller fsync.
     $control=[IO.File]::Open($request.control,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
-    try{if($control.Length -ne 1){throw 'Invalid publication control'};return $control.ReadByte()}finally{$control.Dispose()}
+    try{if($control.Length -ne 1){throw 'Invalid publication control'};$value=$control.ReadByte();if($value -notin 0,1,2){throw 'Invalid publication command'};return $value}finally{$control.Dispose()}
+}
+function CheckParent {
+    $parent.Refresh()
+    if($parent.HasExited -or $parent.StartTime.ToUniversalTime().Ticks.ToString() -ne $request.born){throw 'Publication owner ended'}
 }
 function CheckedPath($value){$p=[IO.Path]::GetFullPath($value);if(-not $p.StartsWith($root+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Publication path escape'};return $p}
 function Restore($entry,$file){
@@ -38,7 +42,7 @@ try{
         if(-not $entry.isDirectory){
             # Reject existing writers before hashing; explicit ACLs below take
             # over write/path protection before these handles are released.
-            $stream=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::Read -bor [IO.FileShare]::Delete));$streams.Add($stream)
+            $stream=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read);$streams.Add($stream)
             if($stream.Length -ne $entry.size){throw 'Publication file size changed'}
             $h=[Security.Cryptography.SHA256]::Create()
             try{$digest=([BitConverter]::ToString($h.ComputeHash($stream))).Replace('-','').ToLowerInvariant()}finally{$h.Dispose()}
@@ -61,17 +65,24 @@ try{
         if($item.PSIsContainer){$stack.Push($child)}elseif(-not $expected.Remove($child)){throw 'Unexpected publication file'}
     }}
     if($expected.Count){throw 'Publication inventory is incomplete'}
-    # Windows may reject an ancestor move while descendants have open handles,
-    # even with Delete sharing. Guards now exclude new writers and path changes.
+    # No Write or Delete sharing during hashing. ACLs take over before handles
+    # close, allowing the guarded ancestor move without a writable interval.
     foreach($stream in $streams){$stream.Dispose()};$streams.Clear()
-    Reply $request.ready @{ok=$true}
-    while((ControlByte) -ne 1){
-        try{$parent.Refresh();if($parent.HasExited -or $parent.StartTime.ToUniversalTime().Ticks.ToString() -ne $request.born){break}}catch [ArgumentException]{break}catch [InvalidOperationException]{break}
+    Reply $request.ready @{ok=$true;protocol=2;pid=$PID}
+    while(($command=ControlByte) -eq 0){
+        CheckParent
         Start-Sleep -Milliseconds 50
+    }
+    if($command -eq 1){
+        CheckParent
+        # The validator alone owns publication. Its catch/finally can release
+        # guards only after this move or after it has abandoned the move.
+        if($request.from -ne $request.to){[IO.Directory]::Move((CheckedPath $request.from),(CheckedPath $request.to))}
+        $published=$true
     }
 }catch{
     $failure=$_.Exception.Message
-    if(-not [IO.File]::Exists($request.ready)){Reply $request.ready @{ok=$false;error=$failure}}
+    if(-not [IO.File]::Exists($request.ready)){Reply $request.ready @{ok=$false;protocol=2;error=$failure}}
 }finally{
     try{
         $base=if([IO.Directory]::Exists($request.from)){$request.from}else{$request.to}
@@ -82,5 +93,5 @@ try{
     }catch{$failure=$_.Exception.Message}
     foreach($stream in $streams){$stream.Dispose()}
     if($acquired){$mutex.ReleaseMutex()};$mutex.Dispose()
-    Reply $request.done @{ok=($null -eq $failure);error=$failure}
+    Reply $request.done @{ok=($null -eq $failure);protocol=2;published=$published;error=$failure}
 }
