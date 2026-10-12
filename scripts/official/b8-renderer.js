@@ -15,7 +15,7 @@
   await lib.init.promises.js('game','update');lib.version=window.noname_update.version;
   for(const role of ['host','guest']){
     const dir=fixture+'/'+role+'/extension/联机助手/lib';fs.mkdirSync(dir,{recursive:true});
-    for(const f of ['batch-runtime.cjs','batch-wire.cjs','batch-files.cjs','batch-acl.ps1','batch-lock.ps1'])fs.copyFileSync(source+'/online-kernel/lib/'+f,dir+'/'+f);
+    for(const f of ['batch-runtime.cjs','batch-wire.cjs','batch-files.cjs','batch-acl.ps1','batch-lock.ps1','batch-publish.ps1'])fs.copyFileSync(source+'/online-kernel/lib/'+f,dir+'/'+f);
   }
   window.__nnk__={env:{lib,game,ui,get,_status,ai},state:{},modules:{compat:{gameRoot:()=>fixture+'/guest'}}};
   (0,eval)(fs.readFileSync(source+'/online-kernel/src/batch.js','utf8'));

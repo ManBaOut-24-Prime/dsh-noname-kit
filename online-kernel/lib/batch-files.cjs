@@ -3,7 +3,7 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{spawnSync,spawn}=require('node:child_process');
 const BASE='nnk-batches',SLOT=8192,MAX=300*1048576,MAX_LOCAL_FILES=32768;
 // Recovery remains usable while the installed kernel directory is withdrawn.
-const ACL_SCRIPT=fs.readFileSync(path.join(__dirname,'batch-acl.ps1'),'utf8'),LOCK_SCRIPT=fs.readFileSync(path.join(__dirname,'batch-lock.ps1'),'utf8');
+const ACL_SCRIPT=fs.readFileSync(path.join(__dirname,'batch-acl.ps1'),'utf8'),LOCK_SCRIPT=fs.readFileSync(path.join(__dirname,'batch-lock.ps1'),'utf8'),PUBLISH_SCRIPT=fs.readFileSync(path.join(__dirname,'batch-publish.ps1'),'utf8');
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 const id=()=>crypto.randomBytes(16).toString('hex');
 const copy=x=>JSON.parse(JSON.stringify(x));
@@ -61,7 +61,7 @@ function lease(root,ordinary=false){
     const until=Date.now()+3000;while(!fs.existsSync(done)&&Date.now()<until)pause(10);
     child.kill();while(alive(child.pid)&&Date.now()<until)pause(10);
     if(!fs.existsSync(done)||alive(child.pid))fail('Filesystem lease helper did not stop');
-  },check:()=>{if(!alive(child.pid))fail('Filesystem lease ended')},pid:child.pid,born:response.started,ownerId:response.ownerId,ownerAlive:response.ownerAlive};
+  },check:()=>{if(!alive(child.pid))fail('Filesystem lease ended')},pid:child.pid,born:response.started,ownerId:response.ownerId,ownerAlive:response.ownerAlive,ownerReleased:response.ownerReleased===true};
 }
 function hashFile(file){const fd=fs.openSync(file,'r'),h=crypto.createHash('sha256'),buffer=Buffer.alloc(65536);try{let n;while((n=fs.readSync(fd,buffer,0,buffer.length,null)))h.update(buffer.subarray(0,n));return h.digest('hex')}finally{fs.closeSync(fd)}}
 function tree(dir){
@@ -102,7 +102,7 @@ function readJSON(file,limit=32*1048576){const s=fs.lstatSync(file);if(!s.isFile
 function alive(pid){try{process.kill(pid,0);return true}catch(e){if(e.code==='EPERM')return true;if(e.code==='ESRCH')return false;throw e}}
 function active(root){
   const base=path.join(root,BASE),file=path.join(base,'active');if(!fs.existsSync(file))return null;
-  const owner=readJSON(file,4096);if(owner.v!==1||!/^[a-f0-9]{32}$/.test(owner.id)||!Number.isSafeInteger(owner.pid)||owner.pid<=0||owner.born!==undefined&&!/^\d{1,20}$/.test(owner.born))fail('Invalid transaction owner');
+  const owner=readJSON(file,4096);if(owner.v!==1||!/^[a-f0-9]{32}$/.test(owner.id)||!Number.isSafeInteger(owner.pid)||owner.pid<=0||owner.born!==undefined&&!/^\d{1,20}$/.test(owner.born)||owner.released!==undefined&&typeof owner.released!=='boolean')fail('Invalid transaction owner');
   const folder=path.join(base,owner.id);identity(base);identity(folder);const state=stateRead(folder);
   return {owner,folder,state};
 }
@@ -131,13 +131,55 @@ function releasePermissions(root,folder,e,generation,hook,base){
   acl(root,path.join(folder,'restore-'+generation+'-'+e.name+'.json'),'restore',rowsAt(path.join(base,e.name),sorted));hook?.('permissions:'+generation+':'+e.name);
 }
 function detachActive(root,a){const now=active(root);if(!now||now.owner.id!==a.owner.id)fail('Transaction ownership changed');fs.unlinkSync(path.join(root,BASE,'active'))}
+function sealedRead(file){const value=readJSON(file,65536);if(typeof value.body!=='string'||sha(Buffer.from(value.body))!==value.sha256)fail('Publication record integrity failed');return JSON.parse(value.body)}
+function sealedWrite(file,value){const body=JSON.stringify(value);durable(file,Buffer.from(JSON.stringify({body,sha256:sha(Buffer.from(body))})));}
+function generation(root){const file=path.join(root,BASE,'generation.json');if(!fs.existsSync(file))return '';const g=sealedRead(file);if(g.v!==1||!/^[a-f0-9]{32}$/.test(g.id)||!/^[a-f0-9]{64}$/.test(g.descriptorHash))fail('Invalid generation record');return g.id}
+function publishGeneration(root,a,d,which,base,formal,options){
+  const entries=[],roots=[];
+  for(const e of d.entries){const rows=which==='new'?e.nextRows:e.oldRows;
+    if(!rows.length){if(identity(path.join(base,e.name))!==null)fail('Unexpected old extension');continue}
+    const expected=rows.map(({relative,isDirectory,ino})=>({relative,isDirectory,ino}));if(JSON.stringify(structure(path.join(base,e.name)))!==JSON.stringify(expected))fail('Recovery inventory changed');
+    if(which==='new')for(const f of d.batch.extensions.find(x=>x.name===e.name).files){const row=rows.find(r=>r.relative===f.path);if(!row||row.isDirectory||row.size!==f.size||row.sha256!==f.sha256)fail('Published generation differs from authorized manifest')}
+    roots.push(path.join(base,e.name));entries.push(...rowsAt(path.join(base,e.name),rows).map(r=>({...r,isRoot:false})));
+  }
+  // A sealed original outer-root ACL also survives an abruptly killed validator.
+  const original=path.join(a.folder,'publication-root.json');let rootRow;
+  if(fs.existsSync(original)){const r=sealedRead(original);if(r.id!==a.owner.id||r.descriptorHash!==a.state.descriptorHash||r.rootId!==d.extensionRootId)fail('Publication root record changed');rootRow=r.row}
+  else{rootRow=capture(root,base,[{relative:'',isDirectory:true,ino:d.extensionRootId}],path.join(a.folder,'publication-capture.json'))[0];sealedWrite(original,{id:a.owner.id,descriptorHash:a.state.descriptorHash,rootId:d.extensionRootId,row:rootRow})}
+  entries.push({...rootRow,path:base,isRoot:true,rootOnly:true});
+  const prefix=path.join(a.folder,'publication-'+id()),request=prefix+'.json',ready=prefix+'.ready',control=prefix+'.control',done=prefix+'.done';durable(control,Buffer.alloc(1));
+  durable(request,Buffer.from(JSON.stringify({root,from:base,to:formal,roots,entries,ready,control,done,pid:process.pid,born:options.lock.born})));
+  const child=spawn(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-Command','& { '+PUBLISH_SCRIPT+' } $env:NNK_BATCH_PUBLISH_REQUEST'],{env:helperEnvironment({NNK_BATCH_PUBLISH_REQUEST:request}),windowsHide:true,stdio:'ignore'});child.unref();
+  const deadline=Date.now()+120000;
+  try{
+    while(!fs.existsSync(ready)&&alive(child.pid)&&Date.now()<deadline)pause(25);
+    if(!fs.existsSync(ready))fail('Publication validator did not start');const result=readJSON(ready,4096);if(!result.ok)fail(result.error||'Generation integrity failed');
+    options.lock.check();if(!alive(child.pid)||identity(base)!==d.extensionRootId)fail('Publication protection ended');
+    options.hook?.('verified:'+which);
+    if(which==='new'){
+      const temporary=path.join(root,BASE,'generation-'+id()+'.json');sealedWrite(temporary,{v:1,id:a.owner.id,descriptorHash:a.state.descriptorHash});fs.renameSync(temporary,path.join(root,BASE,'generation.json'));
+    }
+    if(base!==formal){fs.renameSync(base,formal);options.hook?.('publish:'+which)}
+  }finally{
+    const fd=fs.openSync(control,'r+');try{fs.writeSync(fd,Buffer.from([1]),0,1,0);fs.fsyncSync(fd)}finally{fs.closeSync(fd)}
+    const until=Date.now()+120000;while(!fs.existsSync(done)&&alive(child.pid)&&Date.now()<until)pause(25);
+    if(!fs.existsSync(done)){child.kill();fail('Publication protection did not finish')}
+    const finished=readJSON(done,4096);if(!finished.ok)fail(finished.error||'Publication permissions need recovery');
+    const exitDeadline=Date.now()+3000;while(alive(child.pid)&&Date.now()<exitDeadline)pause(10);if(alive(child.pid)){child.kill();fail('Publication validator did not stop')}
+  }
+}
+function handoff(root,expected,lock){
+  lock.check();const file=path.join(root,BASE,'active'),owner=readJSON(file,4096);
+  if(owner.id!==expected||owner.pid!==process.pid||owner.born!==lock.born)fail('Cannot release another recovery owner');
+  const temporary=path.join(root,BASE,expected,'released-'+id()+'.json');durable(temporary,Buffer.from(JSON.stringify({...owner,released:true})));fs.renameSync(temporary,file);
+}
 function recover(root,options={}){
   root=rootOf(root);if(options.owned)return recoverLocked(root,options);
   if(!active(root))return {status:'none'};
   const lock=lease(root);try{lock.check();return recoverLocked(root,{...options,lock})}catch(error){
     // Failed recovery remains retryable in the same DSH process. The original
     // immutable owner record is retained; only the active hardlink is replaced.
-    const a=active(root);if(a&&a.owner.pid===process.pid){const temp=path.join(a.folder,'retry-owner-'+id()+'.json');fs.linkSync(path.join(a.folder,'owner.json'),temp);fs.renameSync(temp,path.join(root,BASE,'active'))}throw error;
+    const file=path.join(root,BASE,'active');if(fs.existsSync(file)){const owner=readJSON(file,4096);if(owner.pid===process.pid&&owner.born===lock.born)handoff(root,owner.id,lock)}throw error;
   }finally{lock.release()}
 }
 function recoverLocked(root,options){
@@ -146,17 +188,23 @@ function recoverLocked(root,options){
   if(options.owned){if(a.owner.pid!==process.pid||a.owner.born!==options.lock?.born)fail('Transaction process identity changed')}
   else {
     if(a.owner.id!==options.lock.ownerId)fail('Transaction ownership changed');
-    if(options.lock.ownerAlive)return {status:'busy',id:a.owner.id};
+    if(options.lock.ownerAlive&&!(a.owner.released===true&&options.lock.ownerReleased===true))return {status:'busy',id:a.owner.id};
   }
   if(!options.owned){
     // Claim recovery while holding the native lease. A live recovery process is
     // still protected if its lease helper unexpectedly terminates.
-    const temp=path.join(a.folder,'recovery-owner-'+id()+'.json');durable(temp,Buffer.from(JSON.stringify({...a.owner,pid:process.pid,born:options.lock.born})));fs.renameSync(temp,path.join(root,BASE,'active'));a.owner.pid=process.pid;a.owner.born=options.lock.born;
+    const temp=path.join(a.folder,'recovery-owner-'+id()+'.json');durable(temp,Buffer.from(JSON.stringify({...a.owner,pid:process.pid,born:options.lock.born,released:false})));fs.renameSync(temp,path.join(root,BASE,'active'));a.owner.pid=process.pid;a.owner.born=options.lock.born;
   }
   options.lock?.check();
-  if(['receiving','prepared'].includes(a.state.phase)){a.state=stateWrite(a.folder,a.state,'rolled_back',a.state.descriptorHash,options.hook);detachActive(root,a);return {status:'rolled_back',id:a.owner.id}}
-  if(a.state.phase==='rolled_back'&&!a.state.descriptorHash){detachActive(root,a);return {status:'rolled_back',id:a.owner.id}}
+  if(!a.state.descriptorHash){
+    if(identity(path.join(a.folder,'workspace'))!==null||identity(path.join(root,'extension'))===null)fail('Unprepared journal does not match the actual extension namespace');
+    a.state=stateWrite(a.folder,a.state,'rolled_back',null,options.hook);detachActive(root,a);return {status:'rolled_back',id:a.owner.id};
+  }
   const d=descriptorAt(a),committed=['committed','complete'].includes(a.state.phase),base=publicationRoot(root,a.folder,d.extensionRootId),formal=path.join(root,'extension');
+  if(['prepared','armed'].includes(a.state.phase)&&base===formal){
+    for(const e of d.entries){const p=positions(root,a.folder,e,base);if(identity(p.target)!==e.oldId||identity(p.old)!==null||identity(p.discard)!==null||identity(p.next)!==e.nextId)fail('Prepared journal does not match directory positions')}
+    a.state=stateWrite(a.folder,a.state,'rolled_back',a.state.descriptorHash,options.hook);detachActive(root,a);return {status:'rolled_back',id:a.owner.id};
+  }
   if(committed){
     for(const e of d.entries){const p=positions(root,a.folder,e,base);if(identity(p.target)!==e.nextId)fail('Committed directory identity changed; manual recovery needed')}
     // A formal committed root was published only after all permission operations
@@ -164,7 +212,7 @@ function recoverLocked(root,options){
     if(base!==formal)for(const e of d.entries)releasePermissions(root,a.folder,e,'new',options.hook,base);
     // Backups remain whole and regain their original permissions outside formal extension/.
     for(const e of d.entries)if(e.oldId&&identity(positions(root,a.folder,e).old)===e.oldId)acl(root,path.join(a.folder,'backup-'+e.name+'.json'),'restore',rowsAt(positions(root,a.folder,e).old,e.oldRows));
-    if(base!==formal){fs.renameSync(base,formal);options.hook?.('publish:new')}
+    publishGeneration(root,a,d,'new',base,formal,options);
     a.state=stateWrite(a.folder,a.state,'complete',a.state.descriptorHash,options.hook);detachActive(root,a);return {status:'committed',id:a.owner.id,binding:d.binding,batch:d.batch};
   }
   // Remove every new generation first. Only known inode identities may be moved.
@@ -179,7 +227,7 @@ function recoverLocked(root,options){
   // and preserved inode identities, not kernel load order, establish provenance.
   a.state=stateWrite(a.folder,a.state,'rolled_back',a.state.descriptorHash,options.hook);
   for(const e of d.entries)releasePermissions(root,a.folder,e,'old',options.hook,base);
-  if(base!==formal){fs.renameSync(base,formal);options.hook?.('publish:old')}
+  publishGeneration(root,a,d,'old',base,formal,options);
   detachActive(root,a);return {status:'rolled_back',id:a.owner.id};
 }
 class Transaction{
@@ -197,7 +245,7 @@ class Transaction{
     this.received=new Set();this.streams=new Map();this.descriptor=null;
     }catch(error){this.lock.release();throw error}
   }
-  current(){this.lock.check();const a=active(this.root);if(!a||a.owner.id!==this.id||a.owner.pid!==process.pid||a.owner.born!==this.lock.born)fail('Transaction ownership changed')}
+  current(){this.lock.check();const a=active(this.root);if(!a||a.owner.released||a.owner.id!==this.id||a.owner.pid!==process.pid||a.owner.born!==this.lock.born)fail('Transaction ownership changed')}
   putFile(index,bytes){
     this.current();
     if(this.closed||this.state.phase!=='receiving'||!Number.isInteger(index)||!this.files[index])fail('Attempt is not receiving');
@@ -284,7 +332,13 @@ class Transaction{
       throw error;
     }
   }
-  abort(){if(this.closed)return {status:'closed'};this.current();for(const stream of this.streams.values())fs.closeSync(stream.fd);this.streams.clear();try{const result=recover(this.root,{owned:true,expectedId:this.id,lock:this.lock});this.closed=true;return result}finally{this.lock.release()}}
+  abort(){
+    if(this.closed)return {status:'closed'};
+    if(this.detached){const a=active(this.root);if(!a||a.owner.id!==this.id)fail('Detached attempt cannot recover another owner');const result=recover(this.root);if(['committed','rolled_back','none'].includes(result.status))this.closed=true;return result}
+    this.current();for(const stream of this.streams.values())fs.closeSync(stream.fd);this.streams.clear();
+    try{const result=recover(this.root,{owned:true,expectedId:this.id,lock:this.lock});this.closed=true;this.lock.release();return result}
+    catch(error){if(!this.closed){handoff(this.root,this.id,this.lock);this.detached=true;this.lock.release()}throw error}
+  }
 }
 function inspect(root){root=rootOf(root);const a=active(root);if(!a)return {status:'none'};return {status:['complete','rolled_back'].includes(a.state.phase)?a.state.phase:'pending',id:a.owner.id,phase:a.state.phase,ownerAlive:alive(a.owner.pid),binding:a.state.descriptorHash?descriptorAt(a).binding:null}}
-module.exports={Transaction,recover,inspect,normalize,manifestDigest:batch=>sha(Buffer.from(JSON.stringify(normalize(batch)))),acquireWriteLease:root=>lease(fs.realpathSync.native(root),true),_test:{tree,stateRead,acl,capture,rowsAt}};
+module.exports={Transaction,recover,inspect,generation,normalize,manifestDigest:batch=>sha(Buffer.from(JSON.stringify(normalize(batch)))),acquireWriteLease:root=>lease(fs.realpathSync.native(root),true),_test:{tree,stateRead,acl,capture,rowsAt}};

@@ -35,7 +35,7 @@ try {
           catch [InvalidOperationException] { $ownerAlive = $false }
           catch [ComponentModel.Win32Exception] { $ownerAlive = $true }
     }
-    $reply = @{ok=$true;started=$started.ToString();ownerAlive=$ownerAlive;ownerId=$ownerId}
+    $reply = @{ok=$true;started=$started.ToString();ownerAlive=$ownerAlive;ownerId=$ownerId;ownerReleased=($null -ne $owner -and $owner.released -is [bool] -and $owner.released)}
     PublishReply $reply
     while ($true) {
         if ($request.control -and [IO.File]::ReadAllBytes($request.control)[0] -eq 1) { break }

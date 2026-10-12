@@ -701,6 +701,13 @@ export function apply(ctx, config) {
        * 不是普通网页——它带 token,单独放行在下面的分支里。 */
       const isLoopbackName = (h) => h === '127.0.0.1' || h === 'localhost' || h === '[::1]' || h === '::1'
       const originName = (o) => { try { return new URL(o).hostname } catch { return '' } }
+      // Headers cannot authenticate the transport peer. The game bridge is also
+      // local: its token is an additional check, not remote workshop authentication.
+      const remote = String(req.socket?.remoteAddress || '')
+      const loopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1'
+      if (!loopback) {
+        return json(403, { ok: false, error: '工坊接口仅允许本机连接；远程来源不能读取提议或授权。' })
+      }
       /* 心跳桥(唯二的跨源调用方,来自游戏页 location.origin=游戏服务器,端口与插件不同)
        * 单独一条规矩:Origin 必须为空(非浏览器)或**回环来源**,不看端口是否与 Host 一致。
        * 必须查——桥的 token 就落在游戏静态目录里,而游戏自带
@@ -724,7 +731,7 @@ export function apply(ctx, config) {
           return json(403, { ok: false, error: '请用 127.0.0.1、localhost 或本机 IP 打开工坊页面(当前域名访问被安全策略拒绝)' })
         }
       }
-      if (req.method !== 'GET' && url.pathname !== '/noname-kit-api/online/bridge') {
+      if (url.pathname !== '/noname-kit-api/online/bridge') {
         const origin = String(req.headers.origin || '')
         const host = String(req.headers.host || '')
         const allowed = (o) => {
@@ -737,17 +744,12 @@ export function apply(ctx, config) {
         /* 无 Origin(非浏览器)不等于可信:DSH 支持绑 0.0.0.0(手机/局域网访问),
          * 那时同网段脚本可无 Origin 直接调这些接口改游戏目录/回滚文件/下发内核
          * 命令(审计发现)。非浏览器请求再叠一层"来源必须是回环"判定 */
-        const remote = String((req.socket && req.socket.remoteAddress) || '')
-        const loopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1'
-        if (!origin && !loopback) {
-          return json(403, { ok: false, error: '仅接受本机发起的请求(来源地址校验未通过)' })
-        }
         if (!allowed(origin)) {
           return json(403, { ok: false, error: '仅接受来自本机工坊页面的请求(Origin 校验未通过)' })
         }
         /* 简单请求绕过预检的另一个口子:content-type 不是 JSON 的 POST 也拒 */
         const ctype = String(req.headers['content-type'] || '')
-        if (ctype && !ctype.includes('application/json')) {
+        if (req.method !== 'GET' && ctype && !ctype.includes('application/json')) {
           return json(415, { ok: false, error: '请求必须是 application/json' })
         }
       }

@@ -42,6 +42,14 @@ function createRuntime(nnk,{enabled=false,storage,activateBatch=names=>activate(
   let needsReload=false;
   function emit(type,data){nnk.modules.bridge?.emit(type,data)}
   function root(){const dir=nnk.modules.compat.gameRoot();if(!dir)throw Error('未找到官方游戏目录');return dir}
+  const initialGeneration=core.generation(root());
+  function observe(result){if(result?.status==='committed')needsReload=true;return result}
+  function rootReady(){
+    try{const dir=root();if(core.generation(dir)!==initialGeneration)needsReload=true;
+      if(fs.existsSync(path.join(dir,'nnk-batches','active')))return false;
+      const st=fs.lstatSync(path.join(dir,'extension'));return st.isDirectory()&&!st.isSymbolicLink();
+    }catch(error){return false}
+  }
   function checkBatch(batch){const names=nnk.env.lib.config?.all;const stock=new Set([...(names?.stockextension||[]),...(names?.plays||[]),'boss','coin','cardpile','联机助手']);
     for(const ext of batch.extensions)if(stock.has(ext.name))throw Error('禁止覆盖官方内置扩展或联机内核');
   }
@@ -63,13 +71,13 @@ function createRuntime(nnk,{enabled=false,storage,activateBatch=names=>activate(
     function authorized(){const a=nnk.modules.consent.authorization(socket);return matches(a,grant)&&Date.now()<grant.expires&&socket.channel.readyState==='open'&&idle(nnk)&&fs.readFileSync(path.join(tx.folder,'cancel.bin'))[0]===0}
     function classify(error){if(error.outcome?.status==='recovery_required')error.code='BATCH_RECOVERY_REQUIRED';else if(fs.readFileSync(path.join(tx.folder,'cancel.bin'))[0]===1)error.code='BATCH_CANCELLED';else if(Date.now()>=grant.expires)error.code='BATCH_EXPIRED';return error}
     return {chunk(index,offset,bytes,end){try{if(!authorized())throw Error('文件接收授权已经失效');return tx.putChunk(index,offset,bytes,end)}catch(error){throw classify(error)}},
-      async commit(isLive){let result;try{if(!isLive()||!authorized())throw Error('整批提交授权已经失效');tx.prepare();result=tx.commit(()=>isLive()&&authorized())}catch(error){throw classify(error)}
+      async commit(isLive){let result;try{if(!isLive()||!authorized())throw Error('整批提交授权已经失效');tx.prepare();result=observe(tx.commit(()=>isLive()&&authorized()))}catch(error){throw classify(error)}
         needsReload=true;
         if(result.warning)return {activated:false,reason:result.warning};
         if(!authorized())return {activated:false,reason:'整批文件已提交，随后授权结束；尚未自动启用。请检查完整批次并在对局结束后重启。'};
         try{await activateBatch(grant.batch.extensions.map(e=>e.name));return {activated:true,reason:'文件已整批提交并启用；重启游戏后重新体检，当前缺包提示不会提前清除。'}}
         catch(error){return {activated:false,reason:'整批文件已提交，启用配置未完成：'+error.message+'。请检查后启用并重启。'}}
-      },abort(){return tx.abort()}};
+      },abort(){return observe(tx.abort())}};
   }
   function remember(q){if(!q)return;history.set(q.session+':'+q.proposal,q);while(history.size>16)history.delete(history.keys().next().value)}
   function release(c){const done=c.close();live.delete(c);const save=()=>remember(c.snapshot());save();Promise.resolve(done).then(save,save)}
@@ -84,13 +92,14 @@ function createRuntime(nnk,{enabled=false,storage,activateBatch=names=>activate(
     c.granted();
   }
   function reload(binding){for(const c of live){const q=c.snapshot();if(matches(q,binding)&&c.role==='guest'&&q.status==='committed'){
-      if(!idle(nnk)){emit('error',{message:'对局正在进行，不能重启游戏。'});return false}
+      if(!rootReady()||!idle(nnk)){emit('error',{message:'对局或文件恢复正在进行，不能重启游戏。'});return false}
       // Activation has completed before this button becomes available.
       nnk.env.game.reload();return true;
     }}return false}
   function retry(binding){for(const c of live){const q=c.snapshot();if(c.role==='host'&&matches(q,binding)&&['failed','cancelled','expired'].includes(q.status))return nnk.modules.consent.retry(sockets.get(c),binding)}return false}
   return {capability:enabled?1:0,paused:!enabled,attach,changed,retry,detach:socket=>{const c=channels.get(socket);if(c)release(c)},
-    canEnter:socket=>!needsReload&&!['starting','receiving','committing','recovery_required'].includes(channels.get(socket)?.snapshot()?.status),
+    canEnter:socket=>rootReady()&&!needsReload&&!['starting','receiving','committing'].includes(channels.get(socket)?.snapshot()?.status),
+    recover:()=>observe(core.recover(root())),
     handle:(socket,raw)=>{const c=channels.get(socket);if(c)return c.handle(raw);return typeof raw==='string'&&raw.includes('"nnk_files"')},
     snapshot:()=>[...history.values(),...Array.from(live).map(c=>c.snapshot()).filter(Boolean)],reload};
 }
