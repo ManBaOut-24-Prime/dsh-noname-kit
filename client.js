@@ -1196,6 +1196,8 @@ window.__ModuleLoader__.load({
       var answerPopupDismissed = ansPopState[0], setAnswerPopupDismissed = ansPopState[1];
       /* 仪表盘折叠块:配置/帮助类默认收起,点标题展开 */
       var foldsState = React.useState({ identity: false, signaling: false, help: false });
+      var batchUiState = React.useState({});
+      var batchUi = batchUiState[0], setBatchUi = batchUiState[1];
       var folds = foldsState[0], setFolds = foldsState[1];
       /* 头像列表:插件直接扫游戏目录(自带包+扩展包),开不开游戏都有;
        * null=加载中,字符串=失败原因 */
@@ -1497,7 +1499,11 @@ window.__ModuleLoader__.load({
           var batch = q.batch || { extensions: [], total: 0, count: 0 };
           var file=fileBatches.find(function(f){return f.session===q.session && f.proposal===q.proposal && f.digest===q.digest});
           var choice = bridgeOnline && q.role === 'guest' && q.status === 'pending';
-          var cancellable = bridgeOnline && ['pending', 'accepting', 'rejecting', 'authorized_paused'].indexOf(q.status) >= 0;
+          var key=q.session+q.proposal,collapsed=typeof batchUi!=='undefined'&&batchUi[key];
+          var finalFile=file&&['committed','committed_activation_required','unknown','recovery_required'].indexOf(file.status)>=0;
+          var cancellable = bridgeOnline && !finalFile && ['pending', 'accepting', 'rejecting', 'authorized_paused'].indexOf(q.status) >= 0;
+          var retryable=bridgeOnline&&q.role==='host'&&(['cancelled','expired','failed'].indexOf(q.status)>=0 || file&&['failed','cancelled','expired'].indexOf(file.status)>=0);
+          if(collapsed)return h('div',{className:'nnk-card',key:key},e('div','nnk-hint','补传提示已收起；提议和文件事务仍按原状态运行。'),h('button',{className:'nnk-copy',onClick:function(){setBatchUi(Object.assign({},batchUi,{[key]:false}))}},'展开补传提示'));
           return h('div', { className: 'nnk-card', key: q.session + q.proposal },
             e('div', null, h('b', null, '📦 完整批次补传提议')),
             e('div', 'nnk-hint', '来源：' + q.source + ' · ' + batch.extensions.length + ' 个扩展 · ' + batch.count + ' 个文件 · ' + batch.total + ' 字节'),
@@ -1507,11 +1513,15 @@ window.__ModuleLoader__.load({
             bridge.state && bridge.state.batchFilesPaused ? e('div','nnk-hint','新文件通路仍待独立审查与最终回归，当前保持暂停。') : null,
             file && file.reason ? e('div','nnk-hint',file.reason) : null,
             file && file.role==='guest' && file.status==='committed' ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('batch_reload',binding)}},'重启游戏并重新体检') : null,
-            file && file.role==='host' && ['failed','cancelled','expired'].indexOf(file.status)>=0 ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('batch_retry',binding)}},'重新提议并请求授权') : null,
+            retryable ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('batch_retry',binding)}},'重新申请补传') : null,
             q.reason ? e('div', 'nnk-hint', q.reason) : null,
             choice ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: true })); } }, '是') : null,
             choice ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: false })); } }, '否') : null,
-            cancellable ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_cancel', binding); } }, '关闭／取消提议') : null);
+            h('button',{className:'nnk-copy',onClick:function(){setBatchUi(Object.assign({},batchUi,{[key]:true}))}},'收起提示'),
+            cancellable ? h('button', { className: 'nnk-copy', onClick: function () {
+              var consequence=!file?'将终止当前提议。再次申请会生成新提议，仍需客人重新点击“是”。':'未提交的文件将停止并恢复整批旧文件；若已到达持久提交点，将保留完整新版并要求重启，取消不能恢复旧版本。';
+              if(window.confirm(consequence+'\n确认终止本次补传吗？'))sendCmd('batch_cancel', binding);
+            } }, '终止本次补传') : null);
         });
       }
 
@@ -1535,6 +1545,7 @@ window.__ModuleLoader__.load({
         var d = diffEv.data;
         var missing = Array.isArray(d.exts && d.exts.missing) ? d.exts.missing : [];
         var extra = Array.isArray(d.exts && d.exts.extra) ? d.exts.extra : [];
+        var disabled = (d.exts && d.exts.disabled) || [], changed = (d.exts && d.exts.changed) || [], unverified = (d.exts && d.exts.unverified) || [];
         var missPacks = Array.isArray(d.packs && d.packs.missing) ? d.packs.missing : [];
         /* P2P 连接识别 v1:身份随清单交换,主机看客人、客人看房主 */
         var peer = hostFlow ? (d.guestIdentity || null) : (d.hostIdentity || null);
@@ -1570,7 +1581,11 @@ window.__ModuleLoader__.load({
                   h('span', null, name + ' '),
                   hostFlow ? h('button', { className: 'nnk-copy', disabled: true, title: 'B0 安全止损：自动及手动补传均已暂停' }, '📦 补传已暂停') : null);
               }))
-            : e('div', 'nnk-ok', '✅ 双方扩展一致。'),
+            : !disabled.length&&!changed.length&&!unverified.length&&d.exts&&Array.isArray(d.exts.matching) ? e('div', 'nnk-ok', '✅ 已体检的启用扩展内容一致。') : null,
+          disabled.length ? e('div','nnk-hint','已安装但未启用，文件内容一致：'+disabled.join('、')+'。请客人在游戏扩展设置中自行启用并重启，再重新体检；无需下载。') : null,
+          changed.length ? e('div','nnk-err','同名扩展文件内容不同：'+changed.join('、')+'。补传新批次仍须客人明确点击“是”。') : null,
+          unverified.length ? e('div','nnk-hint','内容尚未核验：'+unverified.join('、')+'。名称一致不能证明文件一致，请双方升级后重新体检。') : null,
+          !hostFlow ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('manifest_recheck',{})}},'重新体检') : null,
           missPacks.length ? e('div', 'nnk-hint', '缺少的武将包(当前不会补传):' + missPacks.join('、')) : null,
           extra.length ? e('div', 'nnk-hint', '对方多出的扩展(不影响联机):' + extra.join('、')) : null,
           h('label', { style: { display: 'block', marginTop: '8px' } },

@@ -50,7 +50,7 @@
   const list=await listFunction();check('actual official discovery selects both only after full activation',()=>names.every(n=>list.includes(n)));
   for(const name of names)await importExtension(name);await Promise.all(_status.extensionLoading||[]);
   check('actual top-level, native factory and native precontent execute full new versions',()=>names.every(n=>window.__b8Counts[n]?.top===1&&window.__b8Counts[n]?.factory===1&&window.__b8Counts[n]?.precontent===1));
-  _status.over=false;guest.nnk.state.guest={session:{wasIn:true}};check('guard rejects native reload during an active engine session',()=>guest.nnk.modules.batch.reload(binding)===false&&!_status.reloading);guest.nnk.state.guest=null;
+  _status.over=false;guest.nnk.state.guest={session:{wasIn:true,entered:true}};check('guard rejects native reload during an active engine session',()=>guest.nnk.modules.batch.reload(binding)===false&&!_status.reloading);guest.nnk.state.guest=null;
   guest.nnk.modules.consent.cancel(binding);await new Promise(r=>setTimeout(r,100));check('late cancel preserves committed outcome and active native Client',()=>guest.nnk.modules.batch.snapshot()[0].status==='committed'&&!client.closed&&channel.readyState==='open');
   const guestSource=fs.readFileSync(source+'/online-kernel/src/guest.js','utf8'),gi=guestSource.indexOf('function connectNow(force)'),gz=guestSource.indexOf('\n\tfunction ',gi+12),previousWs=game.ws;
   const admit=new Function('nnk','guestState','bridgeApi','return ('+guestSource.slice(gi,gz)+')')(guest.nnk,{session:{fake:guest.s}},()=>({emit(){}}));admit(true);

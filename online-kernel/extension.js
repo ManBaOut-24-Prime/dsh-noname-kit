@@ -14,7 +14,7 @@
 	}
 	window.__nnkLoaded = true;
 	if (!window.__nnk__) {
-		window.__nnk__ = { version: "0.3.85", build: "f1-recovery-1", modules: {}, env: null, state: {} };
+		window.__nnk__ = { version: "0.3.86", build: "f2-lobby-1", modules: {}, env: null, state: {} };
 	}
 
 	game.import("extension", function(lib, game, ui, get, ai, _status) {

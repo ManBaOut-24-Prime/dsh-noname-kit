@@ -1097,7 +1097,7 @@
 								n++;
 							}
 						}
-						return n;
+                        return n + (nnk.modules.batch && nnk.modules.batch.canStart && !nnk.modules.batch.canStart() ? 1 : 0);
 					};
 					env.game.resume = function() {
 						var gateArgs = Array.prototype.slice.call(arguments);
@@ -1120,7 +1120,7 @@
 											try { origResume.apply(env.game, gateArgs); } catch (eR0) { /* 引擎状态异常 */ }
 											return;
 										}
-										if (Date.now() - startGateArmedAt > 60000) {
+										if (Date.now() - startGateArmedAt > 60000 && (!nnk.modules.batch || !nnk.modules.batch.canStart || nnk.modules.batch.canStart())) {
 											clearRoomTimer(startGateTimer);
 											startGateTimer = null;
 											bridgeApi().emit("info", { message: "等候 60 秒仍有 " + left + " 位客人没进来——照常开始(他可以在本局结束后自动进入)" });

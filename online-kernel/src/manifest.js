@@ -1,185 +1,90 @@
-/*
- * 包清单体检(M3):双方内核经引擎消息通道交换本机清单,房主算差集,两边
- * 工坊各显示一份差异。B0 暂停自动/手动补传,仅保留体检和差集回发;清单
- * 只列主机已启用的扩展(0.3.31 口径,未启用扩展不加载不传)。不新增传输层
- * ——复用引擎 ws 消息分发:客人 game.send → 房主 lib.message.server;
- * 房主 → 客人的回发**必须走隧道定向直发**(transfer.sendDirect),不能走
- * game.broadcast:联机模式下它开门就 return(game.online 门禁),差集
- * 永远到不了客人(审计实证;早先此处的 broadcast 从未生效过)。
- *
- * 清单粒度=扩展(武将/卡牌包都在扩展目录里,包级差异由扩展级差异覆盖);
- * 本内核自身(联机助手)双方必有,不参与体检与补传。
- */
-(function() {
-	var nnk = window.__nnk__;
-
-	function bridgeApi() {
-		return nnk.modules.bridge;
-	}
-
-	function KERNEL_NAME() {
-		return "联机助手";
-	}
-
-	/* 本机清单:已启用扩展 + 本地全部武将/卡牌包名(包名作参考信息展示)
-	 * + 人物标识(引擎生效值:名字没设过兜底「无名玩家」,头像给显示名)。
-	 * 扩展只列**已启用**的(enable 开关真值):未启用的扩展 game.import 直接
-	 * 早退——不加载、不进房间、补传过去也用不上,列进来只会白白触发补传。 */
-	function collect() {
-		var lib = nnk.env.lib;
-		var exts = [];
-		var packs = [];
-		var cards = [];
-		var identity = { name: "", avatar: "" };
-		try {
-			(lib.config.extensions || []).forEach(function(name) {
-				if (name === KERNEL_NAME()) {
-					return;
-				}
-				if (!lib.config["extension_" + name + "_enable"]) {
-					return;
-				}
-				exts.push(name);
-			});
-		} catch (e) { /* 忽略 */ }
-		try {
-			for (var p in lib.characterPack) {
-				packs.push(p);
-			}
-		} catch (e) { /* 忽略 */ }
-		try {
-			for (var c in lib.cardPack) {
-				cards.push(c);
-			}
-		} catch (e) { /* 忽略 */ }
-		try {
-			identity.name = nnk.env.get.connectNickname();
-		} catch (e) { /* 忽略 */ }
-		try {
-			var av = lib.config.connect_avatar;
-			identity.avatar = av ? (typeof lib.translate[av] === "string" && lib.translate[av]) || av : "";
-		} catch (e) { /* 忽略 */ }
-		exts.sort();
-		return { exts: exts, packs: packs.sort(), cards: cards.sort(), kernel: nnk.version, identity: identity, batchProtocol: 2 };
-	}
-
-	function validManifest(m) {
-		if (!m || typeof m !== "object" || !Array.isArray(m.exts)) {
-			return false;
-		}
-		/* 形状校验覆盖全字段:异版内核/伪客户端送来的 packs/cards 非数组时,
-		 * split 的 forEach 抛错会被 install 的 catch 吞成一条 console 噪音,
-		 * 工坊既没差异也没报错(审计发现)——这里整单拒收,与补传同口径 */
-		if (m.packs !== undefined && !Array.isArray(m.packs)) {
-			return false;
-		}
-		if (m.cards !== undefined && !Array.isArray(m.cards)) {
-			return false;
-		}
-		return true;
-	}
-
-	/* 差集:客人缺的(补传候选)与客人多有的(仅提示) */
-	function diff(host, guest) {
-		function split(hostList, guestList) {
-			var missing = [];
-			var extra = [];
-			var guestSet = {};
-			var hostSet = {};
-			guestList.forEach(function(x) { guestSet[x] = true; });
-			hostList.forEach(function(x) {
-				hostSet[x] = true;
-				if (!guestSet[x]) {
-					missing.push(x);
-				}
-			});
-			guestList.forEach(function(x) {
-				if (!hostSet[x]) {
-					extra.push(x);
-				}
-			});
-			return { missing: missing, extra: extra };
-		}
-		return {
-			exts: split(host.exts || [], guest.exts || []),
-			packs: split(host.packs || [], guest.packs || []),
-			cards: split(host.cards || [], guest.cards || []),
-			/* 两端内核版本:房号门(主题指纹,0.3.67 起)与自动补传(ready/done 双握手)
-			 * 都要求两端内核 ≥0.3.67 且版本一致才好排查——两边都要能拿到对方的版本号,
-			 * 工坊才提示得出来(guestKernel 加上后一直没人消费,是死字段:混装时用户
-			 * 只能看到"房主可能已关闭游戏"这类错误诊断) */
-			guestKernel: guest.kernel || null,
-			hostKernel: host.kernel || null,
-			guestBatchProtocol: guest.batchProtocol || null,
-			hostBatchProtocol: host.batchProtocol || null,
-			/* 双向身份:房主工坊显示「👤 客人:某某」,客人侧显示房主身份——
-			 * P2P 连接识别 v1(名字随清单走,头像给显示名) */
-			guestIdentity: guest.identity || null,
-			hostIdentity: host.identity || null
-		};
-	}
-
-/* 房主收到客人清单:算差集 → 上报工坊 → 回发客人一份。
- * 回发不走 game.broadcast——联机模式下它开门就 return(game.online 门禁),
- * 即便走到循环也有 client.inited 门禁(客人此刻必然未置真),两道门禁各能
- * 独立拦死,客人侧的「包体检」因此从来没收到过差集(审计实证)。
- * 与补传同款:经该客人的隧道定向直发,HOST 侧桥原样转发裸帧,
- * 客人的引擎按 lib.message.client 派发 nnk_manifest_diff */
-function onGuestManifest(manifest) {
-	if (!validManifest(manifest)) {
-		return;
-	}
-	var result = diff(collect(), manifest);
-	bridgeApi().emit("manifest_diff", result);
-	try {
-		if (nnk.modules.transfer) {
-			nnk.modules.transfer.sendDirect(this, "nnk_manifest_diff", result);
-		}
-	} catch (e) { /* 定向失败:客人侧看不到差集,不影响房主侧展示 */ }
-	var guestName = result.guestIdentity && result.guestIdentity.name ? result.guestIdentity.name : "?";
-	console.log("[联机助手] 包体检完成:客人「" + guestName + "」缺扩展 " + result.exts.missing.length + " 个、缺武将包 " + result.packs.missing.length + " 个");
-	/* B0:缺包仍如实报告,重连/重检也不再自动入补传队列。 */
-	var missing = result.exts.missing || [];
-	if (missing.length && nnk.modules.consent) nnk.modules.consent.propose(this, missing);
-	if (missing.length) {
-		bridgeApi().emit("info", { message: "客人缺 " + missing.length + " 个已启用扩展。" +
-			(nnk.modules.transfer ? nnk.modules.transfer.pauseReason : "补传已暂停，缺包可能影响对局兼容性。") });
-	}
-}
-
-	nnk.modules.manifest = {
-		install: function() {
-			var lib = nnk.env.lib;
-			if (lib.message && lib.message.server && !lib.message.server.__nnkManifest) {
-				/* 客人 → 房主(this=上报者 client:回发差集与定向补传都要靠它) */
-				lib.message.server.nnk_manifest = function(manifest) {
-					try {
-						onGuestManifest.call(this, manifest);
-					} catch (e) {
-						console.error("[联机助手] 包体检处理失败:", e);
-					}
-				};
-				lib.message.server.__nnkManifest = true;
-			}
-			if (lib.message && lib.message.client && !lib.message.client.__nnkManifest) {
-				/* 房主 → 客人 */
-				lib.message.client.nnk_manifest_diff = function(result) {
-					try {
-						bridgeApi().emit("manifest_diff", result);
-						if (result && result.hostBatchProtocol !== 2 && result.exts && result.exts.missing && result.exts.missing.length) bridgeApi().emit("batch_upgrade", { message: "房主未声明批次授权协议；请双方升级。补传不降级。" });
-					} catch (e) { /* 忽略 */ }
-				};
-				lib.message.client.__nnkManifest = true;
-			}
-		},
-		/* 客人在进房握手成功后调用:把本机清单发给房主 */
-		sendManifest: function() {
-			try {
-				nnk.env.game.send("nnk_manifest", collect());
-			} catch (e) {
-				console.warn("[联机助手] 清单上报失败:", e);
-			}
-		},
-		collect: collect
-	};
+/* Existing game channel metadata is also handled while parked in the lobby.
+ * Files remain subject to the separate bound consent and full transaction. */
+(function(){
+    var nnk=window.__nnk__,peers=new WeakMap(),live=new Set();
+    function emit(type,data){if(nnk.modules.bridge)nnk.modules.bridge.emit(type,data)}
+    function collect(){
+        var lib=nnk.env.lib,installed=(lib.config.extensions||[]).filter(function(n){return n!=="联机助手"}),exts=installed.filter(function(n){return !!lib.config["extension_"+n+"_enable"]});
+        return {exts:exts.sort(),installed:installed.sort(),packs:Object.keys(lib.characterPack||{}).sort(),cards:Object.keys(lib.cardPack||{}).sort(),kernel:nnk.version,
+            identity:{name:nnk.env.get.connectNickname(),avatar:lib.config.connect_avatar||""},batchProtocol:2,inventoryVersion:1};
+    }
+    function observed(force){
+        var m=collect();
+        if(!nnk.modules.consent||!nnk.modules.batch){m.inventoryVersion=0;return m;}
+        try{
+            var req=typeof window.require==="function"?window.require:typeof require==="function"?require:null;
+            if(!req)throw Error('没有本机文件接口');
+            var root=nnk.modules.compat.gameRoot(),path=req('node:path'),fs=req('node:fs');
+            var stock=(nnk.env.lib.config.all||{}).stockextension||[];
+            m.installed=fs.readdirSync(path.join(root,'extension')).filter(function(n){return n!=="联机助手" && stock.indexOf(n)<0 && fs.existsSync(path.join(root,'extension',n,'extension.js'))}).sort();
+            var scan=req(path.join(root,'extension','联机助手','lib','manifest-files.cjs')).scan;
+            m.contents=scan(root,m.installed,{force:!!force});
+        }catch(error){m.contents={};m.inventoryError=error.message}
+        return m;
+    }
+    function valid(m){
+        if(!m||!Array.isArray(m.exts)||m.exts.length>64)return false;
+        for(var key of ['exts','installed','packs','cards'])if(m[key]!==undefined && (!Array.isArray(m[key])||m[key].length>4096||!m[key].every(function(n){return typeof n==='string'&&n.length<=120})))return false;
+        if(m.contents!==undefined){if(!m.contents||typeof m.contents!=='object'||Array.isArray(m.contents)||Object.keys(m.contents).length>64)return false;
+            for(var name in m.contents){var c=m.contents[name];if(!c||typeof c!=='object'||c.digest!==undefined&&!/^[a-f0-9]{64}$/.test(c.digest)||c.error!==undefined&&typeof c.error!=='string')return false;}}
+        return true;
+    }
+    function diff(host,guest){
+        function split(a,b){return {missing:a.filter(function(n){return b.indexOf(n)<0}),extra:b.filter(function(n){return a.indexOf(n)<0})}}
+        var exts=split(host.exts,guest.installed||guest.exts);exts.disabled=[];exts.changed=[];exts.matching=[];exts.unverified=[];
+        host.exts.forEach(function(n){
+            var a=host.contents&&host.contents[n],b=guest.contents&&guest.contents[n];
+            if(exts.missing.indexOf(n)>=0)return;
+            if(host.inventoryVersion!==1||guest.inventoryVersion!==1||!a||!b||!a.digest||!b.digest){exts.unverified.push(n);return}
+            if(a.digest!==b.digest)exts.changed.push(n);
+            else if(guest.exts.indexOf(n)<0)exts.disabled.push(n);
+            else exts.matching.push(n);
+        });
+        exts.needsFiles=exts.missing.concat(exts.changed).filter(function(n){return host.contents&&host.contents[n]&&host.contents[n].digest});
+        return {exts:exts,packs:split(host.packs||[],guest.packs||[]),cards:split(host.cards||[],guest.cards||[]),guestKernel: guest.kernel || null,hostKernel: host.kernel || null,
+            guestBatchProtocol:guest.batchProtocol||null,hostBatchProtocol:host.batchProtocol||null,guestIdentity:guest.identity||null,hostIdentity:host.identity||null};
+    }
+    async function onGuest(socket,m){
+        if(!valid(m))return;
+        var p=peers.get(socket),result=diff(observed(false),m);emit('manifest_diff',result);
+        // A new capable peer receives the completed offer before the admission check.
+        // Older manifests still display name differences, but cannot prove content equality.
+        if(result.exts.missing.length||result.exts.changed.length)emit('info',{message:(nnk.modules.transfer&&nnk.modules.transfer.pauseReason)||'补传已暂停；缺包或内容差异仍需核对。'});
+        if(result.exts.needsFiles.length && nnk.modules.consent)await nnk.modules.consent.propose(socket,result.exts.needsFiles);
+        if(p&&p.closed)return;
+        if(nnk.modules.transfer)nnk.modules.transfer.sendDirect(this, "nnk_manifest_diff",result);
+        else socket.send(JSON.stringify(['nnk_manifest_diff',result]));
+    }
+    function send(p,force){
+        if(p.closed||p.socket.channel.readyState!=='open')return;
+        try{p.socket.send(JSON.stringify(['nnk_manifest',observed(force)]))}
+        catch(error){emit('error',{message:'体检失败：'+error.message});p.ready=true;nnk.modules.guest&&nnk.modules.guest.resumeEntry(p.socket)}
+    }
+    function attach(socket,role){
+        if(peers.has(socket))return;var p={socket:socket,role:role,ready:false,closed:false};peers.set(socket,p);live.add(p);
+        socket.onDown(function(){p.closed=true;live.delete(p);clearTimeout(p.timer)});
+        if(role==='guest')socket.onUp(function(){send(p,false);p.timer=setTimeout(function(){
+            if(p.closed||p.ready)return;p.ready=true;emit('info',{message:'对方体检未应答；内容一致性尚未验证。补传不会降级。'});nnk.modules.guest&&nnk.modules.guest.resumeEntry(socket);
+        },15000)});
+    }
+    function handle(socket,raw){
+        if(typeof raw!=='string'||raw.length>1048576)return false;
+        var p=peers.get(socket);if(!p||p.closed)return false;var m;
+        try{m=JSON.parse(raw)}catch(error){return false}
+        if(!Array.isArray(m))return false;
+        if(p.role==='host'&&m[0]==='nnk_manifest'){onGuest.call(socket,socket,m[1]).catch(function(error){emit('error',{message:'体检失败：'+error.message})});return true}
+        if(p.role==='guest'&&m[0]==='nnk_manifest_diff'){
+            if(!m[1]||!m[1].exts||!Array.isArray(m[1].exts.missing))return true;
+            p.ready=true;clearTimeout(p.timer);emit('manifest_diff',m[1]);nnk.modules.guest&&nnk.modules.guest.resumeEntry(socket);return true;
+        }
+        return false;
+    }
+    nnk.modules.manifest={collect:collect,observed:observed,diff:diff,attach:attach,handle:handle,
+        beforeEnter:function(socket){var p=peers.get(socket);return !nnk.modules.batch||!nnk.modules.batch.capability||!p||p.ready},
+        recheck:function(){live.forEach(function(p){if(p.role==='guest')send(p,true)})},
+        sendManifest:function(){if(!live.size){nnk.env.game.send('nnk_manifest',observed(false));return}live.forEach(function(p){if(p.role==='guest'&&!p.ready)send(p,false)})},
+        install:function(){var lib=nnk.env.lib;
+            if(lib.message&&lib.message.server)lib.message.server.nnk_manifest=function(m){onGuest.call(this,this.ws||this,m).catch(function(error){emit('error',{message:error.message})})};
+            if(lib.message&&lib.message.client)lib.message.client.nnk_manifest_diff=function(d){emit('manifest_diff',d)};
+        }};
 })();

@@ -5,9 +5,15 @@ const keys=['session','peerSession','proposal','digest'];
 const matches=(a,b)=>a&&b&&keys.every(k=>a[k]===b[k]);
 function hashFd(fd){const h=crypto.createHash('sha256'),b=Buffer.alloc(65536);let n;while((n=fs.readSync(fd,b,0,b.length,null)))h.update(b.subarray(0,n));return h.digest('hex')}
 function durable(file,value){const fd=fs.openSync(file,'wx');try{fs.writeFileSync(fd,value);fs.fsyncSync(fd)}finally{fs.closeSync(fd)}}
-function idle(nnk){const e=nnk.env,s=e._status||{},h=nnk.state.host,g=nnk.state.guest;
-  return !s.reloading&&!s.loading&&!(g?.session?.wasIn&&!s.over)&&!(h?.engineOwner&&!s.over)&&!(e.game.phaseNumber>0&&!s.over);
+function stage(nnk){const e=nnk.env,s=e._status||{},h=nnk.state.host,g=nnk.state.guest;
+  if(s.reloading||s.loading)return 'loading';
+  if(s.over)return 'ended';
+  if(s.waitingForPlayer)return 'waiting';
+  if(e.game.phaseNumber>0||e.game.players?.length)return 'playing';
+  if(g?.session?.entered||h?.engineOwner)return 'engine';
+  return g?.session?.wasIn?'lobby':'idle';
 }
+function idle(nnk){return ['idle','lobby','waiting','ended'].includes(stage(nnk))}
 function validRuntime(nnk){
   if(process.platform!=='win32'||!['1.11.5.2','1.11.6'].includes(nnk.env.lib.version))throw Error('补传事务仅支持已验证的官方 Windows 无名杀版本');
   if(!idle(nnk))throw Error('引擎正在运行对局或重载，本次文件事务停止');
@@ -83,10 +89,10 @@ function createRuntime(nnk,{enabled=false,storage,activateBatch=names=>activate(
   function release(c){const done=c.close();live.delete(c);const save=()=>remember(c.snapshot());save();Promise.resolve(done).then(save,save)}
   function attach(socket,role){if(channels.has(socket))return;const c=new Channel({role,authorize:()=>nnk.modules.consent.authorization(socket),
     send:raw=>{if(socket.channel.readyState!=='open')throw Error('文件通道已关闭');if(socket.channel.bufferedAmount>2*1048576)throw Error('文件通道积压超过上限');socket.send(raw)},
-    source,receiver:g=>receiver(g,socket),report:s=>{emit('batch_files',s);if(!live.has(c))remember(s)}});channels.set(socket,c);sockets.set(c,socket);live.add(c);socket.onDown(()=>release(c))}
+    source,receiver:g=>receiver(g,socket),report:s=>{emit('batch_files',s);if(!live.has(c))remember(s);setTimeout(()=>nnk.modules.guest?.resumeEntry?.(socket),0)}});channels.set(socket,c);sockets.set(c,socket);live.add(c);socket.onDown(()=>release(c))}
   function changed(socket){const c=channels.get(socket);if(!c)return;
     const grant=nnk.modules.consent.authorization(socket);
-    if(!grant){c.stop('cancelled','提议授权已终止');return}
+    if(!grant){c.stop('cancelled','提议授权已终止');setTimeout(()=>nnk.modules.guest?.resumeEntry?.(socket),0);return}
     if(!enabled)return;
     if(!nnk.modules.consent.fileCapable(socket)){emit('batch_upgrade',{message:'对端未协商整批文件协议，补传停止且不降级。'});return}
     c.granted();
@@ -96,11 +102,16 @@ function createRuntime(nnk,{enabled=false,storage,activateBatch=names=>activate(
       // Activation has completed before this button becomes available.
       nnk.env.game.reload();return true;
     }}return false}
-  function retry(binding){for(const c of live){const q=c.snapshot();if(c.role==='host'&&matches(q,binding)&&['failed','cancelled','expired'].includes(q.status))return nnk.modules.consent.retry(sockets.get(c),binding)}return false}
+  function retry(binding){for(const c of live){const q=c.snapshot();if(c.role==='host'&&matches(q,binding)&&['failed','cancelled','expired'].includes(q.status))return nnk.modules.consent.retry(sockets.get(c),binding)}return nnk.modules.consent.retryPending(binding)}
+  function canEnter(socket){const file=channels.get(socket)?.snapshot(),status=file?.status;
+    const pending=enabled&&nnk.modules.consent.waiting?.(socket)&&!(matches(file,nnk.modules.consent.current(socket))&&['failed','cancelled','expired','disconnected'].includes(status));
+    return rootReady()&&!needsReload&&!['starting','receiving','committing'].includes(status)&&!pending;
+  }
+  function canStart(){return rootReady()&&!needsReload&&![...live].some(c=>['starting','waiting_receiver','sending','receiving','committing'].includes(c.snapshot()?.status))}
   return {capability:enabled?1:0,paused:!enabled,attach,changed,retry,detach:socket=>{const c=channels.get(socket);if(c)release(c)},
-    canEnter:socket=>rootReady()&&!needsReload&&!['starting','receiving','committing'].includes(channels.get(socket)?.snapshot()?.status),
+    canEnter,canStart,
     recover:()=>observe(core.recover(root())),
     handle:(socket,raw)=>{const c=channels.get(socket);if(c)return c.handle(raw);return typeof raw==='string'&&raw.includes('"nnk_files"')},
     snapshot:()=>[...history.values(),...Array.from(live).map(c=>c.snapshot()).filter(Boolean)],reload};
 }
-module.exports={createRuntime,activate,idle,matches};
+module.exports={createRuntime,activate,idle,stage,matches};

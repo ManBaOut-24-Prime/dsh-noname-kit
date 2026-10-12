@@ -84,6 +84,9 @@
 			case "batch_retry":
 				if (nnk.modules.batch) nnk.modules.batch.retry(args);
 				break;
+            case "manifest_recheck":
+                if (nnk.modules.manifest) nnk.modules.manifest.recheck();
+                break;
 			case "clear_quarantine":
 				if (nnk.modules.compat) {
 					nnk.modules.compat.clearQuarantine();

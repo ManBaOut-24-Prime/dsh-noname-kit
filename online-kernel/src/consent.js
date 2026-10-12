@@ -226,12 +226,15 @@
 	}
 	function retry(socket,args) {
 		var p=peers.get(socket),q=p && p.proposal;
-		if(!p || p.closed || p.role!=="host" || !q || !q.batch || q.status==="declined" || args.session!==p.local || args.peerSession!==p.remote || args.proposal!==q.id || args.digest!==q.digest)return false;
+        if(!p || p.closed || p.role!=="host" || !q || !q.batch || !["cancelled","expired","failed","authorized_paused"].includes(q.status) || args.session!==p.local || args.peerSession!==p.remote || args.proposal!==q.id || args.digest!==q.digest)return false;
 		finish(p,"cancelled","房主明确重新提议，须再次授权",true);p.lastOffered=null;
 		return propose(socket,q.batch.extensions.map(function(e){return e.name}));
 	}
 	nnk.modules.consent = { attach: attach, detach: detach, handle: handle, propose: propose, decide: decide, cancel: cancel,
 		retry: retry,
+        retryPending: function(args) { for(var p of live) { if(p.role==="host" && p.proposal && ["cancelled","expired","failed"].includes(p.proposal.status) && args.session===p.local) return retry(p.socket,args); } return false; },
+        waiting: function(socket) { var p=peers.get(socket);return !!(p && !p.closed && active(p.proposal)); },
+        current: function(socket) { return view(peers.get(socket),false); },
 		authorization: function(socket) { var p=peers.get(socket), q=p && p.proposal; return p && !p.closed && q && q.status === "authorized_paused" && q.choice === true && Date.now() < q.expires ? view(p, false) : null; },
 		fileCapable: function(socket) { var p=peers.get(socket); return !!(p && p.files === 1); },
 		cancelAll: function() { live.forEach(function(p) { finish(p, "cancelled", "用户取消", true); }); },

@@ -695,8 +695,8 @@ export function apply(ctx, config) {
       }
       /* 同源防护(CSRF / DNS rebinding):本接口能改游戏目录、删任务、回滚文件、
        * 往游戏内核下发命令,却只监听回环——浏览器里打开的任何恶意页面都能用
-       * 简单请求(表单/text-plain)打到 127.0.0.1:<端口>。这里对**所有非 GET**
-       * 请求要求 Origin 为空(非浏览器)或为回环来源;来源可疑直接 403。
+       * 简单请求(表单/text-plain)打到 127.0.0.1:<端口>。实际对端必须是回环，
+       * 读写请求均校验 Origin；非 GET 还要求 JSON。来源可疑直接 403。
        * 注意:内核的 /online/bridge 轮询来自游戏页(location.origin 是游戏服务),
        * 不是普通网页——它带 token,单独放行在下面的分支里。 */
       const isLoopbackName = (h) => h === '127.0.0.1' || h === 'localhost' || h === '[::1]' || h === '::1'
@@ -706,7 +706,7 @@ export function apply(ctx, config) {
       const remote = String(req.socket?.remoteAddress || '')
       const loopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1'
       if (!loopback) {
-        return json(403, { ok: false, error: '工坊接口仅允许本机连接；远程来源不能读取提议或授权。' })
+        return json(403, { ok: false, error: '工坊接口仅接受本机发起的请求；远程来源不能读取提议或授权。' })
       }
       /* 心跳桥(唯二的跨源调用方,来自游戏页 location.origin=游戏服务器,端口与插件不同)
        * 单独一条规矩:Origin 必须为空(非浏览器)或**回环来源**,不看端口是否与 Host 一致。
@@ -1048,7 +1048,7 @@ export function apply(ctx, config) {
         }
         if (req.method === 'POST' && url.pathname === '/noname-kit-api/online/command') {
           const body = await readBody()
-          const actions = new Set(['create_room', 'join_room', 'invite_refresh', 'accept_answer', 'join_invite', 'transfer_pack', 'batch_decision', 'batch_cancel', 'batch_reload', 'batch_retry', 'clear_quarantine', 'set_config', 'set_identity', 'restart_room', 'set_mode', 'cancel'])
+          const actions = new Set(['create_room', 'join_room', 'invite_refresh', 'accept_answer', 'join_invite', 'transfer_pack', 'batch_decision', 'batch_cancel', 'batch_reload', 'batch_retry', 'manifest_recheck', 'clear_quarantine', 'set_config', 'set_identity', 'restart_room', 'set_mode', 'cancel'])
           if (!actions.has(body.action)) return json(400, { ok: false, error: `未知命令: ${body.action}` })
           if (['batch_decision','batch_cancel','batch_reload','batch_retry'].includes(body.action)) {
             const a = body.args

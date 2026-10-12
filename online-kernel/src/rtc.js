@@ -247,6 +247,7 @@
 			self._lastIn = Date.now();
 			if (nnk.modules.consent && nnk.modules.consent.handle(self, e.data)) return;
 			if (nnk.modules.batch && nnk.modules.batch.handle(self, e.data)) return;
+            if (nnk.modules.manifest && nnk.modules.manifest.handle(self, e.data)) return;
 			if (self.onmessage) {
 				self.onmessage({ data: e.data });
 			} else {
@@ -270,6 +271,7 @@
 			}
 		};
 		if (nnk.modules.consent) nnk.modules.consent.attach(self, "guest");
+        if (nnk.modules.manifest) nnk.modules.manifest.attach(self, "guest");
 	}
 	FakeWebSocket.prototype.onUp = function(fn) { this._upHooks.push(fn); };
 	FakeWebSocket.prototype.onDown = function(fn) { this._downHooks.push(fn); };
@@ -322,6 +324,7 @@
 		channel.onmessage = function(e) {
 			if (nnk.modules.consent && nnk.modules.consent.handle(self, e.data)) return;
 			if (nnk.modules.batch && nnk.modules.batch.handle(self, e.data)) return;
+            if (nnk.modules.manifest && nnk.modules.manifest.handle(self, e.data)) return;
 			if (self.onmessage) {
 				self.onmessage(e.data);
 			}
@@ -335,6 +338,7 @@
 		};
 		channel.onerror = function() { /* 引擎侧无对应处理,忽略 */ };
 		if (nnk.modules.consent) nnk.modules.consent.attach(self, "host");
+        if (nnk.modules.manifest) nnk.modules.manifest.attach(self, "host");
 	}
 	var HOST_BRIDGE_SEQ = 0;
 	HostBridge.prototype.send = function(data) {
