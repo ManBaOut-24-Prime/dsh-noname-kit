@@ -55,4 +55,7 @@ for(const status of [null,'receiving','committing','committed','committed_activa
   if(['committed','committed_activation_required','unknown','recovery_required'].includes(status)){assert.equal(cancel,undefined);return}
   cancel.p.onClick();assert.equal(commands.length,0);confirmed=true;cancel.p.onClick();assert.equal(commands[0][0],'batch_cancel');assert.equal(commands[0][1].proposal,q.proposal);if(status)assert.match(message,/取消不能恢复旧版本/);
 });
+for(const status of ['committed','committed_activation_required','unknown','recovery_required'])await test('terminated consent cannot expose retry for final file truth '+status,()=>{
+  const q={role:'host',status:'cancelled',session:'a'.repeat(32),peerSession:'b'.repeat(32),proposal:'c'.repeat(32),digest:'d'.repeat(64),batch:{extensions:[]}},tree=nodes(render({state:{batchProposals:[q],fileBatches:[{...q,status}]}},true,h,e,()=>{}, {confirm:()=>true},{},()=>{}));assert.equal(tree.some(n=>n.t==='button'&&n.children[0]==='重新申请补传'),false);
+});
 console.log(`\n全部通过: ${passed} 项`);

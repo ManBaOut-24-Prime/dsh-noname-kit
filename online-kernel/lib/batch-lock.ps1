@@ -8,6 +8,10 @@ function PublishReply($value) {
     [IO.File]::WriteAllText($temporary,(ConvertTo-Json -Compress -Depth 4 $value),[Text.UTF8Encoding]::new($false))
     [IO.File]::Move($temporary,$request.ready)
 }
+function ControlByte {
+    $control=[IO.File]::Open($request.control,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    try{if($control.Length -ne 1){throw 'Invalid lease control'};return $control.ReadByte()}finally{$control.Dispose()}
+}
 try {
     $drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($request.root))
     if ($drive.DriveFormat -ne 'NTFS') {
@@ -38,7 +42,7 @@ try {
     $reply = @{ok=$true;started=$started.ToString();ownerAlive=$ownerAlive;ownerId=$ownerId;ownerReleased=($null -ne $owner -and $owner.released -is [bool] -and $owner.released)}
     PublishReply $reply
     while ($true) {
-        if ($request.control -and [IO.File]::ReadAllBytes($request.control)[0] -eq 1) { break }
+        if ($request.control -and (ControlByte) -eq 1) { break }
         try {
             $parent.Refresh()
             if ($parent.HasExited -or $parent.StartTime.ToUniversalTime().Ticks -ne $started) { break }

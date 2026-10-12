@@ -102,7 +102,7 @@ function createRuntime(nnk,{enabled=false,storage,activateBatch=names=>activate(
       // Activation has completed before this button becomes available.
       nnk.env.game.reload();return true;
     }}return false}
-  function retry(binding){for(const c of live){const q=c.snapshot();if(c.role==='host'&&matches(q,binding)&&['failed','cancelled','expired'].includes(q.status))return nnk.modules.consent.retry(sockets.get(c),binding)}return nnk.modules.consent.retryPending(binding)}
+  function retry(binding){for(const c of live){const q=c.snapshot();if(c.role==='host'&&matches(q,binding))return ['failed','cancelled','expired'].includes(q.status)?nnk.modules.consent.retry(sockets.get(c),binding):false}return nnk.modules.consent.retryPending(binding)}
   function canEnter(socket){const file=channels.get(socket)?.snapshot(),status=file?.status;
     const pending=enabled&&nnk.modules.consent.waiting?.(socket)&&!(matches(file,nnk.modules.consent.current(socket))&&['failed','cancelled','expired','disconnected'].includes(status));
     return rootReady()&&!needsReload&&!['starting','receiving','committing'].includes(status)&&!pending;

@@ -8,6 +8,11 @@ $streams=[Collections.Generic.List[IO.FileStream]]::new()
 $guarded=[Collections.Generic.List[object]]::new()
 $acquired=$false;$failure=$null
 function Reply($file,$value){$tmp=$file+'.tmp';[IO.File]::WriteAllText($tmp,(ConvertTo-Json -Compress $value),[Text.UTF8Encoding]::new($false));[IO.File]::Move($tmp,$file)}
+function ControlByte {
+    # The controller may hold its write handle while flushing the stop byte.
+    $control=[IO.File]::Open($request.control,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    try{if($control.Length -ne 1){throw 'Invalid publication control'};return $control.ReadByte()}finally{$control.Dispose()}
+}
 function CheckedPath($value){$p=[IO.Path]::GetFullPath($value);if(-not $p.StartsWith($root+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Publication path escape'};return $p}
 function Restore($entry,$file){
     $acl=if($entry.isDirectory){[IO.Directory]::GetAccessControl($file,$section)}else{[IO.File]::GetAccessControl($file,$section)}
@@ -60,7 +65,7 @@ try{
     # even with Delete sharing. Guards now exclude new writers and path changes.
     foreach($stream in $streams){$stream.Dispose()};$streams.Clear()
     Reply $request.ready @{ok=$true}
-    while([IO.File]::ReadAllBytes($request.control)[0] -ne 1){
+    while((ControlByte) -ne 1){
         try{$parent.Refresh();if($parent.HasExited -or $parent.StartTime.ToUniversalTime().Ticks.ToString() -ne $request.born){break}}catch [ArgumentException]{break}catch [InvalidOperationException]{break}
         Start-Sleep -Milliseconds 50
     }

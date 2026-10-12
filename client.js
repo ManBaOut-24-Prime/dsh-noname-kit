@@ -1502,7 +1502,7 @@ window.__ModuleLoader__.load({
           var key=q.session+q.proposal,collapsed=typeof batchUi!=='undefined'&&batchUi[key];
           var finalFile=file&&['committed','committed_activation_required','unknown','recovery_required'].indexOf(file.status)>=0;
           var cancellable = bridgeOnline && !finalFile && ['pending', 'accepting', 'rejecting', 'authorized_paused'].indexOf(q.status) >= 0;
-          var retryable=bridgeOnline&&q.role==='host'&&(['cancelled','expired','failed'].indexOf(q.status)>=0 || file&&['failed','cancelled','expired'].indexOf(file.status)>=0);
+          var retryable=bridgeOnline&&!finalFile&&q.role==='host'&&(['cancelled','expired','failed'].indexOf(q.status)>=0 || file&&['failed','cancelled','expired'].indexOf(file.status)>=0);
           if(collapsed)return h('div',{className:'nnk-card',key:key},e('div','nnk-hint','补传提示已收起；提议和文件事务仍按原状态运行。'),h('button',{className:'nnk-copy',onClick:function(){setBatchUi(Object.assign({},batchUi,{[key]:false}))}},'展开补传提示'));
           return h('div', { className: 'nnk-card', key: q.session + q.proposal },
             e('div', null, h('b', null, '📦 完整批次补传提议')),

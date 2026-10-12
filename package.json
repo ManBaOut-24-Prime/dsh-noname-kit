@@ -27,7 +27,6 @@
     "src",
     "presets",
     "scripts",
-    "docs",
     "online-kernel",
     "cordis.patch.yml",
     "README.md"

@@ -23,6 +23,15 @@ for(const g of ['old','new'])await test('interrupted '+g+' permission restore re
   fs.writeFileSync(target,g+' A/data');assert.equal(core.recover(root).status,g==='new'?'committed':'rolled_back');whole(root,g);assert.equal(core.recover(root).status,'none');
 });
 await test('publication guards exclude content writers and path changes until rename',()=>{const root=fixture();let verified=0;const t=tx(root,e=>{if(e==='verified:new'){verified++;const p=path.join(t.folder,'workspace/A/data');assert.throws(()=>fs.writeFileSync(p,'damage'));assert.throws(()=>fs.renameSync(p,p+'.other'));assert.throws(()=>fs.writeFileSync(path.join(t.folder,'workspace/A/unexpected'),'extra'))}});assert.equal(t.commit(()=>true).status,'committed');assert.equal(verified,1);whole(root,'new')});
+await test('publication control writer overlap cannot release guards or produce false recovery',()=>{
+  const root=fixture();let held=false,endedEarly=false,writerOpened=false;const t=tx(root,event=>{if(event!=='verified:new')return;held=true;const control=fs.readdirSync(t.folder).find(n=>n.startsWith('publication-')&&n.endsWith('.control')),file=path.join(t.folder,control),fd=fs.openSync(file,'r+');
+    try{Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,500);endedEarly=fs.existsSync(file.replace(/\.control$/,'.done'));let writer;try{writer=fs.openSync(path.join(t.folder,'workspace/A/data'),'r+');writerOpened=true}catch(error){if(!['EPERM','EACCES'].includes(error.code))throw error}finally{if(writer!==undefined)fs.closeSync(writer)}}finally{fs.closeSync(fd)}
+  });assert.equal(t.commit(()=>true).status,'committed');assert.equal(held,true);assert.equal(endedEarly,false,'Publisher ended while its live controller held a control writer');assert.equal(writerOpened,false,'Publication protection ended before rename');whole(root,'new');assert.equal(fs.existsSync(root+'/nnk-batches/active'),false);
+});
+await test('lease control writer overlap cannot release a live native mutex',()=>{
+  const root=fixture(),lease=core.acquireWriteLease(root),dir=path.join(root,'nnk-batches/leases'),file=path.join(dir,fs.readdirSync(dir).find(n=>n.endsWith('.control'))),fd=fs.openSync(file,'r+');
+  try{Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,500);lease.check();assert.equal(fs.existsSync(file.replace(/\.control$/,'.done')),false)}finally{fs.closeSync(fd);lease.release()}
+});
 await test('rollback failure and failed abort release ownership for live-process recovery',()=>{const root=fixture(),t=tx(root,e=>{if(e==='new:B')throw Error('stop before commit')}),original=fs.renameSync;let inject=true;fs.renameSync=function(from,to){if(inject&&String(from).startsWith(t.folder+path.sep+'old'+path.sep))throw Object.assign(Error('temporary old rename'),{code:'EPERM'});return original.apply(this,arguments)};
   try{assert.throws(()=>t.commit(()=>true),e=>e.outcome?.status==='recovery_required');assert.throws(()=>t.abort(),/temporary/);inject=false;assert.equal(core.recover(root).status,'rolled_back');whole(root,'old');assert.equal(core.recover(root).status,'none');assert.throws(()=>t.putFile(0,Buffer.from('old owner')))}finally{fs.renameSync=original}
 });
