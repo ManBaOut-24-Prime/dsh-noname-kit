@@ -66,8 +66,10 @@ await test('file outcomes survive removal of proposal and UI refresh using full 
 });
 await test('disabled identical extensions show enable/restart guidance without a download action',()=>{
   const start=client.indexOf('function renderManifestCard(evs, hostFlow)'),end=client.indexOf('      function leaveRoom',start),commands=[],bridge={state:{},cfg:{}};
-  const impl=new Function('bridge','h','e','onlinePickEvent','onlineEventText','sendCmd','setNote','evs',client.slice(start,end)+';return renderManifestCard(evs,false)');
-  const tree=nodes([impl(bridge,h,e,(evs,type)=>evs.find(v=>v.type===type),()=>'',(...args)=>commands.push(args),()=>{},[{type:'manifest_diff',data:{exts:{missing:[],disabled:['甲包'],changed:[],unverified:[],matching:[]}}}])]);
+  const helper=client.slice(client.indexOf('function onlineManifestCheck('),client.indexOf('    function onlineEventText('));
+  const impl=new Function('bridge','h','e','onlinePickEvent','onlineEventText','sendCmd','setNote','evs',helper+client.slice(start,end)+';return renderManifestCard(evs,false)');
+  const binding={peerId:'disabled-peer',request:1,role:'guest'},events=[{type:'manifest_check',data:{...binding,status:'pending'}},{type:'manifest_diff',data:{...binding,verification:'verified',exts:{missing:[],disabled:['甲包'],changed:[],unverified:[],matching:[]}}},{type:'manifest_check',data:{...binding,status:'verified'}}];
+  const tree=nodes([impl(bridge,h,e,(evs,type)=>evs.findLast(v=>v.type===type),()=>'',(...args)=>commands.push(args),()=>{},events)]);
   const copy=tree.flatMap(n=>n.children.filter(c=>typeof c==='string')).join('\n');assert.match(copy,/已安装但未启用，文件内容一致：甲包/);assert.match(copy,/自行启用并重启，再重新体检；无需下载/);assert.equal(commands.length,0);assert.equal(tree.some(n=>n.t==='button'&&String(n.children[0]).includes('补传')),false);
 });
 console.log(`\n全部通过: ${passed} 项`);

@@ -1084,7 +1084,26 @@ window.__ModuleLoader__.load({
       }
       return null;
     }
-    function onlineEventText(ev) {
+    function onlineManifestCheck(evs) {
+      var start = -1, check = null, diff = null, reference = onlinePickEvent(evs, 'manifest_diff');
+      if (!Array.isArray(evs)) return { check: null, diff: null, reference: null, verified: false };
+      for (var i = evs.length - 1; i >= 0; i--) {
+        var d = evs[i] && evs[i].data;
+        if (evs[i] && evs[i].type === 'manifest_check' && d && d.status === 'pending'
+          && typeof d.peerId === 'string' && d.peerId && Number.isSafeInteger(d.request) && d.request > 0) {
+          start = i; check = d; break;
+        }
+      }
+      /* 单卡跟随最近发起的检查;另一对端的迟到完成不能替换它。 */
+      for (var j = start + 1; start >= 0 && j < evs.length; j++) {
+        var ev = evs[j], data = ev && ev.data;
+        if (!data || data.peerId !== check.peerId || data.request !== check.request || data.role !== check.role) continue;
+        if (ev.type === 'manifest_check' && check.status !== 'closed') check = data;
+        if (ev.type === 'manifest_diff' && data.verification === 'verified') diff = ev;
+      }
+      return { check: check, diff: diff, reference: reference, verified: !!(check && check.status === 'verified' && diff) };
+    }
+    function onlineEventText(ev, evs) {
       /* 空项防护:动态流是 events.map(onlineEventText),任何一环混进 null/非对象,
        * 这里读 .type 就炸整页(与 onlinePickEvent 同款防线) */
       if (!ev || typeof ev !== 'object') return String(ev || '(空事件)');
@@ -1100,10 +1119,20 @@ window.__ModuleLoader__.load({
         case 'identity_applied': return '✅ 人物标识已生效:名字「' + ((ev.data && ev.data.name) || '') + '」/ 头像「' + ((ev.data && ev.data.avatar) || '不设置') + '」';
         case 'manifest_diff': {
           var d = ev.data || {};
-          var miss = (d.exts && d.exts.missing || []).length;
-          var missPack = (d.packs && d.packs.missing || []).length;
-          if (!miss && !missPack) return '📦 包体检:双方扩展一致';
-          return '📦 包体检:客人缺 ' + miss + ' 个扩展、' + missPack + ' 个武将包';
+          var current = onlineManifestCheck(evs);
+          if (!current.verified || current.diff !== ev) return '📦 包体检历史或参考记录（不代表本次检查）';
+          var exts = d.exts || {}, count = function (v) { return Array.isArray(v) ? v.length : 0 };
+          var miss = count(exts.missing), missPack = count(d.packs && d.packs.missing);
+          if (count(exts.unverified)) return '📦 包体检：本次尚未核验，' + count(exts.unverified) + ' 个扩展内容未核验';
+          if (count(exts.changed)) return '📦 包体检：' + count(exts.changed) + ' 个同名扩展内容不同';
+          if (count(exts.disabled)) return '📦 包体检：' + count(exts.disabled) + ' 个扩展尚未启用';
+          if (miss || missPack) return '📦 包体检：缺 ' + miss + ' 个扩展、' + missPack + ' 个武将包';
+          return Array.isArray(exts.matching) ? '📦 包体检：本次已核验的启用扩展内容一致' : '📦 包体检：本次尚未核验';
+        }
+        case 'manifest_check': {
+          var active = onlineManifestCheck(evs), state = ev.data || {};
+          if (active.check !== state) return '📦 包体检历史状态（不代表本次结果）';
+          return active.verified ? '📦 当前体检结果已返回' : '📦 包体检：' + (state.reason && state.reason.indexOf('本次尚未核验') >= 0 ? state.reason : '本次尚未核验' + (state.reason ? '（' + state.reason + '）' : ''));
         }
         case 'ext_error': return '🧩 扩展报错(已拦截' + ((ev.data && ev.data.ext) ? ':' + ev.data.ext : '') + ')';
         case 'ext_quarantined': return '🚫 扩展「' + ((ev.data && ev.data.ext) || '?') + '」联机下爆栈,已自动隔离';
@@ -1531,7 +1560,11 @@ window.__ModuleLoader__.load({
       }
 
       function renderManifestCard(evs, hostFlow) {
-        var diffEv = onlinePickEvent(evs, 'manifest_diff');
+        var current = onlineManifestCheck(evs);
+        var verified = current.verified && bridge.online !== false;
+        var diffEv = verified ? current.diff : current.check ? null : current.reference;
+        var reason = current.check && current.check.reason;
+        var checkHint = !verified ? e('div', 'nnk-hint', reason && reason.indexOf('本次尚未核验') >= 0 ? reason : '本次尚未核验' + (reason ? '：' + reason : '')) : null;
         var pauseHint = e('div', 'nnk-err', '⚠️ 补传已暂停：旧协议缺少客人逐请求授权与整批完整性／回滚保障，不接受 legacy 降级。正常联机及包体检仍可使用；缺包可能影响对局兼容性。已运行的旧内核须另行升级并重启，才会应用此止损。');
         /* 重置按钮常驻:隔离名单持久化在游戏配置里,清它不能依赖会话内的事件记录 */
         var resetBtn = (function () {
@@ -1543,8 +1576,11 @@ window.__ModuleLoader__.load({
         if (!diffEv || !diffEv.data) {
           return h('div', { className: 'nnk-card' },
             e('div', null, h('b', null, '📦 包体检')),
+            checkHint,
+            current.check && current.check.identity && current.check.identity.name ? e('div', 'nnk-hint', '👤 对方(' + (hostFlow ? '客人' : '房主') + '):「' + current.check.identity.name + '」') : null,
             e('div', 'nnk-hint', '客人进房后自动对比双方扩展清单,缺什么这里会列出来。'),
             pauseHint,
+            !hostFlow ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('manifest_recheck',{})}},'重新体检') : null,
             resetBtn);
         }
         var d = diffEv.data;
@@ -1553,7 +1589,7 @@ window.__ModuleLoader__.load({
         var disabled = (d.exts && d.exts.disabled) || [], changed = (d.exts && d.exts.changed) || [], unverified = (d.exts && d.exts.unverified) || [];
         var missPacks = Array.isArray(d.packs && d.packs.missing) ? d.packs.missing : [];
         /* P2P 连接识别 v1:身份随清单交换,主机看客人、客人看房主 */
-        var peer = hostFlow ? (d.guestIdentity || null) : (d.hostIdentity || null);
+        var peer = verified ? (hostFlow ? (d.guestIdentity || null) : (d.hostIdentity || null)) : (current.check && current.check.identity);
         /* 旧版成功事件不证明当前内容完整,不能据此隐藏体检中的缺包。 */
         var stillMissing = missing;
         var txEv = null;
@@ -1564,10 +1600,12 @@ window.__ModuleLoader__.load({
           }
         }
         /* 保留联机混装提示,但版本相同也不能恢复已暂停的补传。 */
-        var peerKernel = hostFlow ? (d.guestKernel || null) : (d.hostKernel || null);
+        var peerKernel = verified ? (hostFlow ? (d.guestKernel || null) : (d.hostKernel || null)) : null;
         var mineKernel = (bridge && bridge.kernelVersion) || null;
         return h('div', { className: 'nnk-card' },
           e('div', null, h('b', null, '📦 包体检')),
+          checkHint,
+          !verified ? e('div', 'nnk-hint', '以下仅为历史或参考记录，不代表本次检查结果。') : null,
           pauseHint,
           e('div', 'nnk-hint', (bridge.cfg && bridge.cfg.root === false)
             ? '⚠️ 本机无法定位游戏目录,扩展分类已跳过(全部扩展会参与联机加载)。'
@@ -1578,7 +1616,7 @@ window.__ModuleLoader__.load({
           peer && peer.name ? e('div', 'nnk-ok', '👤 对方(' + (hostFlow ? '客人' : '房主') + '):「' + peer.name + '」' + (peer.avatar ? '(头像:' + peer.avatar + ')' : '')) : null,
           stillMissing.length
             ? h('div', {},
-              e('div', 'nnk-hint', hostFlow
+              e('div', 'nnk-hint', !verified ? '参考记录中缺以下扩展，需重新核对:' : hostFlow
                 ? '客人缺以下扩展，补传暂停，缺包可能影响对局兼容性:'
                 : '你缺以下扩展，补传暂停，缺包可能影响对局兼容性:'),
               stillMissing.map(function (name) {
@@ -1586,9 +1624,10 @@ window.__ModuleLoader__.load({
                   h('span', null, name + ' '),
                   hostFlow ? h('button', { className: 'nnk-copy', disabled: true, title: 'B0 安全止损：自动及手动补传均已暂停' }, '📦 补传已暂停') : null);
               }))
-            : !disabled.length&&!changed.length&&!unverified.length&&d.exts&&Array.isArray(d.exts.matching) ? e('div', 'nnk-ok', '✅ 已体检的启用扩展内容一致。') : null,
-          disabled.length ? e('div','nnk-hint','已安装但未启用，文件内容一致：'+disabled.join('、')+'。请客人在游戏扩展设置中自行启用并重启，再重新体检；无需下载。') : null,
-          changed.length ? e('div','nnk-err','同名扩展文件内容不同：'+changed.join('、')+'。补传新批次仍须客人明确点击“是”。') : null,
+            : verified&&!missPacks.length&&!disabled.length&&!changed.length&&!unverified.length&&d.exts&&Array.isArray(d.exts.matching) ? e('div', 'nnk-ok', '✅ 已体检的启用扩展内容一致。') : null,
+          disabled.length ? e('div','nnk-hint',verified ? '已安装但未启用，文件内容一致：'+disabled.join('、')+'。请客人在游戏扩展设置中自行启用并重启，再重新体检；无需下载。' : '参考记录中的未启用扩展：'+disabled.join('、')+'。请重新核对。') : null,
+          changed.length ? e('div','nnk-err',(verified?'同名扩展文件内容不同：':'参考记录中的同名扩展内容差异：')+changed.join('、')+'。补传新批次仍须客人明确点击“是”。') : null,
+          verified&&unverified.length ? e('div','nnk-hint','本次尚未核验') : null,
           unverified.length ? e('div','nnk-hint','内容尚未核验：'+unverified.join('、')+'。名称一致不能证明文件一致，请双方升级后重新体检。') : null,
           !hostFlow ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('manifest_recheck',{})}},'重新体检') : null,
           missPacks.length ? e('div', 'nnk-hint', '缺少的武将包(当前不会补传):' + missPacks.join('、')) : null,
@@ -1969,7 +2008,7 @@ window.__ModuleLoader__.load({
               e('div', null, h('b', null, '📡 动态')),
               h('div', { className: 'nnk-log' }, evs.length
                 ? evs.filter(function (ev2) { return ev2 && ev2.type !== 'room_members'; }).slice(-20).reverse().map(function (ev, i) {
-                  return h('div', { key: i, className: 'nnk-break' }, new Date(ev.ts).toLocaleTimeString() + ' · ' + onlineEventText(ev));
+                  return h('div', { key: i, className: 'nnk-break' }, new Date(ev.ts).toLocaleTimeString() + ' · ' + onlineEventText(ev, bridgeOnline ? evs : []));
                 })
                 : h('div', { className: 'nnk-hint' }, '暂无动态。'))),
             renderBatchProposals(),

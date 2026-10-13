@@ -271,7 +271,8 @@ for (const action of ['create_room', 'join_room', 'cancel', 'clear_quarantine', 
 // UI 真函数渲染:旧 transfer_done 历史不能让当前缺包消失。
 const cardCode = sliceBetween(source('client.js'), 'function renderManifestCard(', '/* 解散/退出房间')
 const h = (tag, props, ...children) => ({ tag, props: props || {}, children: children.flat() })
-const render = runInNewContext(cardCode + '\nrenderManifestCard', {
+const helperCode = sliceBetween(source('client.js'), 'function onlineManifestCheck(', 'function onlineEventText(')
+const render = runInNewContext(helperCode + cardCode + '\nrenderManifestCard', {
   h, e: (tag, cls, ...children) => h(tag, { className: cls }, ...children),
   bridge: { cfg: {}, kernelVersion: '0.3.67' }, setNote() {}, sendCmd() { throw Error('暂停按钮不应发命令') },
   onlinePickEvent: (evs, type) => evs.findLast((ev) => ev.type === type), onlineEventText: (ev) => ev.data.message,
