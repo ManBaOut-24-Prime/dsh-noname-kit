@@ -1,14 +1,26 @@
 {
   "version": 2,
   "reviewedBinary": {
-    "docs/screenshots/workshop.png": {
-      "sha256": "585ee4d0cf7d73dbc2fd9ea3aec75c323b64416d783972e922d8a41dda4fb65f",
-      "reason": "Original upstream product workshop screenshot; visually reviewed, no credentials or private working records."
-    },
-    "docs/screenshots/history.png": {
-      "sha256": "a9fbfe55932232e6c8b0afb4ee49c94be5d147fbc1805a295c4f669c6c262c22",
-      "reason": "Original upstream product history screenshot; visually reviewed, no credentials or private working records."
-    },
+    "docs/screenshots/workshop.png": [
+      {
+        "sha256": "585ee4d0cf7d73dbc2fd9ea3aec75c323b64416d783972e922d8a41dda4fb65f",
+        "reason": "Original upstream product workshop screenshot; visually reviewed, no credentials or private working records."
+      },
+      {
+        "sha256": "997404bfb9dd7346686e14ae904a7b706f4c6fe0ddc55493b87f11012b2c41f2",
+        "reason": "Original upstream historical product screenshot; visually reviewed, no credentials or private working records."
+      }
+    ],
+    "docs/screenshots/history.png": [
+      {
+        "sha256": "a9fbfe55932232e6c8b0afb4ee49c94be5d147fbc1805a295c4f669c6c262c22",
+        "reason": "Original upstream product history screenshot; visually reviewed, no credentials or private working records."
+      },
+      {
+        "sha256": "17338fa52286b6ff4e0e3a7bb47195ef669e2619375cbc0775d5ee23c1c8510a",
+        "reason": "Original upstream historical product screenshot; visually reviewed, no credentials or private working records."
+      }
+    ],
     "docs/screenshots/online.png": {
       "sha256": "1f75934f2c96dddf38536a871b7bb7af05a732728227937737b51e588026da22",
       "reason": "Original upstream product online screenshot; visually reviewed, no credentials or private working records."
@@ -123,6 +135,94 @@
       {
         "reason": "Reviewed project README version; product description and usage.",
         "sha256": "12e57772487fe8d460431bae2f42f18380e7ff711d1d634a452866cf94e90cc3"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "8a43cc3996c4743e159daf8ba2e77b0dbed7ad898adcdc8ae398c13a0409a40c"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "35ab8685c7b6ba3a9c9a9dec5c1a80f13b7a4c565fd9201ee3b91e728dcf5c28"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "58251c7a5528c06b2dedb33c7990c0179cf90a5d0fb1bfe45b8b8a4093f0ec35"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "7cbc9a720b51ba53bb161430e082164e325e840a41b43cc70b6314c60cdbde19"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "a531761ed51603290ef46aa87f2e6c09b441b7d8efb1fa7b8e193b1e5e0b90a7"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "d25700d5db583f453e454f204e8c27ac3fa4d80a683cd2f8a3a474f2fd7a71dc"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "ae6d2946453815a1d4e86d66ac1baf1831ba8ebd6142ebbbfc83c5f412de2434"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "69979bea3e562c0900aa12be2f2700a2836c5ab971f512bd56d8c96655a943d6"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "031e15fa3c92812893e04b2898447f62d5abb836da90a6c6db57482157e4ae98"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "a1887304624249fc603c39981d62d96c8a13e5c88a13e31b3bb70e3dd229def3"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "42098241257fe78cbea816fa2ea9ec14fc89259145b7b206db008f4f74b6b397"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "3b7989e04b66b7691abede09daf460a7c5a24c8140a73a64cc668124f675b0f0"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "2a5c2ba141d57729ce837a1e3e54962dafce7b678be07eb3cab8850aa1721ffb"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "45bb946f1c7226c39fece9ded5dab09a72048ff177307477fb2baa6cafe3ec1b"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "135ec608e37e02963bc716d5ea8c21f3b82a3e5ee8acf73ed8dcc1809fe5146f"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "4c57c61e8df8c723fe34149f33bb764075d16ef141053a1092a3315b6a9215b7"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "043bcbf11d50ba9aff1c8c0792199cff55d892d884678229dfd67cf448a2ace0"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "1fab34be4f6d1b0a56ebb6feb5fb6de154ed417b2fa52a3a0b572697b14d5574"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "ca5eb2ab17ea9054b43c48ca86078cb8a25b3b54b5b8dbc80b93863ad62e6707"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "cbf3742a33441f52c31114fbafca7aa43ebe3fe419c41b9f6492641a5e9df626"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "6d8f6a4ab916cad59727589780b8a53ff72ebc8b2b0b917c30ab1ff0db8fe466"
+      },
+      {
+        "reason": "Reviewed original upstream historical README; product description, installation and usage.",
+        "sha256": "224a86af9f7b68e8d3d55c3e319e4529c3a79a2534274c687b1017b4e61a1857"
       }
     ],
     "docs/PRIVACY.md": [
