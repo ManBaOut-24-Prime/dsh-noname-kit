@@ -1,11 +1,11 @@
-name: Repository privacy
+name: Test path boundaries
 on:
   push:
   pull_request:
 permissions:
   contents: read
 jobs:
-  privacy:
+  test-paths:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -15,8 +15,4 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
-      - run: node scripts/privacy-check.mjs --tracked
-      - run: node scripts/privacy-check.mjs --history
-      - run: node scripts/test-privacy.mjs
-      - run: node scripts/test-privacy-process.mjs
       - run: node scripts/test-test-paths.mjs

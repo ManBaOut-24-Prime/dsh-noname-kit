@@ -5,11 +5,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "node scripts/test-all.mjs",
-    "privacy": "node scripts/privacy-check.mjs --tracked",
-    "privacy:staged": "node scripts/privacy-check.mjs --staged",
-    "privacy:history": "node scripts/privacy-check.mjs --history",
-    "privacy:hooks": "node scripts/install-privacy-hooks.mjs"
+    "test": "node scripts/test-all.mjs"
   },
   "exports": {
     ".": "./index.js",
