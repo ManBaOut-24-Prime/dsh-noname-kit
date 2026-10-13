@@ -204,19 +204,29 @@ test('sendDirect 禁止补传帧,但保留 Manifest 定向传输', () => {
   for (const func of ['nnk_tx_begin', 'nnk_tx_file', 'nnk_tx_data', 'nnk_tx_done']) {
     assert.equal(k.nnk.modules.transfer.sendDirect({ ws: k.bridge }, func, { name: '包' }), false)
   }
+  k.bridge._entered = false
+  assert.equal(k.nnk.modules.transfer.sendDirect({ ws: k.bridge }, 'nnk_manifest_diff', { exts: { missing: ['包'] } }), false)
+  assert.equal(k.frames.length, 0)
+  k.bridge._entered = true
   assert.equal(k.nnk.modules.transfer.sendDirect({ ws: k.bridge }, 'nnk_manifest_diff', { exts: { missing: ['包'] } }), true)
   assert.equal(k.frames.length, 1)
   assertContained(k)
 })
-test('缺包清单正常双向体检,重检/重连不自动补传', () => {
+test('缺包清单定向体检,无归属结果被忽略且重检不自动补传', () => {
   const k = kernel()
   runInNewContext(source('online-kernel/src/manifest.js'), k.context)
   k.nnk.modules.manifest.install()
+  k.bridge.channel = { readyState: 'open' }
+  k.bridge.onDown = () => {}
+  k.nnk.modules.manifest.attach(k.bridge, 'host')
   for (let i = 0; i < 3; i++) k.lib.message.server.nnk_manifest.call({ ws: k.bridge }, { exts: [], packs: [], cards: [], kernel: '0.1.0' })
   assert.equal(k.frames.length, 3)
   assert.ok(k.frames.every(([func, result]) => func === 'nnk_manifest_diff' && result.exts.missing[0] === '包'))
   assert.ok(k.events.some((e) => e.type === 'info' && /暂停/.test(e.data.message)))
+  const count = k.events.length
   k.lib.message.client.nnk_manifest_diff(k.frames[0][1])
+  assert.equal(k.events.length, count)
+  k.nnk.modules.manifest.detach(k.bridge)
   k.nnk.modules.manifest.sendManifest()
   assert.ok(k.acks.some((ack) => ack.func === 'nnk_manifest'))
   k.acks.pop() // Manifest 上报不是 transfer ack

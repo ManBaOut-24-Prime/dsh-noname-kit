@@ -1040,17 +1040,14 @@
 				return;
 			}
 			env.game.__nnkCreateServerPatched = true;
-			var origOver = env.game.over;
-			if (typeof origOver === "function") env.game.over = function() {
-				var owner = hostState.engineOwner;
-				var finish = function() { if (env._status.over && owner) finishDetachedEngine(owner); };
+			/* 原生 game.over 会被序列化给客人,必须保留原函数。onover 只在本地
+			 * 标记结算;已解散大厅的引擎连接留到退出/重载,让最后的结算消息送达。 */
+			env.lib.onover = env.lib.onover || [];
+			env.lib.onover.push(function() {
 				try {
-					var result = origOver.apply(this, arguments);
-					if (result && typeof result.then === "function") return result.then(function(value) { finish(); return value; }, function(err) { finish(); throw err; });
-					finish();
-					return result;
-				} catch (e) { finish(); throw e; }
-			};
+					if (hostState.engineOwner && env._status.over) hostState.engineOwner.ended = true;
+				} catch (e) { /* 本地观察失败不能中断后续官方结束钩子 */ }
+			});
 			var origCreateServer = env.game.createServer;
 			env.game.createServer = function() {
 				if (hostState.active) {
@@ -1296,6 +1293,7 @@
 							return;
 						}
 					} catch (e) { /* 接力失败则按老行为散房 */ }
+					finishDetachedEngine();
 					return origReload.apply(this, arguments);
 				};
 			}

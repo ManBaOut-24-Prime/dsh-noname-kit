@@ -10,7 +10,8 @@
   const nativeClose=lib.element.Client.prototype.close;
   lib.element.Client.prototype.close=function(){closed++;return nativeClose.apply(this,arguments)};
   lib.configprefix='b5-host-probe-';lib.config={mode:'connect',mode_config:{},connect_nickname:'Host probe'};lib.configOL={mode:'single',number:2};lib.status.reload=1;lib.db=undefined;
-  // Rendering consumers and remote sends are controlled; native connection/Client.close/exit/save/reload/over stay real.
+  // Partial official-method fixture: PC, clock, UI and remote sends are controlled.
+  // controlOver returns before lib.onover; this fixture cannot verify native full settlement or the end hook.
   ui.create.roomInfo=ui.create.chat=()=>{};ui.control={show(){}};ui.clear=()=>{};
   ui.create.dialog=()=>({content:document.createElement('div'),add(){}});ui.create.div=()=>document.createElement('div');
   game.stopCountChoose=()=>{};game.controlOver=()=>{overResults++};game.updateWaiting=()=>{waitingUpdates++};game.broadcast=()=>{broadcasts++};
@@ -43,10 +44,13 @@
     check(stage+' '+order.join('/')+' real Client.close exactly once removes clients and observers',()=>closed===beforeClose+1&&client.closed&&!lib.node.clients.includes(client)&&!lib.node.observing.includes(client)&&pc.closed===1&&timers.size===0);
     if(stage==='waiting')check('native waiting seat/zhu/update '+order.join('/'),()=>uninit===1&&!game.connectPlayers[0].playerid&&game.onlinezhu===null&&waitingUpdates===beforeWaiting+1);
     else check('native offline nickname/AI/broadcast '+order.join('/'),()=>player.nickname==='guest - 离线'&&unwait===1&&broadcasts===beforeBroadcast+1);
-    game.players=[];await game.over();
+    game.players=[];await game.over();game.reload();
   }
   room();const retained=open();game.players=[{}];api.cancelAll();const before=overResults;game.players=[];await game.over();
-  check('actual native game.over reaches result hook and releases detached PC',()=>_status.over&&overResults===before+1&&retained.pc.closed===1&&retained.client.closed&&nnk.state.host.engineOwner===null);
+  const retainedAfterOver={pcClosed:retained.pc.closed,clientClosed:!!retained.client.closed,engineOwned:!!nnk.state.host.engineOwner};
+  check('native over controlOver early-return path retains detached PC until exit or reload',()=>_status.over&&overResults===before+1&&retained.pc.closed===0&&!retained.client.closed&&nnk.state.host.engineOwner.bridges.includes(retained.conn));
+  game.reload();
+  check('native reload entry releases detached PC under controlled reload hold',()=>_status.reloading&&_status.waitingToReload&&retained.pc.closed===1&&retained.client.closed&&nnk.state.host.engineOwner===null&&timers.size===0);
   room();const exited=open();api.cancelAll();_status.reloading=false;lib.config.reconnect_info=['host','guest','room'];lib.config.tmp_user_roomId='before';ui.exit=undefined;
   localStorage.setItem(lib.configprefix+'config',JSON.stringify({reconnect_info:['host','guest','room'],tmp_user_roomId:'before'}));ui.click.exit();for(let i=0;i<10;i++)await Promise.resolve();
   const stored=JSON.parse(localStorage.getItem(lib.configprefix+'config'));
@@ -54,5 +58,5 @@
   check('actual Host native exit reaches reload after cleanup',()=>_status.reloading&&_status.waitingToReload&&exited.pc.closed===1&&exited.client.closed&&nnk.state.host.engineOwner===null&&timers.size===0);
   const engineVersion=/version:\s*"([^"]+)"/.exec(fs.readFileSync(process.env.NNK_ENGINE_ROOT+'/game/update.js','utf8'))?.[1];
   const sourceHashes=Object.fromEntries(['extension.js','src/host.js','src/rtc.js','src/guest.js'].map(file=>[file,require('node:crypto').createHash('sha256').update(fs.readFileSync(root+'/online-kernel/'+file)).digest('hex')]));
-  return {ok:checks.every(c=>c.passed),checks,engineVersion,sourceRoot:root,sourceHashes,overEvidence:{before,overResults,retainedClosed:retained.pc.closed,clientClosed:retained.client.closed},note:'Hidden programmatic official ESM lib.init.connection, Client.close, ui.click.exit, game.saveConfig/reload/over. Controlled transport/clock and rendering/remote consumers; game.over uses minimal players and real result hook. No live peers or GUI acceptance.'};
+  return {ok:checks.every(c=>c.passed),checks,engineVersion,sourceRoot:root,sourceHashes,overEvidence:{before,overResults,retainedAfterOver,retainedClosed:retained.pc.closed,clientClosed:retained.client.closed},note:'Controlled partial official-method fixture using official ESM lib.init.connection, Client.close, ui.click.exit, game.saveConfig/reload/over. PC, clock, UI and remote consumers are simulated; controlOver returns before lib.onover, and lib.status.reload holds document reload. Does not verify native full settlement, lib.onover execution, real WebRTC delivery, document unload or human two-computer acceptance.'};
 })()

@@ -294,11 +294,13 @@
 		}
 	};
 	FakeWebSocket.prototype.close = function() {
+		if (nnk.modules.manifest) nnk.modules.manifest.detach(this);
 		try { this.channel.close(); } catch (e) { /* 已关 */ }
 	};
 	/* 释放尝试资源;正常引擎 close 回调由当前 owner 明确交付。 */
 	FakeWebSocket.prototype.dispose = function() {
 		if (this._disposed) return;
+		if (nnk.modules.manifest) nnk.modules.manifest.detach(this);
 		if (nnk.modules.consent) nnk.modules.consent.detach(this);
 		this._disposed = true;
 		this._open = false;
@@ -322,6 +324,7 @@
 		this.bridgeId = "b" + (++HOST_BRIDGE_SEQ);
 		this._downHooks = [];
 		channel.onmessage = function(e) {
+			if (self._closed) return;
 			if (nnk.modules.consent && nnk.modules.consent.handle(self, e.data)) return;
 			if (nnk.modules.batch && nnk.modules.batch.handle(self, e.data)) return;
             if (nnk.modules.manifest && nnk.modules.manifest.handle(self, e.data)) return;
@@ -347,6 +350,7 @@
 		}
 	};
 	HostBridge.prototype.close = function() {
+		if (nnk.modules.manifest) nnk.modules.manifest.detach(this);
 		try { this.channel.close(); } catch (e) { /* 已关 */ }
 	};
 	HostBridge.prototype.on = function(type, func) {

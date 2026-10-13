@@ -1796,7 +1796,8 @@ window.__ModuleLoader__.load({
         return h('div', { className: 'nnk-dash' },
         h('div', { className: 'nnk-card nnk-dash-full' },
           h('b', { style: { color: 'var(--dsw-alias-state-warning-primary, #b8860b)' } }, '⚠️ 联机功能仅适配官方版无名杀(无 UI 美化),第三方套壳尽力而为:'),
-          h('a', { href: 'https://github.com/libnoname/noname', target: '_blank', rel: 'noopener', style: { color: 'var(--dsw-alias-brand-primary)', marginLeft: '6px' } }, 'github.com/libnoname/noname')),
+          h('a', { href: 'https://github.com/libnoname/noname', target: '_blank', rel: 'noopener', style: { color: 'var(--dsw-alias-brand-primary)', marginLeft: '6px' } }, 'github.com/libnoname/noname'),
+          e('div', 'nnk-hint', '建议联机双方尽量使用相同版本的官方无名杀，以减少兼容性问题；不同小版本仍可尝试联机。')),
         h('div', { className: 'nnk-card nnk-dash-full' },
           e('div', null, h('b', null, '🌐 联机助手')),
           status.batchRecovery && status.batchRecovery.status!=='none'

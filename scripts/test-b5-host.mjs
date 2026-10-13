@@ -14,9 +14,9 @@ function fixture(options={}) {
     setLocalDescription(){this.locals++;return Promise.resolve()} setRemoteDescription(){this.remotes=(this.remotes||0)+1;return this.remote.promise}
     close(){if(this.closed)return;this.closed++;this.connectionState='closed';this.channels.forEach(c=>c.close())}
   }
-  const nnk={state:{},modules:{},env:{lib:{config:{},configprefix:'b5-',translate:{},mode:{},node:{clients:[]},message:{server:{}},init:{connection(conn){conn.on('close',()=>closes++);options.connection?.(conn)}},configOL:{mode:'single',number:2}},
+  const nnk={state:{},modules:{},env:{lib:{config:{},configprefix:'b5-',translate:{},mode:{},node:{clients:[]},message:{server:{}},onover:[],init:{connection(conn){conn.on('close',()=>closes++);options.connection?.(conn)}},configOL:{mode:'single',number:2}},
     _status:{connectMode:true},get:{connectNickname:()=> 'host'},ui:{create:{roomInfo(){},chat(){}},click:{exit(){}}},
-    game:{players:[],saveConfig(...args){saves.push(args.at(-1))},reload(){reloads++},createServer(){nativeServers++},switchMode(){},resume(){resumes++},over(){nnk.env._status.over=true;return options.over?.(nnk)}},
+    game:{players:[],saveConfig(...args){saves.push(args.at(-1))},reload(){reloads++},createServer(){nativeServers++},switchMode(){},resume(){resumes++},over(){nnk.env._status.over=true;const result=options.over?.(nnk);nnk.env.lib.onover.forEach(fn=>fn());return result}},
   }}
   nnk.modules.bridge={emit:(type,data)=>events.push({type,data}),setPhase:(phase,data)=>events.push({phase,data})}
   nnk.modules.config={get:()=>[]}
@@ -26,8 +26,9 @@ function fixture(options={}) {
     setTimeout:timer,setInterval:timer,clearTimeout:n=>timers.delete(n),clearInterval:n=>timers.delete(n),Date,TextEncoder,TextDecoder,console:{log(){},error(){},warn(){}},btoa,atob,
     localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}}
   runInNewContext(source('rtc'),context);nnk.modules.rtc.waitGather=()=>Promise.resolve();nnk.modules.rtc.trackPc=()=>{};nnk.modules.rtc.directHosts=()=>[];nnk.modules.rtc.addInjected=()=>0
+  const nativeOver=nnk.env.game.over
   runInNewContext(source('host'),context);nnk.modules.host.init()
-  return {nnk,pcs,signals,events,timers,saves,storage,stats:()=>({reloads,resumes,closes,nativeServers})}
+  return {nnk,pcs,signals,events,timers,saves,storage,nativeOver,stats:()=>({reloads,resumes,closes,nativeServers})}
 }
 let passed=0,failed=0
 async function test(name,fn){try{await fn();passed++;console.log('  ✓ '+name)}catch(e){failed++;console.error('  ✗ '+name+': '+e.message)}}
@@ -39,7 +40,23 @@ await test('dissolve keeps engine owner and prevents rebuilding over a running g
   const pc=invite(k),conn=openInvite(k,pc);api.cancelAll();assert.equal(pc.closed,0)
   assert.ok(k.nnk.state.host.engineOwner?.bridges.includes(conn));const count=k.events.length;api.createInternetRoom('identity')
   assert.equal(k.nnk.state.host.active,false);assert.equal(k.stats().reloads,0);assert.ok(k.events.slice(count).some(e=>e.type==='error'))
-  k.nnk.env.game.over();assert.equal(pc.closed,1);assert.equal(k.stats().closes,1);assert.equal(k.nnk.state.host.engineOwner,null)
+  k.nnk.env.game.over();assert.equal(pc.closed,0);assert.equal(k.nnk.state.host.engineOwner.ended,true)
+  conn.send(JSON.stringify(['settlement']));assert.equal(pc.channels[0].sent.at(-1),'["settlement"]')
+  k.nnk.env.game.reload();assert.equal(pc.closed,1);assert.equal(k.stats().closes,1);assert.equal(k.nnk.state.host.engineOwner,null);assert.equal(k.timers.size,0)
+})
+await test('native game.over stays unchanged and local end hook registers once',()=>{
+  const k=fixture();assert.equal(k.nnk.env.game.over,k.nativeOver);assert.equal(k.nnk.env.lib.onover.length,1)
+  k.nnk.modules.host.init();assert.equal(k.nnk.env.game.over,k.nativeOver);assert.equal(k.nnk.env.lib.onover.length,1)
+})
+await test('normal settlement keeps current room connection and original room-code reload behavior',()=>{
+  const k=fixture(),api=k.nnk.modules.host;api.createInternetRoom('single');load(k);const pc=invite(k);openInvite(k,pc);const code=k.nnk.state.host.roomCode
+  k.nnk.env.game.over();assert.equal(pc.closed,0);assert.equal(k.nnk.state.host.engineOwner.ended,true)
+  k.nnk.env.game.reload();assert.equal(k.stats().reloads,0);assert.equal(k.storage.get('b5-nnk_host_roomcode'),code)
+  k.saves.filter(x=>typeof x==='function').at(-1)();assert.equal(k.stats().reloads,1);assert.equal(pc.closed,0)
+})
+await test('local end observation cannot interrupt later native end hooks',()=>{
+  const k=fixture();let observed=0;const owner={bridges:[]};Object.defineProperty(owner,'ended',{set(){throw new Error('failed observation')}});k.nnk.state.host.engineOwner=owner;k.nnk.env.lib.onover.push(()=>observed++)
+  assert.doesNotThrow(()=>k.nnk.env.game.over());assert.equal(observed,1)
 })
 await test('stale MQTT offer cannot create a PC after dissolve and rebuild',()=>{
   const k=fixture(),api=k.nnk.modules.host;api.createInternetRoom('single');const old=k.signals[0];api.cancelAll();api.createInternetRoom('single')
@@ -120,9 +137,9 @@ await test('explicit native exit closes retained engine PC exactly once',()=>{
   const k=fixture(),api=k.nnk.modules.host;api.createInternetRoom('single');load(k);const pc=invite(k);openInvite(k,pc);api.cancelAll();k.nnk.env.ui.click.exit();k.nnk.env.ui.click.exit()
   assert.equal(pc.closed,1);assert.equal(k.stats().closes,1);assert.equal(k.nnk.state.host.engineOwner,null)
 })
-await test('native game over throw still releases detached engine and preserves error',()=>{
+await test('native game over error preserves error and leaves cleanup to explicit exit',()=>{
   const k=fixture({over(){throw new Error('native over failed')}}),api=k.nnk.modules.host;api.createInternetRoom('single');load(k);const pc=invite(k);openInvite(k,pc);api.cancelAll()
-  assert.throws(()=>k.nnk.env.game.over(),/native over failed/);assert.equal(pc.closed,1)
+  assert.throws(()=>k.nnk.env.game.over(),/native over failed/);assert.equal(pc.closed,0);k.nnk.env.ui.click.exit();assert.equal(pc.closed,1);assert.equal(k.stats().closes,1)
 })
 await test('async old game over cannot close a replacement engine owner',async()=>{
   const d=deferred(),k=fixture({over:()=>d.promise}),api=k.nnk.modules.host;api.createInternetRoom('single');load(k);const oldPc=invite(k);openInvite(k,oldPc);api.cancelAll();const done=k.nnk.env.game.over()
@@ -188,9 +205,10 @@ await test('repeated resume cannot bypass an armed readiness gate',()=>{
   k.nnk.env.game.resume();k.nnk.env.game.resume();assert.equal(k.stats().resumes,0)
   k.nnk.env.lib.node.clients[0].inited=true;[...k.timers.values()].find(t=>t.ms===1000).fn();assert.equal(k.stats().resumes,1)
 })
-await test('native async over rejection preserves error and releases detached resources',async()=>{
+await test('native async over rejection preserves error and reload releases detached resources',async()=>{
   const d=deferred(),k=fixture({over:()=>d.promise}),api=k.nnk.modules.host;api.createInternetRoom('single');load(k);const pc=invite(k);openInvite(k,pc);api.cancelAll();const done=k.nnk.env.game.over()
-  d.reject(new Error('native async failure'));await assert.rejects(done,/native async failure/);assert.equal(pc.closed,1);assert.equal(k.stats().closes,1)
+  d.reject(new Error('native async failure'));await assert.rejects(done,/native async failure/);assert.equal(pc.closed,0)
+  k.nnk.env.game.reload();assert.equal(pc.closed,1);assert.equal(k.stats().closes,1);assert.equal(k.nnk.state.host.engineOwner,null)
 })
 await test('overflow parked guests become queued and fill a later waiting vacancy',()=>{
   const k=fixture(),api=k.nnk.modules.host;api.createInternetRoom('single');const a=openInvite(k,invite(k)),b=openInvite(k,invite(k));load(k)
