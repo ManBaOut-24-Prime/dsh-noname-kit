@@ -15,7 +15,7 @@ try { existing = git(['config', '--get', 'core.hooksPath']); } catch (error) { i
 const common = git(['rev-parse', '--path-format=absolute', '--git-common-dir']);
 const hooks = path.join(common, 'hooks'), snapshot = path.join(common, 'noname-kit-privacy');
 if (existing && existing !== '.githooks' && path.resolve(existing) !== hooks) throw Error('Existing hook configuration retained; integrate explicitly');
-for (const name of ['pre-commit', 'pre-push']) {
+for (const name of ['pre-commit', 'pre-push', 'commit-msg']) {
   const target = path.join(hooks, name);
   if (fs.existsSync(target) && !fs.readFileSync(target, 'utf8').includes('# NONAME-KIT managed privacy hook')) throw Error('Existing hook retained; integrate explicitly');
 }
@@ -34,7 +34,7 @@ if (Object.entries(manifest).some(([name, sha256]) => oldManifest[name] !== sha2
 fs.mkdirSync(snapshot, {recursive: true}); fs.mkdirSync(hooks, {recursive: true});
 for (const name of ['privacy-check.mjs', 'privacy-policy.json']) fs.copyFileSync(path.join(repo, 'scripts', name), path.join(snapshot, name));
 fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
-for (const name of ['pre-commit', 'pre-push']) { const target = path.join(hooks, name); fs.copyFileSync(path.join(repo, '.githooks', name), target); fs.chmodSync(target, 0o755); }
+for (const name of ['pre-commit', 'pre-push', 'commit-msg']) { const target = path.join(hooks, name); fs.copyFileSync(path.join(repo, '.githooks', name), target); fs.chmodSync(target, 0o755); }
 git(['config', '--local', 'nonamekit.privacyNode', process.execPath]);
 git(['config', '--local', 'nonamekit.privacyChecker', path.join(snapshot, 'privacy-check.mjs')]);
 git(['config', '--local', 'core.hooksPath', hooks]);

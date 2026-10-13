@@ -339,6 +339,14 @@
       {
         "sha256": "e84c1c8732636ecbeefb374cac93c4a0c43aca45226f5e4b985971de9b437b73",
         "reason": "Reviewed synthetic privacy-rule or regression-test source; only process-phrase matching is exempt."
+      },
+      {
+        "sha256": "2802b703843585a9fe4c4a9a8f38ccc0ca21917833e5b1db655b050adcc760fc",
+        "reason": "Reviewed synthetic privacy-rule source (LF); only process-phrase matching is exempt."
+      },
+      {
+        "sha256": "59efd232d21d1459e803fed6f28009cf076e6915a32a06bbca83c7da510816a2",
+        "reason": "Reviewed synthetic privacy-rule source (CRLF); only process-phrase matching is exempt."
       }
     ],
     "scripts/test-privacy.mjs": [

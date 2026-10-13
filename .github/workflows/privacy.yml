@@ -18,4 +18,5 @@ jobs:
       - run: node scripts/privacy-check.mjs --tracked
       - run: node scripts/privacy-check.mjs --history
       - run: node scripts/test-privacy.mjs
+      - run: node scripts/test-privacy-process.mjs
       - run: node scripts/test-test-paths.mjs

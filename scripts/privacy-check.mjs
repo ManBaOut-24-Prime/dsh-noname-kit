@@ -12,6 +12,13 @@ const processPatterns = [
   /(?:内部\s*(?:AI|智能体)?\s*交接|下一(?:个|位)?\s*(?:AI|智能体|会话)|上一(?:会话)|本轮(?:工具调用)|阶段(?:审计流水账)|会话(?:交接|接续)|(?:AI|智能体)\s*对话记录)/i,
   /\b(?:Codex|Astra|Sol|GPT-\d+)\b\s*(?:\r?\n\s*)?(?:交接|复审|审查安排|额度|下一(?:会话)|原始审计|对话记录|会话记录)/i,
 ];
+// Bounded combinations target internal review dialogue and handoff narration,
+// not technical audit findings or objective product design constraints.
+processPatterns.push(
+  /用户\s*(?:追问|询问)[\s\S]{0,100}(?:审计|复审)[\s\S]{0,120}(?:上一轮|前几轮)[\s\S]{0,120}(?:本轮|交接文档)|(?:前几轮|此前)[\s\S]{0,40}交接文档[\s\S]{0,100}(?:未细看|尚未审查|未完成审查)/,
+  /用户\s*(?:回忆|追问)[\s\S]{0,120}(?:查了|查阅|查看|翻阅|翻看)[\s\S]{0,100}交接文档|(?:查了|查阅|翻阅|翻看)[\s\S]{0,100}交接文档[\s\S]{0,160}(?:未找到|未查明|没有\s*留下)[\s\S]{0,80}(?:具体情形|具体问题|复现线索|此前反馈|报障细节)/,
+  /用户\s*(?:拍板|否决)[\s\S]{0,100}(?:勿再实现|本轮曾)|本轮\s*(?:曾|已)(?:做出|实现)[\s\S]{0,120}被用户(?:明确)?否决/,
+);
 const privateLocation = /\b[A-Za-z]:[\\/]+(?:NONAME-KIT-TEST|deepseek-harness|codex|wms)(?:[\\/]+|\b)|\.codex[\\/]+(?:attachments|logs|sessions)\b|\.agents[\\/]+logs\b/i;
 const userHome = /\b[A-Za-z]:[\\/]+Users[\\/]+(?!<|\$|%|\{)[^\\/\s'"<>]+/i;
 const roleRecord = /^\s*(?:#{1,6}\s*)?(?:User|Assistant|System|Developer|用户|助手)\s*[:：]/i;
@@ -23,7 +30,7 @@ const secretFormats = [
   ['BEARER_LITERAL', /\bBearer\s+[A-Za-z0-9_.-]{20,}/],
 ];
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
-export const guardFiles = ['scripts/privacy-check.mjs', 'scripts/privacy-policy.json', 'scripts/install-privacy-hooks.mjs', '.githooks/pre-commit', '.githooks/pre-push', '.github/workflows/privacy.yml'];
+export const guardFiles = ['scripts/privacy-check.mjs', 'scripts/privacy-policy.json', 'scripts/install-privacy-hooks.mjs', '.githooks/pre-commit', '.githooks/pre-push', '.githooks/commit-msg', '.github/workflows/privacy.yml', 'scripts/test-privacy-process.mjs'];
 export const canonicalDigest = bytes => digest(Buffer.from(bytes.toString('utf8').replaceAll('\r\n', '\n')));
 const documentPath = file => /\.(?:md|markdown|mdx|txt|rst|adoc|org)$/i.test(file);
 function approved(table, file, bytes) {
@@ -145,8 +152,9 @@ export function parsePushInput(input) {
   }
   return updates;
 }
-export function runCheck({repo = process.cwd(), mode = 'tracked', allObjects = false, pushInput = '', policy = readPolicy()} = {}) {
-  if (!['tracked', 'staged', 'history', 'push'].includes(mode)) throw Error('Invalid scan mode');
+export function runCheck({repo = process.cwd(), mode = 'tracked', allObjects = false, pushInput = '', messageBytes = null, policy = readPolicy()} = {}) {
+  if (!['tracked', 'staged', 'history', 'push', 'message'].includes(mode)) throw Error('Invalid scan mode');
+  if (mode === 'message' && !Buffer.isBuffer(messageBytes)) throw Error('Pending commit message required');
   const isBare = git(repo, ['rev-parse', '--is-bare-repository']).toString('utf8').trim() === 'true';
   if (!isBare) repo = git(repo, ['rev-parse', '--show-toplevel']).toString('utf8').trim();
   if (isBare && !['history', 'push'].includes(mode)) throw Error('Working tree required');
@@ -231,6 +239,10 @@ export function runCheck({repo = process.cwd(), mode = 'tracked', allObjects = f
         if (!entry || canonicalDigest(batchObjects(repo, [entry.oid]).get(entry.oid).bytes) !== manifest[name]) add(name, 'GUARD_UPDATE_REQUIRES_INSTALLATION');
       }
     }
+    if (mode === 'message') {
+      findings.push(...inspectBytes('<pending-commit-message>', messageBytes, policy));
+      return result();
+    }
     for (const entry of entries) {
       if (entry.stage) { add(entry.file, 'UNMERGED_INDEX'); continue; }
       if (entry.mode === '160000') { add(entry.file, 'GITLINK_REVIEW_REQUIRED'); continue; }
@@ -252,10 +264,17 @@ export function runCheck({repo = process.cwd(), mode = 'tracked', allObjects = f
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const args = process.argv.slice(2), modes = ['--tracked', '--staged', '--history', '--pre-push'];
-    if (args.some(arg => ![...modes, '--all-objects', '--json'].includes(arg)) || args.filter(arg => modes.includes(arg)).length > 1) throw Error('Choose one scan mode');
+    let messageFile = null;
+    const messageIndex = args.indexOf('--commit-msg');
+    if (messageIndex >= 0) {
+      messageFile = args[messageIndex + 1];
+      if (!messageFile || messageFile.startsWith('--')) throw Error('Pending commit message file required');
+      args.splice(messageIndex, 2);
+    }
+    if (args.some(arg => ![...modes, '--all-objects', '--json'].includes(arg)) || args.filter(arg => modes.includes(arg)).length + (messageFile !== null ? 1 : 0) > 1) throw Error('Choose one scan mode');
     if (args.includes('--all-objects') && !args.includes('--history')) throw Error('--all-objects requires --history');
-    const mode = args.includes('--pre-push') ? 'push' : args.includes('--history') ? 'history' : args.includes('--staged') ? 'staged' : 'tracked';
-    const result = runCheck({mode, allObjects: args.includes('--all-objects'), pushInput: mode === 'push' ? fs.readFileSync(0, 'utf8') : ''});
+    const mode = messageFile !== null ? 'message' : args.includes('--pre-push') ? 'push' : args.includes('--history') ? 'history' : args.includes('--staged') ? 'staged' : 'tracked';
+    const result = runCheck({mode, allObjects: args.includes('--all-objects'), pushInput: mode === 'push' ? fs.readFileSync(0, 'utf8') : '', messageBytes: mode === 'message' ? fs.readFileSync(messageFile) : null});
     if (args.includes('--json')) console.log(JSON.stringify(result));
     else {
       for (const finding of result.findings) console.error(finding.file + ':' + finding.line + ' ' + finding.category);
