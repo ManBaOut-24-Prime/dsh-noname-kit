@@ -4,5 +4,8 @@ repo=$(git rev-parse --show-toplevel) || exit 2
 node_bin=$(git config --get nonamekit.privacyNode)
 [ -n "$node_bin" ] || node_bin=node
 checker=$(git config --get nonamekit.privacyChecker)
-[ -n "$checker" ] || checker="$repo/scripts/privacy-check.mjs"
+if [ -z "$checker" ]; then
+  echo 'Install the reviewed privacy snapshot before committing: node scripts/install-privacy-hooks.mjs --reviewed' >&2
+  exit 2
+fi
 exec "$node_bin" "$checker" --staged

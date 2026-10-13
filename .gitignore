@@ -1,32 +1,37 @@
-# 依赖与构建产物
+# Dependencies and generated output
 node_modules/
 *.log
-
-# 本机配置与私有文档(不随仓库发布)
-noname-kit.json
-noname-kit.tasks.json
-HANDOFF.md
-
-# 运行/测试产物
 backup/
 *.bak*
 _noname-kit-test-*/
 
-# Credentials and private working records. Reviewed examples remain trackable.
+# Local configuration and credentials
+noname-kit.json
+noname-kit.tasks.json
+nnk-bridge.json
 .env
 .env.*
 !.env.example
-nnk-bridge.json
-/ai-records/
-/audit-records/
-/private-records/
-/raw-audits/
-/logs/
-/nnk-batches/
+
+# Private work records belong outside the checkout
+ai-records/
+audit-records/
+private-records/
+raw-audits/
+logs/
+nnk-batches/
+HANDOFF*.md
+HANDOFF*.txt
 AI-CHAT*.md
 CHAT-TRANSCRIPT*.md
 SESSION-TRANSCRIPT*.md
-REVIEW-PROGRESS.md
-FINAL-REVIEW.md
-docs/B5-PAUSED.md
-docs/B6-B8-REVIEW-HANDOFF.md
+REVIEW-PROGRESS*.md
+FINAL-REVIEW*.md
+B[0-9]*-ACCEPTANCE.md
+B[0-9]*-SAFETY.md
+B[0-9]*-REVIEW-FIX.md
+B[0-9]*-REVIEW-HANDOFF.md
+B[0-9]*-PAUSED.md
+DEV-STATUS.md
+IMPLEMENTATION-PLAN.md
+PROJECT-DECISIONS.md

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "reviewedBinary": {
     "docs/screenshots/workshop.png": {
       "sha256": "585ee4d0cf7d73dbc2fd9ea3aec75c323b64416d783972e922d8a41dda4fb65f",
@@ -13,5 +13,239 @@
       "sha256": "1f75934f2c96dddf38536a871b7bb7af05a732728227937737b51e588026da22",
       "reason": "Original upstream product online screenshot; visually reviewed, no credentials or private working records."
     }
+  },
+  "reviewedText": {
+    "README.md": [
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "6f363dafa44a1ce445a546f80ce23c7c11d2b8d724115a275fcffe03b5217319"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "7af76b0920129e83d72119560ae2e9c94f854f4aeeb463b756bf9cf32b05b570"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "f6fea49fc183127511464c9656a2cabbdc455b636a49552db95f837148404493"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "bc890fac2cd4d3cd36890c9c54da776f45a680c9327e0aad8f25e704773b2dba"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "a4e1132aa148ad8795afee253065765dfcd81150b90dd5221ec01deb1969447f"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "2866e8c32ba26cffae1196ff1122d388322ce9d8c1e9f6dd5fa2974b20e28656"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "b39e71daa8b5743062c0c13aa7e745458ca921869b7c7a1f887da089accda91f"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "7104b4c61d6ac2439b1199a04c99ea3e883364d34913b579506679f571b604ba"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "3fa3bddad53c26ccc8775896990fc1d7a98330ddb109408e744ba75b4126ab08"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "04bba836cbc5f87af550d1c7b471009141f9b6f7cb1665503b61c24f41b3b82d"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "a77e02ea1c72a8be5d35087995162f1e3691872e45c80d95bdd924ed422f26f6"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "45232a8fa92f7e26ffe4b7c9e27b7d6420edaa7cb14cabdfa2fa471ab528e590"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "8ee86d8c3853bbb9c8eaec414a124421915294726b3e4c28fde2aa0e2a9b779d"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "70dc6d36be147f33cc051a0110088e63c7a1de857fd2c681f2e80752dd319c87"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "22b7316c33a47311d765dcdc00f2a70eb97c8bec6a5057e8e565017dbf8182a0"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "634d628938e288f5da0bd42e3c825736ed13b3f0102b10ad42bb6023b4c94d6a"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "ee4be1ac1bbcdc7d1975ce76b057c6dc044b0dbb92be030ce34b2e73cd19726d"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "eeff788770239ed853ca8e41aa82f7180a3db6c47603ddc62f7961dc0ed9ecdc"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "2d26f108e715753dd4b14a979ad9962e97a48b7ae52a68b1fc2a4a37ee267531"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "42bd8cf8d48457e4c5c2c03f54b013f79e0bac4c7dc6db9f0420e538229b2fbf"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "d28ecc948d96fa19fcb0114b9ae35d8a1118b84fb518904095109cb086096291"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "406ce733248774273b9149d479bcbbd4fd25a6f9abcfc0bc7447f1686959ead7"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "bd84cfd98d2f2d6381d96a716c36d41197490514adf583c99b0322d6d4ff1e6a"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "fa8d984b0be42b4b82afe56787bb3569461ef2506b3eb2d8b9c2d11a12d7cf74"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "b92703a680a069e5e67cf694efba4de4f55a5e239459e06ae655263cf3a8b8be"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "abccec92ae54994c970f54c6e1e466262f62a892e39a6422483b5ac65b68802a"
+      },
+      {
+        "reason": "Reviewed project README version; product description and usage.",
+        "sha256": "12e57772487fe8d460431bae2f42f18380e7ff711d1d634a452866cf94e90cc3"
+      }
+    ],
+    "docs/PRIVACY.md": [
+      {
+        "reason": "Reviewed formal privacy maintenance and isolated testing guidance.",
+        "sha256": "82474bc913f5d50b6286714c4968c46a79afba4edb3b0cc43318406cb08b4982"
+      },
+      {
+        "sha256": "273aa79cf1fee687617c78231aa1a6ab1d768b224a4748808b21dc00e6cfd3a7",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      }
+    ],
+    "presets/noname-dev/skills/noname-extension-dev/SKILL.md": [
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "e47b50b399c91b6cc40593468d15f4c8e51c7ee1dfc45e8bf05273f367fb7d2b"
+      },
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "a640461500cf267dea140273446119225da3c64e0e75efc5959509540b255793"
+      },
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "ff19ce4442c6282b99d90054c5bff7443a965bbdfb030d9f30e97709995cd79e"
+      },
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "317f145179cce9fa77930aa14e9851ae72ece8299a2d9c0c664025ccbc30aa59"
+      },
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "a950e1d430b4c738689ed3a3c99a6c304528b584e2ea248fa1aedb590ec45c69"
+      },
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "7cea78af2d185c528407d6105f01109838c41d800b94bfcb20e9880c0d57b682"
+      },
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "38f2b843b9b6d2c94ae45095191484d7158b3230e5646b84e924629a3a2196e7"
+      },
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "d4f5e1f0b8b4f196afbecc4a4f0b686ac2988fb86c1939596c367d7856aec397"
+      },
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "785bb3a93964927ed11618de5ae037ac2f36a169dde4c20c2e946bafd0deecfa"
+      },
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "78cbf526624dafe3c352685b6aee4bc396c6fde884004cf4497b0fb2f2277f90"
+      },
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "103896b66e64acbac4f6295778adf1fb35cc0bc4f91b44bfcba9a96113d4c155"
+      },
+      {
+        "reason": "Reviewed product extension development skill.",
+        "sha256": "a23ac76e83ac20562109d7a431c199d6fd3b28bb8a5020dd17634d8988cba865"
+      },
+      {
+        "sha256": "f94d9f9271d103e94889781f161463b0a0afebdeb75d93bea97fe6b2bee30da5",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      },
+      {
+        "sha256": "11d0a0a656f7ad65785cf169b699011b42cf0120f1f602e174b3e85d3723b31f",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      },
+      {
+        "sha256": "9b14c0398179e6a081f8195422d7ff10921a2369a3632376b66ea054d20051a8",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      },
+      {
+        "sha256": "2842d2a1fd8771379300344d930d080472ff61f86c017c7e5803dfffb93dac16",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      },
+      {
+        "sha256": "4d5b9780e07da140b272f8aba423721b8abeba6d360e0fcbe1abf708a4da83f0",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      },
+      {
+        "sha256": "db13fd6aa340e753ef2cd23642b952cbf277d05688e1f634887840c18509283e",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      },
+      {
+        "sha256": "1c71336fd5b1f305eeef9817791617c8de3a5c9636adf1af48803c6dc64b9d25",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      },
+      {
+        "sha256": "121ca7eeb578c328ad50ece273bb3b2a25d87fca320a77eb7bf9140e9862f7d1",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      },
+      {
+        "sha256": "50aaabc8a8a23dcb1afbd3952b76f9c6e1b49ebea9dd8494e771cdc9c3ba34a9",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      },
+      {
+        "sha256": "314fd57c5f232c3b6478f8ee4cf34cc105dbc7f22165f75bb534f1ebf3487f0f",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      },
+      {
+        "sha256": "be34d42ac8e36ff86c39455f3628a87d3f705d221f91ac7736600bdbfcb34c85",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      },
+      {
+        "sha256": "22bca1283e8a4b27f0e389856607e109786b6c17d9c3f9ab0c720a7ac5d02329",
+        "reason": "Exact CRLF checkout of reviewed product documentation."
+      }
+    ]
+  },
+  "reviewedSource": {
+    "scripts/privacy-check.mjs": [
+      {
+        "sha256": "e84c1c8732636ecbeefb374cac93c4a0c43aca45226f5e4b985971de9b437b73",
+        "reason": "Reviewed synthetic privacy-rule or regression-test source; only process-phrase matching is exempt."
+      }
+    ],
+    "scripts/test-privacy.mjs": [
+      {
+        "sha256": "0eebf2c53d5c95bc9e3f0fb6a237d90ef28c20d5183459b274eb62697c837e0c",
+        "reason": "Reviewed synthetic privacy-rule or regression-test source; only process-phrase matching is exempt."
+      }
+    ]
   }
 }

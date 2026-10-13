@@ -4,88 +4,157 @@ import path from 'node:path';
 import {randomBytes, createHash} from 'node:crypto';
 import {spawnSync, execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {inspectBytes, runCheck} from './privacy-check.mjs';
+import {inspectBytes, runCheck, parsePushInput, readPolicy, guardFiles} from './privacy-check.mjs';
 import testPaths from './fixtures/test-paths.cjs';
 let passed = 0;
-function test(name, fn) { fn(); passed++; console.log('  ✓ ' + name); }
-const bytes = text => Buffer.from(text);
-test('product persona is allowed', () => assert.deepEqual(inspectBytes('presets/agent.yml', bytes('prefix: 帮玩家开发扩展，确认需求后才写代码。')), []));
-test('technical safety document is allowed', () => assert.deepEqual(inspectBytes('docs/safety.md', bytes('整批事务失败必须保留恢复入口。')), []));
-test('placeholder install directory is allowed', () => assert.deepEqual(inspectBytes('README.md', bytes(['C:', 'Users', '<your-user>', '.dsh'].join('/'))), []));
-test('generic virtual drive test fixture is allowed', () => assert.deepEqual(inspectBytes('scripts/example.mjs', bytes("const dir='D:/Games/noname';")), []));
-test('private user directory is blocked', () => assert.ok(inspectBytes('docs/x.md', bytes(['C:', 'Users', 'private-person', '.workspace'].join('/'))).some(f => f.category === 'PRIVATE_LOCAL_PATH')));
-test('JSON-escaped user directory is also blocked', () => assert.ok(inspectBytes('config.json', bytes(JSON.stringify({dir: ['C:', 'Users', 'private-person'].join('\\')}))).some(f => f.category === 'PRIVATE_LOCAL_PATH')));
-test('private attachment location is blocked', () => assert.ok(inspectBytes('docs/x.md', bytes(['.co' + 'dex', 'attach' + 'ments', 'record'].join('/'))).some(f => f.category === 'PRIVATE_LOCAL_PATH')));
-const model = ['As', 'tra'].join('');
-test('private model handoff process is blocked', () => assert.ok(inspectBytes('docs/x.md', bytes(model + ' 下一会话交接')).some(f => f.category === 'PRIVATE_AI_PROCESS')));
-test('raw dialogue is blocked', () => assert.ok(inspectBytes('docs/x.md', bytes('Assistant' + ': private record')).some(f => f.category === 'RAW_CONVERSATION')));
+function test(name, fn) { fn(); passed++; console.log('  PASS ' + name); }
+const bytes = text => Buffer.from(text), hash = data => createHash('sha256').update(data).digest('hex');
+const approved = (file, data) => ({reviewedText: {[file]: [{sha256: hash(data), reason: 'Synthetic public documentation fixture'}]}});
+const has = (file, data, category, policy = {}) => inspectBytes(file, bytes(data), policy).some(f => f.category === category);
+const join = (...parts) => parts.join('');
+for (const [name, source] of [
+  ['protocol role fields', 'const message = {role: "assistant", content: output};'],
+  ['interface user fields', 'interface Payload {\nuser: UserInfo;\nassistant: AssistantInfo;\n}'],
+  ['technical comments', '// B0 safety gate: require authorization before file writes.'],
+  ['credential label construction', "bytes('API_KEY=' + randomBytes(24).toString('hex'))"],
+  ['generic game fixture', "const dir = 'D:/Games/noname';"],
+]) test(name, () => assert.deepEqual(inspectBytes('src/example.ts', bytes(source)), []));
+const formal = bytes('B0 safety: a failed batch retains its recovery entry.\n');
+test('unknown formal document requires review', () => assert.ok(has('docs/safety.md', formal, 'DOCUMENT_REVIEW_REQUIRED')));
+test('reviewed formal document passes', () => assert.deepEqual(inspectBytes('docs/safety.md', formal, approved('docs/safety.md', formal)), []));
+test('approved document content is exact', () => assert.ok(inspectBytes('docs/safety.md', Buffer.concat([formal, bytes('x')]), approved('docs/safety.md', formal)).length));
+test('approval does not authorize another path', () => assert.ok(inspectBytes('notes.md', formal, approved('docs/safety.md', formal)).length));
+const home = ['C:', 'Users', 'private-person', '.workspace'].join('/');
+test('literal user path is blocked', () => assert.ok(has('src/config.js', home, 'PRIVATE_LOCAL_PATH')));
+test('escaped user path is blocked', () => assert.ok(has('config.json', JSON.stringify({dir: home.replaceAll('/', '\\')}), 'PRIVATE_LOCAL_PATH')));
+test('placeholder user path is allowed', () => assert.deepEqual(inspectBytes('src/example.js', bytes(['C:', 'Users', '<your-user>', '.dsh'].join('/'))), []));
+test('private attachment path is blocked', () => assert.ok(has('record.csv', ['.co' + 'dex', 'attach' + 'ments', 'record'].join('/'), 'PRIVATE_LOCAL_PATH')));
+for (const filename of [
+  join('HAND', 'OFF.md'), join('AI-', 'CHAT.md'), join('CHAT-', 'TRANSCRIPT.json'),
+  join('ai-', 'records/record.json'), join('B0-', 'ACCEPTANCE.md'), join('B0-', 'SAFETY.md'),
+  join('B4-', 'REVIEW-FIX.md'), join('B6-B8-', 'REVIEW-HANDOFF.md'),
+  join('DEV-', 'STATUS.md'), join('IMPLEMENTATION-', 'PLAN.md'), join('PROJECT-', 'DECISIONS.md'),
+  '.env.local', 'nnk-bridge.json', 'nested/noname-kit.tasks.json',
+]) test('private path category: ' + filename, () => assert.ok(has(filename, 'synthetic fixture', 'PRIVATE_FILE')));
+test('credential template is allowed', () => assert.deepEqual(inspectBytes('.env.example', bytes('API_KEY=your_key')), []));
+const processes = [
+  ['English process', ['Internal', 'AI', 'handoff', 'to', 'Codex: continue.'].join(' ')],
+  ['English split lines', ['AI', 'handoff: synthetic'].join('\n')],
+  ['Chinese split lines', join('Astra\n', '下一', '会话', '交接：合成样本。')],
+  ['unnamed process', join('内部 ', 'AI ', '交接：合成样本。')],
+  ['unnamed audit', join('阶段', '审计流水账\n', '本轮', '工具调用已完成。')],
+  ['lowercase model', join('codex ', '下一', '会话', '交接：合成样本。')],
+  ['unknown model handover', join('留给下一位 ', 'AI ', '继续。')],
+];
+for (const [name, value] of processes) test(name, () => {
+  assert.ok(has('notes.md', value, 'PRIVATE_AI_PROCESS', approved('notes.md', bytes(value))));
+  assert.ok(has('src/example.js', '// ' + value, 'PRIVATE_AI_PROCESS'));
+});
+for (const name of ['User', 'Assistant', 'user', 'assistant', '用户', '助手']) test('plain role record: ' + name, () => assert.ok(has('data.csv', name + ':synthetic', 'RAW_CONVERSATION')));
+test('Chinese dialogue does not require spaces', () => assert.ok(has('data.csv', join('用户', '：合成问题\n', '助手', '：合成回答'), 'RAW_CONVERSATION')));
 const conversation = bytes(JSON.stringify({messages: [{role: 'user', content: 'synthetic question'}, {role: 'assistant', content: 'synthetic answer'}]}));
-test('structured conversation dump is blocked', () => assert.ok(inspectBytes('dialogue.json', conversation).some(f => f.category === 'RAW_CONVERSATION')));
-const conversationPolicy = {reviewedConversations: {'dialogue.json': {sha256: createHash('sha256').update(conversation).digest('hex'), reason: 'explicit synthetic fixture'}}};
-test('reviewed synthetic conversation fixture is allowed', () => assert.deepEqual(inspectBytes('dialogue.json', conversation, conversationPolicy), []));
-test('conversation fixture modification invalidates review', () => assert.ok(inspectBytes('dialogue.json', Buffer.concat([conversation, Buffer.from('\n')]), conversationPolicy).length));
-test('private handoff filename is blocked', () => assert.ok(inspectBytes('HANDOFF.md', bytes('record')).some(f => f.category === 'PRIVATE_FILE')));
-test('private result directory is blocked', () => assert.ok(inspectBytes('ai-records/result.json', bytes('{}')).some(f => f.category === 'PRIVATE_FILE')));
-test('environment example is allowed', () => assert.deepEqual(inspectBytes('.env.example', bytes('API_KEY=your_key')), []));
-const fake = ['sk', 'proj'].join('-') + '-' + randomBytes(32).toString('base64url');
-test('credential format rejected without value disclosure', () => { const findings = inspectBytes('config.json', bytes(JSON.stringify({api_key: fake}))); assert.ok(findings.length); assert.equal(JSON.stringify(findings).includes(fake), false); });
-test('unquoted environment credential rejected', () => assert.ok(inspectBytes('.env.example', bytes('API_KEY=' + randomBytes(24).toString('hex'))).some(f => f.category === 'CREDENTIAL_SCALAR')));
-test('ordinary code constructing a key label is allowed', () => assert.deepEqual(inspectBytes('scripts/builder.mjs', bytes("bytes('API_KEY=' + randomBytes(24).toString('hex'))")), []));
-test('quoted JSON credential key is still inspected', () => assert.ok(inspectBytes('settings.json', bytes(JSON.stringify({api_key: randomBytes(24).toString('hex')}))).some(f => f.category === 'CREDENTIAL_LITERAL')));
+const conversationPolicy = {reviewedConversations: {'fixture.json': {sha256: hash(conversation), reason: 'Reviewed synthetic protocol fixture'}}};
+test('structured conversation requires separate review', () => assert.ok(has('fixture.json', conversation, 'RAW_CONVERSATION')));
+test('explicit synthetic conversation review passes', () => assert.deepEqual(inspectBytes('fixture.json', conversation, conversationPolicy), []));
+test('changed conversation invalidates review', () => assert.ok(inspectBytes('fixture.json', Buffer.concat([conversation, bytes('\n')]), conversationPolicy).length));
+const fake = join('sk-', 'proj-', randomBytes(32).toString('base64url'));
+test('credential format is blocked without disclosure', () => { const f = inspectBytes('config.json', bytes(JSON.stringify({api_key: fake}))); assert.ok(f.length); assert.equal(JSON.stringify(f).includes(fake), false); });
+test('unquoted credential is blocked', () => assert.ok(has('.env.example', 'API_KEY=' + randomBytes(24).toString('hex'), 'CREDENTIAL_SCALAR')));
+test('quoted credential is blocked', () => assert.ok(has('config.json', JSON.stringify({password: randomBytes(24).toString('hex')}), 'CREDENTIAL_LITERAL')));
 const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
-test('unreviewed binary rejected', () => assert.ok(inspectBytes('docs/image.png', png).some(f => f.category === 'BINARY_REVIEW_REQUIRED')));
-const policy = {reviewedBinary: {'docs/image.png': {sha256: createHash('sha256').update(png).digest('hex'), reason: 'synthetic byte fixture'}}};
-test('exact reviewed binary accepted', () => assert.deepEqual(inspectBytes('docs/image.png', png, policy), []));
-test('changed binary invalidates approval', () => assert.ok(inspectBytes('docs/image.png', Buffer.concat([png, Buffer.from([1])]), policy).length));
-
+const binaryPolicy = {reviewedBinary: {'docs/image.png': {sha256: hash(png), reason: 'Synthetic bytes'}}};
+test('unknown binary requires review', () => assert.ok(inspectBytes('docs/image.png', png).length));
+test('image extension requires review without NUL bytes', () => assert.ok(inspectBytes('docs/image.jpg', bytes('synthetic image')).some(f => f.category === 'BINARY_REVIEW_REQUIRED')));
+test('invalid UTF-8 requires review without NUL bytes', () => assert.ok(inspectBytes('data.dat', Buffer.from([255, 254, 240])).some(f => f.category === 'BINARY_REVIEW_REQUIRED')));
+test('exact binary review passes', () => assert.deepEqual(inspectBytes('docs/image.png', png, binaryPolicy), []));
+test('changed binary requires review', () => assert.ok(inspectBytes('docs/image.png', Buffer.concat([png, bytes('x')]), binaryPolicy).length));
+test('approved document cannot exempt private filename', () => assert.ok(inspectBytes(join('HAND', 'OFF.md'), formal, approved(join('HAND', 'OFF.md'), formal)).some(f => f.category === 'PRIVATE_FILE')));
+test('approved document cannot exempt local paths', () => assert.ok(inspectBytes('docs/safety.md', bytes(home), approved('docs/safety.md', bytes(home))).some(f => f.category === 'PRIVATE_LOCAL_PATH')));
+test('approved document cannot exempt transcript', () => { const data = bytes('Assistant' + ': synthetic'); assert.ok(inspectBytes('docs/safety.md', data, approved('docs/safety.md', data)).some(f => f.category === 'RAW_CONVERSATION')); });
 const fixture = fs.mkdtempSync(testPaths.tempPrefix('privacy-'));
-const git = args => execFileSync('git', args, {cwd: fixture, env: {...process.env, GIT_OPTIONAL_LOCKS: '0'}, encoding: 'utf8', windowsHide: true});
-git(['init', '-q']); git(['config', 'user.name', 'Privacy fixture']); git(['config', 'user.email', 'privacy@example.invalid']);
-fs.writeFileSync(path.join(fixture, 'README.md'), 'technical project\n');git(['add', '--', 'README.md']);git(['commit', '-qm', 'Initial technical fixture']);
-test('clean tracked and history scans pass', () => { assert.equal(runCheck({repo: fixture}).ok, true); assert.equal(runCheck({repo: fixture, mode: 'history'}).ok, true); });
-fs.writeFileSync(path.join(fixture, 'README.md'), JSON.stringify({api_key: fake}));
-test('tracked unstaged content is inspected', () => assert.equal(runCheck({repo: fixture}).ok, false));
-test('staged view is independent of unstaged content', () => assert.equal(runCheck({repo: fixture, mode: 'staged'}).ok, true));
-git(['add', '--', 'README.md']);
-test('already tracked staged credential is blocked', () => assert.equal(runCheck({repo: fixture, mode: 'staged'}).ok, false));
-fs.writeFileSync(path.join(fixture, 'README.md'), 'technical project\n');git(['add', '--', 'README.md']);
-fs.writeFileSync(path.join(fixture, '.gitignore'), 'HANDOFF.md\n');fs.writeFileSync(path.join(fixture, 'HANDOFF.md'), 'private fixture');git(['add', '-f', '--', 'HANDOFF.md']);
-test('ignored but forcibly tracked private file is blocked', () => assert.equal(runCheck({repo: fixture, mode: 'staged'}).ok, false));
-git(['rm', '--cached', '--', 'HANDOFF.md']);
-fs.mkdirSync(path.join(fixture, 'scripts'));fs.copyFileSync(new URL('./privacy-check.mjs', import.meta.url), path.join(fixture, 'scripts/privacy-check.mjs'));
-fs.mkdirSync(path.join(fixture, '.githooks'));for (const name of ['pre-commit', 'pre-push']) { const target = path.join(fixture, '.githooks', name); fs.copyFileSync(new URL('../.githooks/' + name, import.meta.url), target); fs.chmodSync(target, 0o755); }
-git(['config', 'core.hooksPath', '.githooks']);git(['config', 'nonamekit.privacyNode', process.execPath]);
-const hook = name => spawnSync('git', ['hook', 'run', name], {cwd: fixture, encoding: 'utf8', windowsHide: true});
-test('actual commit hook accepts clean index', () => assert.equal(hook('pre-commit').status, 0));
-fs.writeFileSync(path.join(fixture, 'README.md'), JSON.stringify({api_key: fake}));git(['add', '--', 'README.md']);
-test('actual commit hook rejects staged credential without disclosure', () => { const result = hook('pre-commit'); assert.notEqual(result.status, 0); assert.equal((result.stdout + result.stderr).includes(fake), false); });
-// Record a bad ancestor in this synthetic fixture without invoking a remote.
-git(['-c', 'core.hooksPath=', 'commit', '-qm', 'Synthetic old fixture']);
-fs.writeFileSync(path.join(fixture, 'README.md'), 'technical project\n');git(['add', '--', 'README.md']);git(['commit', '-qm', 'Clean current fixture']);
-test('clean current content cannot hide bad ancestor', () => { assert.equal(runCheck({repo: fixture}).ok, true); assert.equal(runCheck({repo: fixture, mode: 'history'}).ok, false); });
-test('actual push hook rejects unsafe history without remote connection', () => assert.notEqual(hook('pre-push').status, 0));
-const cli = spawnSync(process.execPath, [fileURLToPath(new URL('./privacy-check.mjs', import.meta.url)), '--history', '--json'], {cwd: fixture, encoding: 'utf8', windowsHide: true});
-test('CI command rejects history and emits no matched credential', () => { assert.equal(cli.status, 1); assert.equal((cli.stdout + cli.stderr).includes(fake), false); });
-fs.writeFileSync(path.join(fixture, '.git', 'shallow'), git(['rev-parse', 'HEAD']).trim() + '\n');
-test('history gate refuses incomplete shallow evidence', () => assert.equal(runCheck({repo: fixture, mode: 'history'}).findings[0].category, 'SHALLOW_HISTORY'));
-const other = fs.mkdtempSync(testPaths.tempPrefix('privacy-branch-'));
-const otherGit = args => execFileSync('git', args, {cwd: other, encoding: 'utf8', windowsHide: true});
-otherGit(['init', '-q']);otherGit(['config', 'user.name', 'Privacy fixture']);otherGit(['config', 'user.email', 'privacy@example.invalid']);
-fs.writeFileSync(path.join(other, 'README.md'), 'technical fixture\n');otherGit(['add', '--', 'README.md']);otherGit(['commit', '-qm', 'Clean fixture']);
-const branch = otherGit(['symbolic-ref', '--short', 'HEAD']).trim();otherGit(['switch', '-qc', 'synthetic-private-branch']);
-fs.writeFileSync(path.join(other, 'params.json'), JSON.stringify({api_key: fake}));otherGit(['add', '--', 'params.json']);otherGit(['commit', '-qm', 'Synthetic branch fixture']);otherGit(['switch', '-q', branch]);
-test('clean checkout does not hide another branch', () => { assert.equal(runCheck({repo: other}).ok, true); assert.equal(runCheck({repo: other, mode: 'history'}).ok, false); });
-const oldHead = otherGit(['rev-parse', 'HEAD']).trim();
-fs.writeFileSync(path.join(other, 'package.json'), JSON.stringify({name: 'dsh-noname-kit'}));
-fs.mkdirSync(path.join(other, 'scripts'));fs.mkdirSync(path.join(other, '.githooks'));
-for (const name of ['privacy-check.mjs', 'privacy-policy.json']) fs.copyFileSync(new URL('./' + name, import.meta.url), path.join(other, 'scripts', name));
-for (const name of ['pre-commit', 'pre-push']) fs.copyFileSync(new URL('../.githooks/' + name, import.meta.url), path.join(other, '.githooks', name));
-otherGit(['add', '--', 'package.json', 'scripts', '.githooks']);otherGit(['commit', '-qm', 'Synthetic tooling fixture']);
-const install = () => spawnSync(process.execPath, [fileURLToPath(new URL('./install-privacy-hooks.mjs', import.meta.url))], {cwd: other, encoding: 'utf8', windowsHide: true});
-const customHook = path.join(other, '.git', 'hooks', 'pre-commit');fs.writeFileSync(customHook, '#!/bin/sh\nexit 0\n');
-test('hook installer preserves existing custom hook', () => { assert.notEqual(install().status, 0); assert.equal(fs.readFileSync(customHook, 'utf8'), '#!/bin/sh\nexit 0\n'); });
+const git = (args, input) => execFileSync('git', args, {cwd: fixture, input, encoding: 'utf8', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe']});
+git(['init', '-q']); git(['config', 'user.name', 'Privacy fixture']); git(['config', 'user.email', 'privacy@example.invalid']); git(['config', 'core.autocrlf', 'false']);
+fs.writeFileSync(path.join(fixture, 'package.json'), JSON.stringify({name: 'dsh-noname-kit'}));
+for (const name of guardFiles) { const target = path.join(fixture, name); fs.mkdirSync(path.dirname(target), {recursive: true}); fs.copyFileSync(new URL('../' + name, import.meta.url), target); }
+fs.writeFileSync(path.join(fixture, 'source.js'), 'export const protocol = "ok";\n');
+git(['add', '.']);
+const cli = (file, args = [], input) => spawnSync(process.execPath, [path.join(fixture, 'scripts', file), ...args], {cwd: fixture, input, encoding: 'utf8', windowsHide: true});
+test('installer requires explicit reviewed controls', () => assert.notEqual(cli('install-privacy-hooks.mjs').status, 0));
+const customHook = path.join(fixture, '.git', 'hooks', 'pre-commit');
+fs.writeFileSync(customHook, '#!/bin/sh\nexit 0\n');
+test('installer preserves existing custom hooks', () => { assert.notEqual(cli('install-privacy-hooks.mjs', ['--reviewed']).status, 0); assert.equal(fs.readFileSync(customHook, 'utf8'), '#!/bin/sh\nexit 0\n'); });
 fs.unlinkSync(customHook);
-test('hook installer creates shared Git metadata snapshot', () => { assert.equal(install().status, 0); assert.ok(fs.existsSync(path.join(other, '.git', 'noname-kit-privacy', 'privacy-check.mjs'))); });
-otherGit(['switch', '-q', '--detach', oldHead]);
-test('installed hook remains usable on old branch without tooling files', () => { assert.equal(fs.existsSync(path.join(other, 'scripts/privacy-check.mjs')), false); const result = spawnSync('git', ['hook', 'run', 'pre-commit'], {cwd: other, encoding: 'utf8', windowsHide: true}); assert.equal(result.status, 0); });
-console.log('全部通过: ' + passed + ' 项');
+git(['config', 'core.hooksPath', '.custom-hooks']);
+test('installer preserves existing hook configuration', () => { assert.notEqual(cli('install-privacy-hooks.mjs', ['--reviewed']).status, 0); assert.equal(git(['config', '--get', 'core.hooksPath']).trim(), '.custom-hooks'); });
+git(['config', '--unset', 'core.hooksPath']);
+test('installer accepts explicit reviewed controls', () => assert.equal(cli('install-privacy-hooks.mjs', ['--reviewed']).status, 0));
+test('unchanged reviewed installation is idempotent', () => assert.equal(cli('install-privacy-hooks.mjs').status, 0));
+const hook = (name, input) => {
+  const args = ['hook', 'run'];
+  if (input !== undefined) { const file = path.join(fixture, '.git', 'synthetic-hook-input'); fs.writeFileSync(file, input); args.push('--to-stdin=' + file); }
+  return spawnSync('git', [...args, name], {cwd: fixture, encoding: 'utf8', windowsHide: true});
+};
+test('actual commit hook accepts clean index', () => assert.equal(hook('pre-commit').status, 0));
+git(['commit', '-qm', 'Initial fixture']);
+const initial = git(['rev-parse', 'HEAD']).trim(), zero = '0'.repeat(initial.length);
+const input = (oid, ref = 'refs/heads/main') => `${oid} ${oid} ${ref} ${zero}\n`;
+test('actual push hook accepts proposed clean commit', () => assert.equal(hook('pre-push', input(initial)).status, 0));
+fs.writeFileSync(path.join(fixture, 'params.json'), JSON.stringify({api_key: fake})); git(['add', 'params.json']);
+test('actual commit hook rejects credentials without disclosure', () => { const r = hook('pre-commit'); assert.notEqual(r.status, 0); assert.equal((r.stdout + r.stderr).includes(fake), false); });
+git(['rm', '-f', 'params.json']);
+fs.writeFileSync(path.join(fixture, 'source.js'), '// ' + processes[0][1] + '\n');
+test('tracked mode checks unstaged bytes', () => assert.equal(runCheck({repo: fixture}).ok, false));
+test('staged mode checks indexed bytes', () => assert.equal(runCheck({repo: fixture, mode: 'staged'}).ok, true));
+git(['add', 'source.js']); fs.writeFileSync(path.join(fixture, 'source.js'), 'export const protocol = "ok";\n');
+test('clean worktree cannot hide bad index', () => assert.notEqual(hook('pre-commit').status, 0));
+git(['add', 'source.js']);
+fs.writeFileSync(path.join(fixture, 'record.md'), processes[0][1]); git(['add', 'record.md']);
+test('actual commit hook rejects process record', () => assert.notEqual(hook('pre-commit').status, 0));
+const changedPolicy = readPolicy(path.join(fixture, 'scripts/privacy-policy.json'));
+changedPolicy.reviewedText['record.md'] = [{sha256: hash(bytes(processes[0][1])), reason: 'Synthetic attempt'}];
+fs.writeFileSync(path.join(fixture, 'scripts/privacy-policy.json'), JSON.stringify(changedPolicy)); git(['add', 'scripts/privacy-policy.json']);
+test('staged policy cannot authorize pending document', () => { const r = hook('pre-commit'); assert.notEqual(r.status, 0); assert.match(r.stdout + r.stderr, /GUARD_UPDATE_REQUIRES_INSTALLATION/); });
+git(['restore', '--source=HEAD', '--staged', '--worktree', 'scripts/privacy-policy.json']); git(['rm', '-f', 'record.md']);
+fs.writeFileSync(path.join(fixture, '.gitignore'), join('HAND', 'OFF.md\n')); fs.writeFileSync(path.join(fixture, join('HAND', 'OFF.md')), 'synthetic'); git(['add', '-f', join('HAND', 'OFF.md')]);
+test('force-added ignored record is blocked', () => assert.notEqual(hook('pre-commit').status, 0));
+git(['rm', '-f', join('HAND', 'OFF.md')]);
+fs.writeFileSync(path.join(fixture, 'scripts/privacy-check.mjs'), 'process.exit(0);\n'); git(['add', 'scripts/privacy-check.mjs']);
+test('staged checker replacement cannot disable snapshot', () => assert.notEqual(hook('pre-commit').status, 0));
+const weakenedTree = git(['write-tree']).trim();
+const weakenedCommit = git(['commit-tree', weakenedTree, '-p', initial, '-m', 'Synthetic control fixture']).trim();
+test('push cannot distribute replaced controls on a branch', () => assert.notEqual(hook('pre-push', input(weakenedCommit)).status, 0));
+git(['restore', '--source=HEAD', '--staged', '--worktree', 'scripts/privacy-check.mjs']);
+git(['rm', '--cached', '.github/workflows/privacy.yml']);
+test('missing staged CI control is blocked', () => assert.notEqual(hook('pre-commit').status, 0));
+git(['restore', '--source=HEAD', '--staged', '.github/workflows/privacy.yml']);
+const tree = git(['rev-parse', 'HEAD^{tree}']).trim();
+const dirtyCommit = git(['commit-tree', tree, '-p', initial, '-m', processes[0][1]]).trim();
+test('unreferenced explicit commit message is scanned', () => assert.notEqual(hook('pre-push', input(dirtyCommit)).status, 0));
+const blob = git(['hash-object', '-w', '--stdin'], 'synthetic').trim();
+test('direct blob push is refused', () => assert.notEqual(hook('pre-push', input(blob, 'refs/tags/direct')).status, 0));
+test('direct tree push is refused', () => assert.notEqual(hook('pre-push', input(tree, 'refs/tags/tree')).status, 0));
+test('unsupported namespace is refused', () => assert.notEqual(hook('pre-push', input(initial, 'refs/notes/test')).status, 0));
+const makeTag = (target, type, name, body) => git(['mktag'], `object ${target}\ntype ${type}\ntag ${name}\ntagger Privacy fixture <privacy@example.invalid> 1700000000 +0000\n\n${body}\n`).trim();
+const badTag = makeTag(initial, 'commit', 'synthetic-bad', processes[0][1]);
+test('unreferenced annotated tag body is scanned', () => assert.notEqual(hook('pre-push', input(badTag, 'refs/tags/release')).status, 0));
+const nestedTag = makeTag(badTag, 'tag', 'synthetic-nested', 'Release fixture');
+test('nested annotated tag body is scanned', () => assert.notEqual(hook('pre-push', input(nestedTag, 'refs/tags/nested')).status, 0));
+const blobTag = makeTag(blob, 'blob', 'synthetic-blob', 'Release fixture');
+test('annotated tag to blob is refused', () => assert.notEqual(hook('pre-push', input(blobTag, 'refs/tags/blob')).status, 0));
+const goodTag = makeTag(initial, 'commit', 'synthetic-good', 'Release fixture');
+test('normal annotated release tag is allowed', () => assert.equal(hook('pre-push', input(goodTag, 'refs/tags/good')).status, 0));
+test('deletion update has no local objects to expose', () => assert.equal(hook('pre-push', input(zero)).status, 0));
+test('malformed push input fails closed', () => assert.equal(hook('pre-push', 'malformed\n').status, 2));
+test('push parser validates object ids', () => assert.throws(() => parsePushInput('local bad refs/heads/main bad')));
+git(['update-ref', 'refs/tags/unsafe-fixture', badTag]);
+test('history scan inspects referenced tag body', () => assert.equal(runCheck({repo: fixture, mode: 'history'}).ok, false));
+git(['update-ref', '-d', 'refs/tags/unsafe-fixture']);
+git(['update-ref', 'refs/heads/unsafe-fixture', dirtyCommit]);
+test('history scan covers other local branches', () => assert.equal(runCheck({repo: fixture, mode: 'history'}).ok, false));
+test('push checks proposed roots instead of unrelated branches', () => assert.equal(hook('pre-push', input(initial)).status, 0));
+git(['update-ref', '-d', 'refs/heads/unsafe-fixture']);
+test('all-object scan includes unreachable commit and tags', () => assert.equal(runCheck({repo: fixture, mode: 'history', allObjects: true}).ok, false));
+fs.writeFileSync(path.join(fixture, '.git', 'shallow'), initial + '\n');
+test('history refuses shallow evidence', () => assert.ok(runCheck({repo: fixture, mode: 'history'}).findings.some(f => f.category === 'SHALLOW_HISTORY')));
+test('push refuses shallow evidence', () => assert.notEqual(hook('pre-push', input(initial)).status, 0));
+console.log('All passed: ' + passed + ' checks');
