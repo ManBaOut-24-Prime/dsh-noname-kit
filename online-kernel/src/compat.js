@@ -122,7 +122,7 @@
 		return Array.isArray(list) ? list.filter(function(n) { return n !== KERNEL_NAME; }) : [];
 	}
 
-	/* 注:自动隔离(quarantine 函数与 ext_quarantined 事件)已按审计删除——
+	/* 注:自动隔离(quarantine 函数与 ext_quarantined 事件)已删除——
 	 * 0.3.5 起就不再自动写名单,这函数全仓无调用点,留着只会让人以为还有
 	 * 自动隔离链路。手动名单(clearQuarantine/blocklist)照常保留 */
 
@@ -366,7 +366,7 @@
 					var ext = extNameFromStack(err && err.stack);
 					/* 归因不到扩展的钩子=引擎自带(defaultHooks 与扩展同住一张表):
 					 * 仍然拦下(保联机稳定),但措辞分开——当成"扩展报错"上报会把
-					 * 引擎自己的问题引向错误的排查方向(审计发现) */
+					 * 引擎自己的问题引向错误的排查方向 */
 					console.error("[联机助手] " + (ext ? "扩展" : "引擎") + "钩子报错(已拦截):", name, err);
 					bridgeApi().emit("ext_error", {
 						hook: name,

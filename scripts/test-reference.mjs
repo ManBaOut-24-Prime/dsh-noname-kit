@@ -4,10 +4,10 @@
  * 运行:node scripts/test-reference.mjs
  * 游戏目录用系统临时目录伪造,跑完即删。
  *
- * 为什么补这个套件:这个文件此前**零测试**。0.3.67 那批「相似度阶段按 limit 截断」
- * 的改动把 `const simHits` 写成了会被重新赋值的变量,于是任何 ≥4 字的关键词查询
- * (即几乎全部真实查询)进来就抛 `TypeError: Assignment to constant variable`——
- * 工具主路径整体崩,而 AI 会自己退化去 bash grep,缺陷因此长期不被察觉(审计实测)。
+ * 覆盖相似度检索按 limit 截断的路径:≥4 字的关键词查询不应因重新赋值
+ * 常量而抛出 `TypeError: Assignment to constant variable`。
+ * 结果应正常返回,不应迫使模型退回通用搜索工具。
+ *
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

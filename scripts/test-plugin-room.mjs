@@ -1,4 +1,4 @@
-// Scalar protocol/lifecycle fixtures; never substitutes for native or P4 evidence.
+// Scalar protocol/lifecycle fixtures; never substitutes for native gameplay or physical two-machine evidence.
 import assert from 'node:assert/strict';
 import {PluginRoom} from '../online-kernel/keepalive/plugin-room.js';
 const H='1'.repeat(64),D='2'.repeat(64),clone=x=>JSON.parse(JSON.stringify(x));

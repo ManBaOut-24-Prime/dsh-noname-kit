@@ -55,6 +55,6 @@ try{
     }
   }
   const report={ok:true,gatePassed:true,scope:'production whole-namespace transaction + actual official config/import/HTTP functions; hidden programmatic Electron, no GUI/full boot',testRoot,coreHash:digest(readFileSync(sourceRoot+'/online-kernel/lib/batch-files.cjs')),aclHash:digest(readFileSync(sourceRoot+'/online-kernel/lib/batch-acl.ps1')),lockHash:digest(readFileSync(sourceRoot+'/online-kernel/lib/batch-lock.ps1')),results};
-  // B8 revalidation keeps the original B7 checkpoint evidence untouched.
+  // Report filenames are selected by the gate mode.
   writeFileSync(testPaths.logsDir()+'/'+(process.env.NNK_B8_GATE==='1'?'b8-core-gate.json':'b7-core-gate.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({ok:true,gatePassed:true,scenarios:results.length,testRoot}));
 }finally{writeFileSync(bootstrap,before)}

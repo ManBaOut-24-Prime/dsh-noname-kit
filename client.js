@@ -717,7 +717,7 @@ window.__ModuleLoader__.load({
       // 「编辑已有武将/卡牌」:列出目标包内条目(锚点/无锚老包通吃)。
       // 竞态守卫:快速连切(包/类型/条目)时,先发后至的旧响应必须丢弃。
       // 判定写在函数式更新里比对「当前状态 vs 请求参数」——组件体重渲染会重建
-      // 局部变量,靠 ++seq 计数守不住(第 1 轮审计实测:切包 A→B 后 A 的迟到响应
+      // 局部变量,靠 ++seq 计数守不住(例如:切包 A→B 后 A 的迟到响应
       // 把条目列表整个换成 A 的);比对状态天然跨渲染有效。
       var loadEntries = function (folder, kind) {
         // mode 类型没有条目下拉(服务端 /entries 只认 character/card),不发必败请求、不清包信息提示
@@ -1847,7 +1847,7 @@ window.__ModuleLoader__.load({
         if (add) setCodeCache(Object.assign({}, codeCache, add));
         /* 只在"出现更新的行号"时自动弹窗。不能用 invPop.popped !== newest 做
          * 条件——那样每一轮心跳轮询都会把用户手动「🔎 再看」的旧行拉回最新行
-         * (审计发现:弹出来的是别的行的码,或整行点了没反应) */
+         * (可能导致:弹出来的是别的行的码,或整行点了没反应) */
         if (typeof newest === 'number' && (autoPopped === null || newest > autoPopped)) {
           setAutoPopped(newest);
           setInvPop({ popped: newest, dismissed: null });
@@ -2460,7 +2460,7 @@ window.__ModuleLoader__.load({
                 (function () {
                   var link = bridge.cfg && bridge.cfg.link;
                   if (!link || !link.kind) return null;
-                  /* 内核离线后插件仍会保留最后一拍 cfg:别把上一场的线路当"当前"(实测复核) */
+                  /* 内核离线后插件仍会保留最后一拍 cfg:别把上一场的线路当"当前" */
                   if (!bridgeOnline) return null;
                   var kindText = link.kind === 'relay' ? '中继'
                     : link.kind === 'direct' ? (link.injected ? '虚拟网卡/IPv6 直连地址' : '局域网直连')

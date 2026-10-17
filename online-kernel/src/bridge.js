@@ -13,7 +13,7 @@
 	var events = [];
 	var backlog = [];   /* 上一轮没送达的事件(HTTP 失败/应答异常):下一轮带上重发。
 	                     * 此前是"发出前就从队列移除",桥断一拍(比如 dsh 重启窗口)
-	                     * 正好赶上生成邀请码/回执码,码正文事件就永久丢了(审计发现)。
+	                     * 正好赶上生成邀请码/回执码,码正文事件就永久丢了。
 	                     * 重发的重复风险:插件端按 seq 是追加渲染,极端情况动态里
 	                     * 重复一行——比丢码轻得多 */
 	var stopped = false, epoch = 0, controller = null, commandOverride = null, ordinaryOperations = null;

@@ -573,7 +573,7 @@
 						}
 						if (stat.type === "candidate-pair" && stat.state === "succeeded") {
 							/* 双栈多路径时会有**多个** succeeded/nominated:只有 selected=true 的
-							 * 才是真正在用的那条;取不到 selected 才退而用 nominated(审计复核) */
+							 * 才是真正在用的那条;取不到 selected 才退而用 nominated */
 							if (stat.selected === true) {
 								pair = stat;
 							} else if (stat.nominated && !fallback) {

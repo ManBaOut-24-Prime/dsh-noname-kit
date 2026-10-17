@@ -1,5 +1,5 @@
 // Actual carrier/coordinator and renderer with deterministic PC/DC/MQTT fixtures.
-// These regressions are not physical P4, native WebRTC or real game evidence.
+// These regressions do not provide physical two-machine, native WebRTC or real game evidence.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createRequire} from 'node:module';

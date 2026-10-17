@@ -74,7 +74,7 @@
 	 * 本层的一切失败都打上 nnkSignal 标记——客人侧自动重回循环靠它区分
 	 * 「信令服务器连不上」(不扣重试预算)与「房主不在」(扣)。此前只认文案
 	 * 里的"信令服务器"四字,mqtt 库自己的报错(connack timeout/ECONNREFUSED)
-	 * 全被误判成房主不在,8 次扣完就误报"房主可能已关闭游戏"(审计发现)。
+	 * 全被误判成房主不在,8 次扣完就误报"房主可能已关闭游戏"。
 	 */
 	function signalFailure(err) {
 		var e2 = err instanceof Error ? err : new Error(String(err || "信令失败"));

@@ -125,7 +125,7 @@
 	 * 名单内的通道自己 send。名单为空=没有可定向的通道(对端内核过旧/通道全断)
 	 * 时直接不发——早先这里退回 game.broadcast,但联机模式下广播开门就 return
 	 * (game.online 门禁),旧对端也不懂 ready/done 协议,那条"兜底"只会把
-	 * 1.9.0 修掉的"广播即成功"假象带回来(审计实证)。没通道由 startOne 前置失败 */
+	 * 1.9.0 修掉的"广播即成功"假象带回来。没通道由 startOne 前置失败 */
 	function sendToBridges(func, payload) {
 		if (!payload.sendTo || !payload.sendTo.length) {
 			return;
@@ -143,7 +143,7 @@
 	var txSeq = 0;
 	var txQueue = [];      /* 队列项 { name, only }:only=本次只发给这一条通道
 	                        * (清单补传按上报者定向——发给全体会把缺包客人 A 的
-	                        * 扩展强推给没缺包的 B、覆盖 B 本地同名文件,审计实证) */
+	                        * 扩展强推给没缺包的 B、覆盖 B 本地同名文件) */
 	var txBusy = false;
 	var txCurrent = null;  /* 正在传的队列项:防同名重复入队重复传 */
 	var ackWait = null;     /* { id, need:[bridgeId], got:{}, resolve, timer, func } */
@@ -192,7 +192,7 @@
 	 * 每次补传都会 3 秒后报"客人没响应"(真正缺包的人反而拿不到包)。
 	 * targets=本次会话冻结的参与名单(开始发送那一刻定);等回执时再与"现在还
 	 * 挂着的已进入通道"取交集——中途新放行的客人没收到过一个字节,不能算必答
-	 * (旧实现在收尾一刻重算名单,双客人场景必误报"没等到回执",审计实证) */
+	 * (旧实现在收尾一刻重算名单,双客人场景必误报"没等到回执") */
 	function enteredBridges() {
 		return currentBridges().filter(function(b) { return b._entered === true; });
 	}
@@ -503,7 +503,7 @@
 					var expected = rx.files[msg.rel];
 					if (!safeRel(msg.rel) || !expected || rx.received[msg.rel] || msg.size !== expected.size || msg.sha256 !== expected.sha256) {
 						/* 记一笔:被拒的文件收尾时必须让完整性收口报失败,
-						 * 不能"跳过一个文件还回 done"(假成功活路,审计实证) */
+						 * 不能"跳过一个文件还回 done"(假成功活路) */
 						rx.rejectedFiles += 1;
 						return;
 					}
@@ -555,7 +555,7 @@
 					var expect = rx.expectCount;
 					/* 完整性收口:清单里每个文件都必须走到摘要验证与落盘。
 					 * 被拒条目(如文件名含 ..)照旧回 done,就是 1.9.0 修过的
-					 * "假成功"漏网活路(审计实证)——缺一个都不报成功 */
+					 * "假成功"漏网活路——缺一个都不报成功 */
 					if (rejected > 0 || doneFiles !== expect) {
 						var why = rejected > 0
 							? (rejected + " 个文件名不合法,无法接收")
@@ -752,7 +752,7 @@
 		start: startTransfer,
 		/* 定向直发:给一个引擎 client(或 HostBridge),把一条内核消息直接从它
 		 * 的隧道发过去(与补传同款,不经 game.broadcast——联机模式下广播开门
-		 * 就 return,差集回发因此从来没到过客人;审计实证)。manifest 回发用它 */
+		 * 就 return,差集回发因此从来没到过客人)。manifest 回发用它 */
 		sendDirect: function(client, func, payload) {
 			if (TRANSFER_PAUSED && typeof func === "string" && func.indexOf("nnk_tx_") === 0) {
 				reportPaused("");

@@ -215,7 +215,7 @@ export function createBridgeSession({ token, syncSource }) {
       for (const ev of payload?.events || []) {
         /* 内核拒收人物标识(头像武将本机没有):解除"同一值只补一次"锁——
          * 此前一旦被拒(武将未加载/扩展未启用)就永不重发,工坊却仍显示
-         * "已保存"(审计发现)。带 60 秒冷却防拒绝-重发死循环,等武将随
+         * "已保存"。带 60 秒冷却防拒绝-重发死循环,等武将随
          * 扩展加载后自然重试成功 */
         if (ev && ev.type === 'error' && typeof ev.message === 'string' && ev.message.indexOf('头像武将') >= 0) {
           if (!lastPushed.identityRetryAt || Date.now() - lastPushed.identityRetryAt > 60_000) {

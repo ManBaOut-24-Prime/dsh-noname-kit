@@ -250,7 +250,7 @@ export default { name: "standard", character: characters, translate: translates 
   const clientSrc = readFileSync(join(repoRoot, 'client.js'), 'utf8')
   ok(clientSrc.includes('不认识的模式一律不灌进单选框'), '客户端模式同步有白名单(旧内核送污染模式不灌单选框)')
 
-  // ── 结构性回归锁:审计批(bridge/信令失败分类/提议看门狗)──
+  // ── 结构性回归锁:bridge/信令失败分类/提议看门狗──
   const bridgeSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'bridge.js'), 'utf8')
   ok(sigSrc.includes('nnkSignal = true'), '信令层失败统一打标(nnkSignal)')
 
@@ -258,7 +258,7 @@ export default { name: "standard", character: characters, translate: translates 
   ok(bridgeSrc.includes('if (!cfg || polling || stopped)') && bridgeSrc.includes('polling = false'), '桥轮询串行化(fetch 慢时不让两轮并发)')
 
 
-  // ── 结构性回归锁:外围审计批(transfer/manifest/compat/index/client)──
+  // ── 外围结构性回归锁:transfer/manifest/compat/index/client──
   const txSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'transfer.js'), 'utf8')
   const mfSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'manifest.js'), 'utf8')
   const cpSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'compat.js'), 'utf8')
@@ -288,7 +288,7 @@ export default { name: "standard", character: characters, translate: translates 
   ok(!guestSrc.includes('session.fake._nocallback'), '断线善后不再抑制引擎重载(引擎 1.11.6 的原生 reinit 路径 parsedResult 爆栈,已弃用)')
 
 
-  // ── 同族审计批:所有"JS 心跳判死/回执超时"给主线程卡顿留余量 ──
+  // ── 主线程卡顿下的心跳判死与回执超时 ──
 
   ok(txSrc.includes('var ACK_TIMEOUT = 6000') && txSrc.includes('var DONE_TIMEOUT = 12000'), '补传回执超时放宽(对端主线程忙时不误报"客人没响应")')
   ok(rtcSrc.includes('hosts: hosts && hosts.length ? hosts : undefined'), '邀请码载荷带直连地址(空则不带,旧内核收码也无害)')
@@ -303,7 +303,7 @@ export default { name: "standard", character: characters, translate: translates 
   ok(clientSrc.includes('d.guestKernel') && clientSrc.includes('d.hostKernel'),
     '工坊体检卡消费双方内核版本(混装时明说版本不一致 + 升级出路)')
 
-  /* ── 第 4 轮:慢网/主线程卡顿下的窗口与出路(每一条都是实测踩过的误判面)── */
+  /* ── 慢网/主线程卡顿下的超时窗口与恢复路径── */
 
   ok(rtcSrc.includes('setTimeout(finish, 8000)') && !rtcSrc.includes('setTimeout(finish, 4000)'),
     'ICE 候选收集兜底 4→8 秒(非 trickle 一次性交换,早切会永久丢 srflx)')

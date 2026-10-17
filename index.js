@@ -718,7 +718,7 @@ export function apply(ctx, config) {
        * 必须查——桥的 token 就落在游戏静态目录里,而游戏自带
        * Access-Control-Allow-Origin:*(懒人包 noname-server.js:55),用户浏览器里打开的任何
        * 网页都能把 token 读走;原先这条路由在下面整段校验之外,拿到 token 的恶意页就能
-       * 伪造心跳/往工坊事件流灌内容/把命令队列掏空(审计实证) */
+       * 伪造心跳/往工坊事件流灌内容/把命令队列掏空 */
       if (url.pathname === '/noname-kit-api/online/bridge') {
         const origin = String(req.headers.origin || '')
         if (origin && !isLoopbackName(originName(origin))) {
@@ -748,7 +748,7 @@ export function apply(ctx, config) {
         }
         /* 无 Origin(非浏览器)不等于可信:DSH 支持绑 0.0.0.0(手机/局域网访问),
          * 那时同网段脚本可无 Origin 直接调这些接口改游戏目录/回滚文件/下发内核
-         * 命令(审计发现)。非浏览器请求再叠一层"来源必须是回环"判定 */
+         * 命令。非浏览器请求再叠一层"来源必须是回环"判定 */
         if (!allowed(origin)) {
           return json(403, { ok: false, error: '仅接受来自本机工坊页面的请求(Origin 校验未通过)' })
         }
@@ -764,13 +764,13 @@ export function apply(ctx, config) {
         for await (const chunk of req) {
           size += chunk.length
           if (size > 1_048_576) {
-            /* 1MB 上限:超大 body 会让 JSON.parse 同步阻塞事件循环(审计发现) */
+            /* 1MB 上限:超大 body 会让 JSON.parse 同步阻塞事件循环 */
             throw Object.assign(new Error('请求体过大(超过 1MB)'), { statusCode: 413 })
           }
           chunks.push(chunk)
         }
         const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
-        /* 归一:null/数组/标量一律当空对象,别让它变成 500(审计发现) */
+        /* 归一:null/数组/标量一律当空对象,别让它变成 500 */
         return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
       }
       try {
@@ -1021,7 +1021,7 @@ export function apply(ctx, config) {
           const rawPort = hostHeader.includes(':') ? hostHeader.slice(hostHeader.lastIndexOf(':') + 1) : ''
           const port = /^\d{1,5}$/.test(rawPort)
             ? rawPort
-            : String((webCtx.webServer && webCtx.webServer.port) || 80)   /* Host 缺端口:用真实监听端口,别硬编码 80(审计发现) */
+            : String((webCtx.webServer && webCtx.webServer.port) || 80)   /* Host 缺端口:用真实监听端口,别硬编码 80 */
           const baseUrl = `http://127.0.0.1:${port}/noname-kit-api`
           const result = installKernel({ nonameDir, baseUrl, token: bridgeToken })
           if (result.ok) {
@@ -1032,7 +1032,7 @@ export function apply(ctx, config) {
         if (req.method === 'GET' && url.pathname === '/noname-kit-api/online/avatars') {
           // 人物标识的头像下拉:直接扫游戏目录(自带包+扩展包),不依赖游戏运行。
           // 扫全盘 1 秒级,缓存 5 分钟(空结果 30 秒重试,兼容目录还没就绪)。
-          // 失败也计冷却:否则面板每次重挂都触发全盘重扫(审计发现)
+          // 失败也计冷却:否则面板每次重挂都触发全盘重扫
           const ttl = avatarsCache.list && avatarsCache.list.length ? 5 * 60_000 : 30_000
           const dirChanged = avatarsCache.dir !== (nonameDir || '')
           if (dirChanged || !avatarsCache.at || Date.now() - avatarsCache.at > ttl) {
