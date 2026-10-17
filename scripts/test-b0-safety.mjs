@@ -8,6 +8,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import * as guardModule from '../src/guard.js'
+import { readWorkingDirectory } from '../presets/noname-dev/working-directory.mjs'
 import { bundledKernelBuild, bundledKernelVersion, createBridgeSession, kernelRuntimeStatus } from '../src/online.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -31,7 +32,7 @@ function sliceBetween(text, start, end) {
 // 与 W1 原探针相同:捕获 index.js 实际注册的 guard,而不是只测正则 helper。
 let guard
 const guardContext = {
-  active: true, nonameDir: 'D:/audit-game', process, resolve, ...guardModule,
+  active: true, nonameDir: 'D:/audit-game', process, resolve, readWorkingDirectory, ...guardModule,
   extRootOf: (dir) => join(dir, 'extension'),
   ctx: { tools: { guard: (fn) => { guard = fn } } },
 }
@@ -232,11 +233,11 @@ test('缺包清单定向体检,无归属结果被忽略且重检不自动补传'
   k.acks.pop() // Manifest 上报不是 transfer ack
   assertContained(k)
 })
-test('已下发/旧桥命令的真实 dispatch 仍不能绕过 start 门禁', () => {
+test('已下发/旧桥命令的真实 dispatch 仍不能绕过 start 门禁', async () => {
   const k = kernel()
-  const dispatchCode = sliceBetween(source('online-kernel/src/bridge.js'), 'function dispatch(cmd)', '/* 命令执行报错')
-  const dispatch = runInNewContext(dispatchCode + '\ndispatch', { nnk: k.nnk })
-  dispatch({ action: 'transfer_pack', args: { name: '包' } })
+  const dispatchCode = sliceBetween(source('online-kernel/src/bridge.js'), 'async function dispatch(cmd)', '/* 命令执行报错')
+  const dispatch = runInNewContext(dispatchCode + '\ndispatch', { nnk: k.nnk, commandOverride:null })
+  await dispatch({ action: 'transfer_pack', args: { name: '包' } })
   assert.ok(k.events.some((e) => e.type === 'transfer_failed' && e.data.code === 'TRANSFER_PAUSED'))
   assertContained(k)
 })
@@ -279,23 +280,35 @@ const render = runInNewContext(helperCode + cardCode + '\nrenderManifestCard', {
 })
 const nodes = (tree) => tree && typeof tree === 'object' ? [tree, ...tree.children.flatMap(nodes)] : []
 const text = (tree) => tree && typeof tree === 'object' ? tree.children.map(text).join('') : String(tree || '')
-for (const host of [true, false]) test('体检卡片 ' + (host ? '主机' : '客人') + ' 常驻暂停提示且不抹去缺包', () => {
-  assert.match(text(render([], host)), /补传已暂停/)
+for (const host of [true, false]) test('体检卡片 ' + (host ? '主机' : '客人') + ' 隐藏技术长提示且不抹去缺包', () => {
+  const technicalNotice = /旧协议缺少客人逐请求授权|整批完整性[／/]回滚保障|不接受 legacy 降级|应用此止损/
+  const emptyTree = render([], host)
+  assert.doesNotMatch(text(emptyTree), technicalNotice)
   const tree = render([
     { type: 'manifest_diff', data: { exts: { missing: ['包'], extra: [] }, packs: { missing: [] }, guestKernel: '0.1.0', hostKernel: '0.1.0' } },
     { type: 'transfer_done', data: { name: '包', message: '旧版成功' } },
   ], host)
-  assert.match(text(tree), /补传已暂停/)
+  assert.doesNotMatch(text(tree), technicalNotice)
   assert.match(text(tree), /缺以下扩展/)
   assert.doesNotMatch(text(tree), /双方扩展一致|已补传|旧版成功/)
   const buttons = nodes(tree).filter((n) => n.tag === 'button' && /补传/.test(text(n)))
   if (host) assert.equal(buttons.length, 1)
-  for (const button of buttons) { assert.equal(button.props.disabled, true); assert.equal(button.props.onClick, undefined) }
+  else assert.equal(buttons.length, 0)
+  for (const button of buttons) {
+    assert.equal(button.props.disabled, true)
+    assert.equal(button.props.onClick, undefined)
+    assert.equal(button.props.title, '补传暂不可用')
+  }
+  for (const card of [emptyTree, tree]) {
+    const recheck = nodes(card).filter((n) => n.tag === 'button' && text(n) === '重新体检')
+    assert.equal(recheck.length, host ? 0 : 1)
+    for (const button of recheck) { assert.notEqual(button.props.disabled, true); assert.equal(typeof button.props.onClick, 'function') }
+  }
 })
 
 const current = { online: true, kernelVersion: bundledKernelVersion(), kernelBuild: bundledKernelBuild(), transferPaused: true, bootStage: 'ready' }
 test('安装与运行版本具有独立 B0 标识', () => {
-  assert.equal(current.kernelVersion, '0.3.87')
+  assert.equal(current.kernelVersion, '0.3.88')
   assert.equal(current.kernelBuild, bundledKernelBuild())
   assert.ok(current.kernelBuild)
   assert.equal(kernelRuntimeStatus({ state: 'ok' }, current), 'b0_active')

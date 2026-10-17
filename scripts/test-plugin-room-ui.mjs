@@ -1,0 +1,27 @@
+// Execute the real room renderer with external React/bridge fixtures; not a live UI claim.
+import assert from 'node:assert/strict';import fs from 'node:fs';
+const src=fs.readFileSync(new URL('../client.js',import.meta.url),'utf8');
+const support=src.slice(src.indexOf('function onlinePickEvent('),src.indexOf('    function OnlinePanel('));
+const room=src.slice(src.indexOf('function roomBrief()'),src.indexOf('      function renderOnlinePanel()'));
+const factory=new Function('bridge','evs','isRoomHost','roomMode','onlineRound','onlineNext','onlineRoom','roomCode','MODE_MAX','ONLINE_MODES','SEAT_COLORS','h','e','sendCmd','setRoomMode','setRoomPopupOpen','setNote','copyText','leaveRoom','renderInviteCard',support+room+';return renderRoomModal();');
+const h=(tag,props,...children)=>({tag,props:props||{},children:children.flat(Infinity)}),e=(tag,className,...children)=>h(tag,{className},...children),nodes=x=>x&&typeof x==='object'?[x,...x.children.flatMap(nodes)]:[],text=x=>x&&typeof x==='object'?x.children.map(text).join(''):String(x||'');
+function render(phase,{host=true,code='ABCDEF',retry=false,selected='single',commands=[]}={}){
+ const selection=[],modes=[{id:'single',name:'对决'},{id:'identity',name:'身份'}],caps={single:2,identity:8},evs=[{type:'room_members',data:{list:[{name:'Host',role:'host',entered:false,queued:false},{name:'Guest',role:'guest',entered:false,queued:false}],mode:'single',nextMode:'single',capacity:2,caps}}];
+ const tree=factory({},evs,host,selected,{phase},{retryAvailable:retry},{complete:phase==='plugin-room'},code,caps,modes,['red'],h,e,(...args)=>commands.push(args),mode=>selection.push(mode),()=>{},()=>{},()=>{},()=>{},()=>null);
+ return {tree,commands,selection,all:nodes(tree)};
+}
+let count=0;function test(name,fn){fn();count++;console.log('  ✓ '+name);}
+test('Returning and settlement screens cannot use the plugin load button to bypass return',()=>{for(const phase of ['playing','settling','settled','returning','preparing','loading','seating']){const f=render(phase),button=f.all.find(n=>n.tag==='button'&&text(n).includes('载入到游戏'));assert.equal(!!button.props.disabled,true);assert.equal(f.commands.length,0);}});
+test('Changing mode in plugin room does not load; explicit Load sends chosen-mode command',()=>{const f=render('plugin-room'),radio=f.all.find(n=>n.tag==='input'&&n.props.type==='radio'&&n.props.checked===false);radio.props.onChange();assert.deepEqual(f.commands,[['set_mode',{mode:'identity'}]]);assert.deepEqual(f.selection,['identity']);const rendered=render('plugin-room',{selected:f.selection[0],commands:f.commands}),load=rendered.all.find(n=>n.tag==='button'&&text(n).includes('载入到游戏'));assert.equal(!!load.props.disabled,false);load.props.onClick();assert.deepEqual(f.commands[1],['restart_room',{mode:'identity'}]);});
+test('Guest sees waiting guidance without a mode selector or load button',()=>{const f=render('plugin-room',{host:false});assert.equal(f.all.some(n=>n.tag==='input'&&n.props.type==='radio'),false);assert.equal(f.all.some(n=>n.tag==='button'&&text(n).includes('载入到游戏')),false);assert.match(text(f.tree),/自动跟着进房/);assert.equal(f.commands.length,0);});
+test('A dissolved public lobby can still display its preserved original-connection plugin room',()=>{const f=render('plugin-room',{code:null});assert.match(text(f.tree),/原连接房间/);assert.equal(f.all.some(n=>n.tag==='button'&&text(n)==='📋 复制'),false);assert.ok(f.all.some(n=>n.tag==='button'&&text(n).includes('载入到游戏')));});
+test('A failed load keeps explicit retry separate from the normal Load action',()=>{const f=render('failed',{retry:true}),load=f.all.find(n=>n.tag==='button'&&text(n).includes('载入到游戏')),retry=f.all.find(n=>n.tag==='button'&&text(n).includes('明确重试'));assert.equal(!!load.props.disabled,true);retry.props.onClick();assert.deepEqual(f.commands,[['retry_round',{}]]);});
+// Exercise the actual room-code block across updates of the same mounted panel.
+const codeBlock=src.slice(src.indexOf('      /* bridge.state 在内核首次心跳'),src.indexOf('      return renderOnlinePanel();'));
+const resolveRoomCode=new Function('bridge','phase','lastRoomCode','setLastRoomCode',codeBlock+';return roomCode;');
+function panelCode(){let memory=null;return {render(state,phase='room_open'){return resolveRoomCode({state},phase,memory,value=>memory=value);},memory:()=>memory};}
+test('Explicit public-lobby closure clears a previously displayed code without entering idle',()=>{const p=panelCode();assert.equal(p.render({roomCode:'ABC234',lobbyOpen:true}),'ABC234');assert.equal(p.memory(),'ABC234');assert.equal(p.render({roomCode:null,lobbyOpen:false}),null);assert.equal(p.memory(),null);assert.equal(p.render({}),null);});
+test('An explicit null code invalidates legacy cached codes even without lobbyOpen',()=>{const p=panelCode();p.render({code:'ABC234'});assert.equal(p.render({roomCode:null,code:'OLD234'}),null);assert.equal(p.memory(),null);});
+test('An older kernel missing both fields can retain the current session code',()=>{const p=panelCode();p.render({code:'ABC234'});assert.equal(p.render({}),'ABC234');assert.equal(p.memory(),'ABC234');});
+test('Idle still clears the code and a genuinely new open lobby can publish its own code',()=>{const p=panelCode();p.render({roomCode:'ABC234',lobbyOpen:true});assert.equal(p.render({},'idle'),null);assert.equal(p.memory(),null);assert.equal(p.render({roomCode:'DEF234',lobbyOpen:true}),'DEF234');});
+console.log('\n全部通过: '+count+' 项\n失败: 0 项');

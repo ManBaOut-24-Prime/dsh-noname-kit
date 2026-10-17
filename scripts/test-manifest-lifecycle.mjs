@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
-import {fixture as guestFixture,deferred,drain} from './fixtures/guest-lifecycle.mjs';
+import {deferred,drain} from './fixtures/guest-lifecycle.mjs';
+import {endpointManifestFixture} from './fixtures/endpoint-manifest-lifecycle.mjs';
 
 const source=name=>readFileSync(new URL('../online-kernel/src/'+name+'.js',import.meta.url),'utf8');
 let passed=0;
@@ -144,14 +145,37 @@ await test('unrelated game messages remain available to native dispatch',()=>{
     const k=fixture(),peer=k.make();let received=0;peer.socket.onmessage=()=>received++;
     peer.channel.onmessage({data:JSON.stringify(['game_message',{}])});assert.equal(received,1);
 });
-await test('actual Guest cancellation disposes the check and cannot resume from a late result',()=>{
-    const k=guestFixture();runInNewContext(source('manifest'),k.context);k.nnk.modules.manifest.install();
-    k.nnk.modules.guest.joinByRoomCode('ABC234');const channel=k.pcs[0].channels[0],sent=[];
-    channel.send=raw=>sent.push(JSON.parse(raw));channel.readyState='open';channel.onopen();
-    const staleMessage=channel.onmessage,checkTimer=[...k.timers.values()].find(t=>t.ms===15000).fn;
-    assert.ok(sent.some(m=>m[0]==='nnk_manifest'));k.nnk.modules.guest.cancelJoin();const count=k.events.length;
-    assert.equal(k.timers.size,0);staleMessage({data:JSON.stringify(['nnk_manifest_diff',{exts:{missing:[]}},sent.find(m=>m[0]==='nnk_manifest')[2]])});checkTimer();
-    assert.equal(k.events.length,count);assert.equal(k.nnk.state.guest.session,null);assert.equal(k.stats().reloads,0);
+await test('actual Guest cancellation disposes the check and cannot resume from a late result',async()=>{
+    // Coverage migration: old guest.cancelJoin/auto-rejoin fixture -> current
+    // endpoint retirement; actual unchanged manifest and FakeWebSocket remain.
+    const k=endpointManifestFixture(),socket=await k.prepare(),staleMessage=socket.channel.onmessage,
+        staleOpen=socket.channel.onopen,stalePortMessage=k.port.onmessage,checkTimer=[...k.timers.values()].find(t=>t.ms===15000).fn;
+    const request=k.sent().find(value=>value.payload[0]==='nnk_manifest');assert.ok(request);
+    const ack=await k.cancel(),count=k.events.length,raw=JSON.stringify(['nnk_manifest_diff',{exts:{missing:[]}},request.payload[2]]);
+    assert.equal(k.timers.size,0);staleMessage({data:raw});staleOpen();checkTimer();
+    stalePortMessage({data:{type:'game',scope:k.scope,peerId:'actual-host-fixture',seq:99,raw}});
+    k.nnk.env.lib.message.client.nnk_manifest_diff({exts:{missing:[]}},request.payload[2]);await drain();
+    assert.equal(k.events.length,count);assert.equal(k.port.closed,1);assert.equal(k.core.snapshot().facadeAttached,false);
+    assert.equal(ack.moduleResources.manifest.live,0);assert.equal(ack.moduleResources.manifest.pendingTimers,0);assert.equal(k.stats().reloads,0);
+});
+await test('current endpoint native preparation and init remain informational while health is pending',async()=>{
+    const k=endpointManifestFixture();try{
+        const socket=await k.prepare();assert.equal(k.nnk.modules.manifest.beforeEnter(socket),false);assert.equal(k.stats().nativeOpens,1);
+        await k.game(JSON.stringify(['init','current-online-id']),1);assert.equal(k.nnk.env.game.onlineID,'current-online-id');
+        assert.ok(k.sent().some(value=>value.payload[0]==='inited'));assert.equal(k.timers.size,1);
+        const fresh=await k.command('manifest_fresh',{},'operation');assert.equal(fresh.ok,true);assert.equal(fresh.value.admissionGate,false);assert.equal(k.scans.at(-1).force,true);
+        k.tick(15000);assert.ok(k.events.some(value=>value.type==='manifest_check'&&value.data.status==='unverified'));
+        assert.equal(k.nnk.env.game.onlineID,'current-online-id');assert.equal(k.stats().reloads,0);
+    }finally{await k.cancel();}
+});
+await test('current endpoint rejects old scope health replies before they reach the actual manifest',async()=>{
+    const k=endpointManifestFixture();try{
+        await k.prepare();const request=k.sent().find(value=>value.payload[0]==='nnk_manifest').payload[2];
+        const before=k.events.length,raw=JSON.stringify(['nnk_manifest_diff',{exts:{missing:[]}},request]);
+        await k.game(raw,999,{...k.scope,documentGeneration:99});assert.equal(k.events.length,before);assert.equal(k.timers.size,1);
+        await k.game(raw,1);assert.equal(k.timers.size,0);assert.ok(k.events.some(value=>value.type==='manifest_check'&&value.data.status==='verified'));
+        const event=k.port.messages.findLast(value=>value.type==='module-event'&&value.name==='manifest_check');assert.deepEqual(event.scope,k.scope);
+    }finally{await k.cancel();}
 });
 for(const trigger of ['replace-first','timeout-recheck','legacy-success-recheck','stale-numbered']){
     await test('ambiguous legacy '+trigger+' cannot replace the current tagged missing result',()=>{

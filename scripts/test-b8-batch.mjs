@@ -5,6 +5,7 @@ import {readFileSync,mkdirSync,writeFileSync,existsSync,mkdtempSync,readdirSync}
 import {webcrypto,createHash} from 'node:crypto';
 import {runInNewContext} from 'node:vm';
 import {revokeBatch} from '../src/batch.js';
+import {endpointManifestFixture} from './fixtures/endpoint-manifest-lifecycle.mjs';
 const require=createRequire(import.meta.url),core=require('../online-kernel/lib/batch-files.cjs'),{Channel,VERSION}=require('../online-kernel/lib/batch-wire.cjs'),runtime=require('../online-kernel/lib/batch-runtime.cjs');
 const sha=x=>createHash('sha256').update(x).digest('hex'),base=testPaths.tempDir();mkdirSync(base,{recursive:true});
 let passed=0;async function test(name,fn){await fn();passed++;console.log('  ✓ '+name)}
@@ -84,9 +85,35 @@ await test('active engine session is preserved while file attempt fails before r
 await test('real configuration failure leaves whole new files, explicit activation-required and no reload',async()=>{const k=integrated({activationError:true});try{await k.offer();await k.yes();assert.equal(k.guest.nnk.modules.batch.snapshot()[0].status,'committed_activation_required');unchangedActivation(k);assert.equal(k.guest.reloaded(),0);assert.equal(existsSync(k.target.root+'/extension/乙包/extension.js'),true)}finally{await k.close()}});
 await test('out-of-renderer cancellation between replacements restores whole old batch',async()=>{let k;const options={hook:e=>{if(e==='new:甲包'){assert.equal(revokeBatch(k.target.root,{...k.binding(),proposal:'f'.repeat(32)}),false);assert.equal(revokeBatch(k.target.root,k.binding()),true)}}};k=integrated({coreOptions:options});try{await k.offer();await k.yes();assert.equal(k.guest.nnk.modules.batch.snapshot()[0].status,'cancelled');assert.equal(readFileSync(k.target.root+'/extension/甲包/extension.js','utf8'),'old executable');assert.equal(existsSync(k.target.root+'/extension/乙包'),false);unchangedActivation(k);assert.equal(k.guest.c.readyState,'open')}finally{await k.close()}});
 await test('explicit Host retry creates a fresh proposal and still requires new local Yes',async()=>{const k=integrated({gameBusy:true});try{await k.offer();await k.yes();const old=k.binding();k.guest.nnk.state.guest=null;k.guest.nnk.env.game.players=[];assert.equal(await k.host.nnk.modules.batch.retry(Object.fromEntries(['session','peerSession','proposal','digest'].map(v=>[v,k.snapshot(k.host)[v]]))),true);await k.pump();assert.equal(k.snapshot(k.guest).status,'pending');assert.notEqual(k.binding().proposal,old.proposal);assert.equal(k.guest.nnk.modules.consent.decide({...old,yes:true}),false);assert.equal(readFileSync(k.target.root+'/extension/甲包/extension.js','utf8'),'old executable');await k.yes();assert.equal(k.guest.nnk.modules.batch.snapshot().find(q=>q.proposal===k.binding().proposal).status,'committed')}finally{await k.close()}});
-await test('native transport detach retains committed truth and restart access without retaining authorization',async()=>{const k=integrated();await k.offer();await k.yes();const old=k.binding();await k.close();assert.equal(k.guest.nnk.modules.batch.snapshot()[0].status,'committed');assert.equal(k.guest.nnk.modules.consent.authorization(k.guest.s),null);assert.equal(k.guest.nnk.modules.batch.reload(old),true);assert.equal(k.guest.reloaded(),1)});
+await test('native transport detach retains committed truth and restart access without retaining authorization',async()=>{
+  const k=integrated();try{
+    await k.offer();await k.yes();
+    // This case is post-commit retirement. A fixed pump count is not evidence
+    // that Windows disk/helper work has reached the durable commit boundary.
+    await wait(()=>k.guest.nnk.modules.batch.snapshot()[0]?.status==='committed');
+    assert.equal(k.guest.nnk.modules.batch.snapshot()[0].fileCommitted,true);
+    const old=k.binding();await k.close();assert.equal(k.guest.nnk.modules.batch.snapshot()[0].status,'committed');
+    assert.equal(k.guest.nnk.modules.batch.snapshot()[0].fileCommitted,true);assert.equal(k.guest.nnk.modules.consent.authorization(k.guest.s),null);
+    assert.equal(k.guest.nnk.modules.batch.reload(old),true);assert.equal(k.guest.reloaded(),1);
+  }finally{await k.close();}
+});
 await test('full commit requires fresh engine boot even after transport replacement',async()=>{const k=integrated();try{assert.equal(k.guest.nnk.modules.batch.canEnter(k.guest.s),true);await k.offer();await k.yes();assert.equal(k.guest.nnk.modules.batch.canEnter(k.guest.s),false);assert.equal(k.guest.nnk.modules.batch.canEnter({}),false)}finally{await k.close()}});
-await test('actual Guest admission guard returns before unlocking packs or replacing an existing game ws',()=>{const source=readFileSync(new URL('../online-kernel/src/guest.js',import.meta.url),'utf8'),i=source.indexOf('function connectNow(force)'),end=source.indexOf('\n\tfunction ',i+12),body=source.slice(i,end);let touch=0;const existing={close(){touch++}},nnk={env:{game:{ws:existing},_status:{}},modules:{batch:{canEnter:()=>false},compat:{unlockPacks(){touch++}}}};const session={fake:{}};const fn=runInNewContext('('+body+')',{nnk,guestState:{session},bridgeApi:()=>({emit(){}})});fn();assert.equal(touch,0);assert.equal(nnk.env.game.ws,existing);assert.equal(session.wasIn,undefined)});
+await test('actual Guest admission guard returns before unlocking packs or replacing an existing game ws',async()=>{
+  // Coverage migration: removed legacy connectNow -> actual current endpoint
+  // prepare-guest. Keep the real completed file transaction's canEnter barrier;
+  // this is unrelated to informational manifest success or transport reconnect.
+  const k=integrated(),document=endpointManifestFixture();let touch=0;
+  try{
+    await k.offer();await k.yes();await wait(()=>k.guest.nnk.modules.batch.snapshot()[0]?.status==='committed');
+    assert.equal(k.guest.nnk.modules.batch.canEnter(undefined),false);
+    document.nnk.modules.batch=k.guest.nnk.modules.batch;document.nnk.modules.compat.unlockPacks=()=>touch++;
+    const existing={close(){touch++;}};document.nnk.env.game.ws=existing;
+    assert.equal((await document.command('approve-peer',{peerId:'actual-host-fixture'})).ok,true);
+    const result=await document.command('prepare-guest',{peerId:'actual-host-fixture'});
+    assert.equal(result.ok,false);assert.equal(touch,0);assert.equal(document.nnk.env.game.ws,existing);
+    assert.equal(document.core.snapshot().facadeAttached,false);assert.equal(document.stats().nativeOpens,0);
+  }finally{await document.cancel();await k.close();}
+});
 await test('lease cleanup exception after durable publication keeps committed content truth',()=>{const f=disk(),tx=new core.Transaction(f.root,f.batch,f.binding);tx.files.forEach((file,i)=>tx.putFile(i,f.bytes[i]));tx.prepare();const release=tx.lock.release;tx.lock.release=()=>{release();throw Error('injected cleanup failure')};const result=tx.commit(()=>true);assert.equal(result.status,'committed');assert.match(result.warning,/cleanup failure/);assert.equal(tx.closed,true);assert.equal(existsSync(f.root+'/extension/乙包'),true);assert.equal(existsSync(f.root+'/nnk-batches/active'),false)});
 await test('disconnect during pending full-batch activation preserves eventual commit in bounded history',async()=>{let release;const gate=new Promise(r=>release=r),k=integrated({activationGate:gate});try{await k.offer();await k.yes();assert.equal(k.guest.nnk.modules.batch.snapshot()[0].status,'activation_pending');k.guest.nnk.modules.consent.detach(k.guest.s);await sleep(10);release();await k.pump();assert.equal(k.guest.nnk.modules.batch.snapshot()[0].status,'committed');assert.equal(k.guest.nnk.modules.batch.canEnter({}),false);assert.equal(k.guest.nnk.modules.consent.authorization(k.guest.s),null);assert.equal(k.guest.nnk.modules.batch.reload(k.binding()),true)}finally{release();await k.close()}});
 await test('unsupported strict config durability is rejected without any partial enable',async()=>{let aborted=0;const config={extensions:[]},nnk={env:{lib:{config,db:{transaction:()=>({durability:'default',abort:()=>aborted++})}},_status:{}}};await assert.rejects(runtime.activate(nnk,['甲包','乙包'],{}),/strict/);assert.equal(aborted,1);assert.deepEqual(config.extensions,[]);assert.equal(config.extension_甲包_enable,undefined)});

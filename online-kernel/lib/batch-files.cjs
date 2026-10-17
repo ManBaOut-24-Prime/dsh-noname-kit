@@ -1,5 +1,5 @@
 'use strict';
-// B7 file transactions. No transport, GUI, engine patch or implicit authorization.
+// File transactions. No transport, GUI, engine patch or implicit authorization.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{spawnSync,spawn}=require('node:child_process');
 const BASE='nnk-batches',SLOT=8192,MAX=300*1048576,MAX_LOCAL_FILES=32768;
 // Recovery remains usable while the installed kernel directory is withdrawn.
@@ -268,7 +268,7 @@ class Transaction{
     const dest=path.join(this.folder,'received',f.name,...f.path.split('/'));if(this.received.has(index)){if(hashFile(dest)!==f.sha256)fail('Duplicate content changed');return}
     fs.mkdirSync(path.dirname(dest),{recursive:true});durable(dest,bytes);this.received.add(index);this.hook?.('received:'+index);
   }
-  /** B8 chunks name only a manifest index. No incoming path is used for I/O. */
+  /** Chunks name only a manifest index. No incoming path is used for I/O. */
   putChunk(index,offset,bytes,end){
     this.current();if(this.closed||this.state.phase!=='receiving'||!Number.isInteger(index)||!this.files[index]||!Number.isSafeInteger(offset)||offset<0||typeof end!=='boolean'||!Buffer.isBuffer(bytes)||bytes.length>32768)fail('Invalid bounded chunk');
     const f=this.files[index],dest=path.join(this.folder,'received',f.name,...f.path.split('/'));

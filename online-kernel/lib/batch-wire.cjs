@@ -1,5 +1,5 @@
 'use strict';
-// Content frames are separate from B6 consent and the native game protocol.
+// Content frames are separate from consent and the native game protocol.
 // Adapters provide current consent, disk operations and profile activation.
 // v2 separates durable publication from activation completion. v1 peers must
 // negotiate an upgrade rather than interpreting pending activation as failure.

@@ -1,128 +1,54 @@
 #!/usr/bin/env node
-/** Guest cancellation and stale callback probes using actual kernel modules and controlled async transport. */
-import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { runInNewContext } from 'node:vm'
-import { EventEmitter } from 'node:events'
-import { webcrypto } from 'node:crypto'
-
-import {fixture, drain} from './fixtures/guest-lifecycle.mjs'
-const source = name => readFileSync(new URL('../online-kernel/src/' + name + '.js', import.meta.url), 'utf8')
-let passed = 0, failed = 0
-async function test(label, fn) { try { await fn(); passed++; console.log('  ✓ ' + label) } catch (e) { failed++; console.error('  ✗ ' + label + ': ' + e.message) } }
-await test('old offer rejection cannot reset the next session', async () => {
-  const k = fixture(), api = k.nnk.modules.guest
-  api.joinByRoomCode('ABC234'); const old = k.pcs[0]
-  api.cancelJoin(); api.joinByRoomCode('BCD234'); const current = k.nnk.state.guest.session
-  old.offer.reject(new Error('late reject')); await drain()
-  assert.equal(k.nnk.state.guest.session, current); assert.equal(current.pc.closed, 0)
-})
-await test('old successful offer cannot create local description or MQTT after cancellation', async () => {
-  const k = fixture(), api = k.nnk.modules.guest
-  api.joinByRoomCode('ABC234'); const old = k.pcs[0]; api.cancelJoin()
-  old.offer.resolve({ type: 'offer', sdp: 'old' }); await drain()
-  assert.equal(old.locals, 0); assert.equal(k.signals.length, 0)
-})
-await test('cached old ICE callback cannot close or report failure for the next session', () => {
-  const k = fixture(), api = k.nnk.modules.guest
-  api.joinByRoomCode('ABC234'); const pc = k.pcs[0], callback = pc.onconnectionstatechange
-  api.cancelJoin(); api.joinByRoomCode('BCD234'); const current = k.nnk.state.guest.session, count = k.events.length
-  pc.connectionState = 'failed'; callback()
-  assert.equal(k.nnk.state.guest.session, current); assert.equal(current.pc.closed, 0); assert.equal(k.events.length, count)
-})
-await test('late MQTT session is ended and cannot publish or change the next session', async () => {
-  const k = fixture(), api = k.nnk.modules.guest
-  api.joinByRoomCode('ABC234'); k.pcs[0].offer.resolve({}); await drain()
-  const old = k.signals[0]; assert.ok(old)
-  api.cancelJoin(); api.joinByRoomCode('BCD234'); const current = k.nnk.state.guest.session
-  old.cb('ABC234/host', { ts: 1 }); old.resolve(old.session); await drain()
-  assert.equal(old.ended, 1); assert.equal(old.publishes, 0); assert.equal(k.nnk.state.guest.session, current)
-})
-await test('synchronous PC close invalidates ownership before down hooks can start rejoin', async () => {
-  const k = fixture(), api = k.nnk.modules.guest
-  api.joinByRoomCode('ABC234'); const pc = k.pcs[0], channel = pc.channels[0]
-  channel.readyState = 'open'; channel.onopen(); channel.onmessage({ data: JSON.stringify({ nnk_stage: 'lobby' }) })
-  api.cancelJoin(); await drain()
-  assert.equal(k.nnk.state.guest.session, null); assert.equal(k.nnk.state.guest.rejoinCode, null)
-  assert.equal(k.timers.size, 0); assert.equal(k.pcs.length, 1)
-})
-await test('invitation cancellation removes timers and stale datachannel cannot revive resources', async () => {
-  const k = fixture(), api = k.nnk.modules.guest
-  const code = k.nnk.modules.rtc.encodeCode('offer', { type: 'offer', sdp: 'fixture' })
-  api.joinByInvite(code); const pc = k.pcs[0], callback = pc.ondatachannel
-  api.cancelJoin(); const channel = pc.createDataChannel('nnk-ping'); callback({ channel }); channel.onopen?.()
-  pc.remote.resolve(); await drain()
-  assert.equal(channel.readyState, 'closed'); assert.equal(k.timers.size, 0)
-  assert.ok(!k.events.some(e => e.type === 'answer_ready'))
-})
-await test('blocked new join does not tear down an existing engine connection', () => {
-  const k = fixture(), api = k.nnk.modules.guest
-  api.joinByRoomCode('ABC234'); const current = k.nnk.state.guest.session
-  k.nnk.env.game.online = true; api.joinByInvite('bad')
-  assert.equal(k.nnk.state.guest.session, current); assert.equal(current.pc.closed, 0)
-})
-await test('native exit still runs and clears rejoin ownership', () => {
-  const k = fixture(); k.nnk.modules.guest.joinByRoomCode('ABC234'); k.nnk.env.ui.click.exit()
-  assert.equal(k.stats().exits, 1); assert.equal(k.nnk.state.guest.session, null)
-})
-await test('late saveConfig callback cannot reload after cancel during connect boot', () => {
-  const k = fixture(); let saved
-  k.nnk.env._status.connectMode = false
-  k.nnk.env.game.saveConfig = (a, b, c, cb) => { saved = cb }
-  k.nnk.modules.guest.joinByRoomCode('ABC234'); k.nnk.modules.guest.cancelJoin(); saved()
-  assert.equal(k.stats().reloads, 0); assert.equal(k.timers.size, 0)
-})
-await test('normal engine close still delivers its callback once despite owner cleanup', () => {
-  const k = fixture(), api = k.nnk.modules.guest
-  k.nnk.env.lib.element.ws.onopen = function() { k.nnk.env._status.connectCallback(true) }
-  api.joinByRoomCode('ABC234'); const pc = k.pcs[0], channel = pc.channels[0]
-  channel.readyState = 'open'; channel.onopen(); channel.onmessage({ data: JSON.stringify({ nnk_stage: 'loaded' }) })
-  const oldFake = k.nnk.env.game.ws
-  oldFake.close(); assert.equal(k.stats().nativeCloses, 1); assert.equal(pc.closed, 1)
-  assert.equal(oldFake._disposed, true); api.cancelJoin(); assert.equal(k.timers.size, 0)
-})
-await test('ICE gathering cancellation removes the listener and timer', async () => {
-  const k = fixture(); runInNewContext(source('rtc'), k.context)
-  const listeners = new Set(), controller = new AbortController()
-  const pc = { iceGatheringState: 'gathering', addEventListener: (event, fn) => listeners.add(fn), removeEventListener: (event, fn) => listeners.delete(fn) }
-  const promise = k.nnk.modules.rtc.waitGather(pc, controller.signal)
-  controller.abort(); await assert.rejects(promise, e => e.name === 'AbortError')
-  assert.equal(listeners.size, 0); assert.equal(k.timers.size, 0)
-})
-function signalFixture() {
-  const timers = new Map(); let id = 0, client
-  const nnk = { modules: { config: { get: () => '' } } }
-  const context = { window: { __nnk__: nnk, mqtt: { connect: () => {
-    client = new EventEmitter(); client.ends = 0; client.sends = 0
-    client.subscribe = () => {}; client.publish = () => client.sends++; client.end = () => client.ends++
-    return client
-  } } }, crypto: webcrypto, TextEncoder, TextDecoder, Uint8Array, atob, btoa,
-    setTimeout: fn => { timers.set(++id, fn); return id }, clearTimeout: id => timers.delete(id), console,
-  }
-  runInNewContext(source('signaling'), context)
-  return { nnk, timers, client: () => client }
-}
-await test('MQTT cancellation before crypto completion creates no client', async () => {
-  const k = signalFixture(), controller = new AbortController()
-  const promise = k.nnk.modules.signaling.openRoomSession('ABC234', 'guest', [], () => {}, controller.signal)
-  controller.abort(); await assert.rejects(promise, e => e.name === 'AbortError')
-  assert.equal(k.client(), undefined); assert.equal(k.timers.size, 0)
-})
-await test('MQTT pending cancellation ends transport and removes timers/listeners', async () => {
-  const k = signalFixture(), controller = new AbortController()
-  const promise = k.nnk.modules.signaling.openRoomSession('ABC234', 'guest', [], () => {}, controller.signal)
-  for (let i = 0; i < 200 && !k.client(); i++) await new Promise(resolve => setImmediate(resolve))
-  assert.ok(k.client()); controller.abort(); await assert.rejects(promise, e => e.name === 'AbortError')
-  assert.equal(k.client().ends, 1); assert.equal(k.client().eventNames().length, 0); assert.equal(k.timers.size, 0)
-})
-await test('MQTT abort during encryption prevents sending and ends only once', async () => {
-  const k = signalFixture(), controller = new AbortController()
-  const promise = k.nnk.modules.signaling.openRoomSession('ABC234', 'guest', [], () => {}, controller.signal)
-  for (let i = 0; i < 200 && !k.client(); i++) await new Promise(resolve => setImmediate(resolve))
-  assert.ok(k.client()); k.client().emit('connect'); const session = await promise
-  const publishing = session.publish('topic', { value: 'fixture' }); controller.abort()
-  await assert.rejects(publishing, e => e.name === 'AbortError'); session.end()
-  assert.equal(k.client().sends, 0); assert.equal(k.client().ends, 1); assert.equal(k.timers.size, 0)
-})
-console.log(`全部通过:${passed} 项; 失败:${failed}`)
-if (failed) process.exitCode = 1
+// Current keepalive modules; controlled asynchronous transport, not native ICE.
+import assert from 'node:assert/strict';
+import {runInNewContext} from 'node:vm';
+import {EventEmitter} from 'node:events';
+import {webcrypto} from 'node:crypto';
+import {fixture,deferred,drain,until,runCases,source,enter,createEngineOperationPort} from './fixtures/keepalive-lifecycle.mjs';
+const cases=[];const test=(name,fn)=>cases.push([name,fn]);
+for(const outcome of ['resolve','reject'])test('old cancelled offer '+outcome+' cannot affect a new user initial attempt',async()=>{
+ const f=fixture(),old=deferred(),a=new AbortController(),b=new AbortController();let first,next;
+ try{f.plans.push({offerGate:old});const g=f.connector();first=g.joinRoom({code:'ABC234',signal:a.signal}).catch(e=>e);await until(()=>f.pcs[0]?.offers===1);a.abort();next=g.joinRoom({code:'BCD234',signal:b.signal}).catch(e=>e);await until(()=>f.pcs.length===2);
+  const current=f.owners[1];outcome==='resolve'?old.resolve({type:'offer',sdp:'fixture:1'}):old.reject(Error('late old offer'));await first;await drain();assert.equal(f.pcs[0].locals,0);assert.equal(current.stopped,false);assert.equal(current.actualIdentity().pc,f.pcs[1]);
+ }finally{a.abort();b.abort();old.resolve({type:'offer',sdp:'fixture:1'});await f.close();await first;await next;}
+});
+test('cached old failed callback cannot close a new initial Owner',async()=>{
+ const f=fixture(),old=deferred(),a=new AbortController(),b=new AbortController();let first,next;
+ try{f.plans.push({offerGate:old});const g=f.connector();first=g.joinRoom({code:'ABC234',signal:a.signal}).catch(e=>e);await until(()=>f.pcs[0]);const callback=f.pcs[0].onconnectionstatechange;a.abort();next=g.joinRoom({code:'BCD234',signal:b.signal}).catch(e=>e);await until(()=>f.pcs.length===2);
+  f.pcs[0].connectionState='failed';callback();assert.equal(f.pcs[1].closed,0);assert.equal(f.owners[1].stopped,false);assert.equal(f.owners[0].snapshot().reconnectAttempts,0);
+ }finally{a.abort();b.abort();old.resolve({type:'offer',sdp:'fixture:1'});await f.close();await first;await next;}
+});
+test('late old MQTT client closes without publishing into a new attempt',async()=>{
+ const f=fixture(),opening=deferred(),a=new AbortController(),b=new AbortController();let first,next,started=0,ended=0,published=0;
+ try{const g=f.connector({signaling:{...f.signaling,openRoomSession(){started++;return started===1?opening.promise:Promise.reject(Error('new fixture terminal'));}}});first=g.joinRoom({code:'ABC234',signal:a.signal}).catch(e=>e);await until(()=>started===1);a.abort();next=g.joinRoom({code:'BCD234',signal:b.signal}).catch(e=>e);await until(()=>f.pcs.length===2);
+  opening.resolve({end(){ended++;},async publish(){published++;}});await first;await next;await drain();assert.equal(ended,1);assert.equal(published,0);assert.equal(g.resourceSnapshot().retiredPending,0);assert.equal(f.pcs.length,2);
+ }finally{a.abort();b.abort();opening.resolve({end(){ended++;}});await f.close();await first;await next;}
+});
+test('native fixture failed stops once and never schedules rejoin',async()=>{
+ const f=fixture();try{const p=await f.pair();p.guest.pc.fail();await drain();assert.equal(p.guest.stopped,true);assert.equal(p.guest.pc.closed,1);assert.equal(f.pcs.length,2);assert.equal(p.guest.snapshot().reconnectAttempts,0);assert.equal(p.g.resourceSnapshot().activeAttempts,0);assert.equal(p.gs.list().length,0);}finally{await f.close();}
+});
+test('cancelled invitation refuses cached late datachannel and answer publication',async()=>{
+ const f=fixture(),pending=deferred(),controller=new AbortController();let joined;
+ try{const h=f.connector(),invite=await h.makeInvite();f.plans.push({remoteGate:pending});const g=f.connector();let answer=0;joined=g.joinInvite({code:invite.offerText,signal:controller.signal,onAnswerCode:()=>answer++}).catch(e=>e);await until(()=>f.pcs[1]?.remotes===1);
+  const cached=f.pcs[1].ondatachannel;controller.abort();const late=new f.Channel('nnk-ping');cached({channel:late});pending.resolve();await joined;await drain();assert.equal(late.readyState,'closed');assert.equal(answer,0);assert.equal(g.resourceSnapshot().retiredPending,0);
+ }finally{controller.abort();pending.resolve();await f.close();await joined;}
+});
+test('new join is refused before tearing down an entered actual Owner',async()=>{
+ const f=fixture();try{const p=await f.pair();enter(p.gs,p.guestRecord,p.guest);const identity=p.guest.actualIdentity(),lobby=f.lobby({connector:p.g,sessions:p.gs});await assert.rejects(lobby.joinByInvite('bad'),/原连接/);assert.deepEqual(p.guest.actualIdentity(),identity);assert.equal(p.guest.stopped,false);assert.equal(f.pcs.length,2);}finally{await f.close();}
+});
+test('existing native exit function is not wrapped by current Guest delegate module',()=>{let exits=0;const exit=()=>exits++,nnk={modules:{},env:{ui:{click:{exit}}}};runInNewContext(source('guest'),{window:{__nnk__:nnk}});assert.equal(nnk.env.ui.click.exit,exit);exit();assert.equal(exits,1);});
+test('retired current operation rejects pending save callback and cannot reload a later document',async()=>{
+ const f=fixture();let saved,reloads=0;const env={lib:{config:{},db:{}},game:{saveConfig(_k,_v,_l,cb){saved=cb;},getDB(){throw Error('old callback may not read next document');},reload(){reloads++;}},get:{connectNickname:()=>''}},nnk={env,modules:{config:{defaults:{},get:()=>''}}};let current=true;
+ const operations=createEngineOperationPort(nnk,{isCurrent:()=>current});try{const pending=operations.execute('set_config',{key:'mqttUrl',value:'wss://fixture.test'});await until(()=>saved);current=false;operations.dispose();await assert.rejects(pending,/Retired/);assert.equal(operations.pendingSnapshot().retiredNativePending,1);saved();await drain();assert.equal(operations.pendingSnapshot().pendingNative,0);assert.equal(reloads,0);}finally{operations.dispose();await f.close();}
+});
+test('local facade close delivers native callback once while persistent actual PC remains',async()=>{
+ const f=fixture();try{const p=await f.pair(),shim=new f.Channel('local-shim'),fake=new f.rtc.FakeWebSocket(shim);let native=0;fake.onclose=()=>native++;shim.open();fake.close();fake.close();assert.equal(native,1);fake.dispose();assert.equal(p.guest.stopped,false);assert.equal(p.guest.pc.closed,0);assert.equal(fake.onmessage,null);}finally{await f.close();}
+});
+test('actual RTC gather abort removes its own listener and timer',async()=>{
+ const f=fixture();try{const listeners=new Set(),controller=new AbortController(),pc={iceGatheringState:'gathering',addEventListener:(_n,fn)=>listeners.add(fn),removeEventListener:(_n,fn)=>listeners.delete(fn)},pending=f.rtc.waitGather(pc,controller.signal);controller.abort();await assert.rejects(pending,e=>e.name==='AbortError');assert.equal(listeners.size,0);assert.equal(f.timers.timers.size,0);}finally{await f.close();}
+});
+function signalFixture(){const timers=new Map();let id=0,client;const nnk={modules:{config:{get:()=>''}}},context={window:{__nnk__:nnk,mqtt:{connect(){client=new EventEmitter();client.ends=0;client.sends=0;client.subscribe=()=>{};client.publish=()=>client.sends++;client.end=()=>client.ends++;return client;}}},crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,atob,btoa,setTimeout:fn=>{timers.set(++id,fn);return id;},clearTimeout:id=>timers.delete(id),console};runInNewContext(source('signaling'),context);return {nnk,timers,client:()=>client};}
+test('actual MQTT cancellation before crypto completion creates no client',async()=>{const k=signalFixture(),c=new AbortController(),p=k.nnk.modules.signaling.openRoomSession('ABC234','guest',[],()=>{},c.signal);c.abort();await assert.rejects(p,e=>e.name==='AbortError');assert.equal(k.client(),undefined);assert.equal(k.timers.size,0);});
+test('actual pending MQTT cancellation removes owned listeners and timer',async()=>{const k=signalFixture(),c=new AbortController(),p=k.nnk.modules.signaling.openRoomSession('ABC234','guest',[],()=>{},c.signal);await until(()=>k.client());c.abort();await assert.rejects(p,e=>e.name==='AbortError');assert.equal(k.client().ends,1);assert.equal(k.client().eventNames().length,0);assert.equal(k.timers.size,0);});
+test('actual MQTT abort during AES encryption suppresses publish and ends only once',async()=>{const k=signalFixture(),c=new AbortController(),p=k.nnk.modules.signaling.openRoomSession('ABC234','guest',[],()=>{},c.signal);await until(()=>k.client());k.client().emit('connect');const session=await p,publishing=session.publish('topic',{value:'fixture'});c.abort();await assert.rejects(publishing,e=>e.name==='AbortError');session.end();assert.equal(k.client().sends,0);assert.equal(k.client().ends,1);assert.equal(k.timers.size,0);});
+await runCases(cases);

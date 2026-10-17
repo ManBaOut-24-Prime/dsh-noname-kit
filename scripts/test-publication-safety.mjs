@@ -15,7 +15,7 @@ childProcess.spawn=function(command,args,options){
   if(helperFault&&options.env?.NNK_BATCH_PUBLISH_REQUEST){
     const request=JSON.parse(fs.readFileSync(options.env.NNK_BATCH_PUBLISH_REQUEST));
     helperFault.requests.push(request);
-    const source=args.at(-1),fault=helperFault.mode;
+    const source=args.at(-1).replace(/\r\n/g,'\n'),fault=helperFault.mode;
     const injected=fault==='before-move'?source.replace('if($command -eq 1){',"if($command -eq 1){throw 'Injected publication failure'};if($command -eq 1){"):
       fault==='after-move'?source.replace('$published=$true',"$published=$true;throw 'Injected post-publication failure'"):
       fault==='no-done'?source.replace('Reply $request.done',"throw 'Injected completion communication failure';Reply $request.done"):

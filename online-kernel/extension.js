@@ -14,7 +14,7 @@
 	}
 	window.__nnkLoaded = true;
 	if (!window.__nnk__) {
-		window.__nnk__ = { version: "0.3.87", build: "f3-gate-1", modules: {}, env: null, state: {} };
+		window.__nnk__ = { version: "0.3.88", build: "keepalive-p2.2", modules: {}, env: null, state: {} };
 	}
 
 	game.import("extension", function(lib, game, ui, get, ai, _status) {
@@ -40,6 +40,14 @@
 		 * (双机实测)死因不明,游戏死了心跳停了,但工坊里最后一条面包屑
 		 * 能说明它死在了哪一步 */
 		nnk.state.bootStage = "env-ready";
+		/* Synchronous capture precedes the first await and all legacy installs. */
+		var bootstrap = require(lib.node.path.join(window.__dirname, "extension", "联机助手", "lib", "keepalive-bootstrap.cjs"));
+		var lease = bootstrap.capture(nnk, { window: window, document: document });
+		if (!lease.isCurrent()) return;
+		var entry = await import(location.origin + "/extension/" + encodeURIComponent("联机助手") + "/keepalive/entry.js");
+		if (!lease.isCurrent()) return;
+		await entry.prepareEngine(nnk, lease);
+		if (!lease.isCurrent()) return;
 		/* mqtt 库(UMD)经 <script> 标签加载进 window.mqtt——房号信令依赖它,
 		 * 加载失败只降级房号信令不可用(邀请码模式不受影响),不阻塞内核 */
 		await new Promise(function(resolve) {
@@ -49,6 +57,7 @@
 			s.onerror = function() { resolve(); };
 			document.head.appendChild(s);
 		});
+		if (!lease.isCurrent()) return;
 		nnk.state.bootStage = "mqtt-loaded";
 		var files = ["config", "rtc", "signaling", "host", "guest", "bridge", "compat", "isolation", "consent", "batch", "manifest", "transfer"];
 		for (var i = 0; i < files.length; i++) {
@@ -59,6 +68,7 @@
 			var base = location.origin + "/extension/" + encodeURIComponent("联机助手") + "/src/";
 			try {
 				await import(base + name + ".js");
+				if (!lease.isCurrent()) return;
 			} catch (e) {
 				console.error("[联机助手] 子模块加载失败: " + name, e);
 				nnk.state.bootStage = "load-fail:" + name;
@@ -67,15 +77,7 @@
 		}
 		nnk.state.bootStage = "modules-loaded";
 		/* 各安装步骤独立兜底:一步炸了不能带走其余安装与心跳上报 */
-		if (nnk.modules.host) {
-			nnk.modules.host.init();
-		}
-		if (nnk.modules.guest) {
-			nnk.modules.guest.init();
-		}
-		if (nnk.modules.bridge) {
-			nnk.modules.bridge.init();
-		}
+		/* Keepalive owns online entry. Legacy reload/autoRejoin hooks stay absent. */
 		nnk.state.bootStage = "inits-done";
 		/* 兼容层(开闸+垫片+隔离)与体检/补包的消息表登记——都在内容加载前
 		 * 装好:开闸必须在 onload 的 loadExtension 闸门检查之前生效 */
@@ -97,6 +99,9 @@
 			}
 		}
 		nnk.state.bootStage = "ready";
+		if (!lease.isCurrent()) return;
+		await entry.install(nnk, lease);
+		if (!lease.isCurrent()) return;
 		console.log("[联机助手] 内核 v" + nnk.version + " 就绪(无头模式" + (window.mqtt ? ",MQTT 信令可用" : ",MQTT 库缺失,房号模式不可用") + ")");
 	};
 })();

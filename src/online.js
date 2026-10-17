@@ -53,13 +53,13 @@ export function bundledKernelVersion() {
   return cachedKernelVersion
 }
 
-/** B0 运行标识:与磁盘内容哈希分开,心跳必须来自已重启的新内核。 */
+/** 补传暂停运行标识:与磁盘内容哈希分开,心跳必须来自已重启的新内核。 */
 export function bundledKernelBuild() {
   const code = readFileSync(join(bundledKernelDir(), 'extension.js'), 'utf8')
   return /window\.__nnk__ = \{ version: "[^"]+", build: "([^"]+)"/.exec(code)?.[1] ?? null
 }
 
-/** 已安装文件不代表运行代码更新。只在新内核已就绪并报告暂停处理器安装后标记 B0 生效。 */
+/** 已安装文件不代表运行代码更新。只在新内核已就绪并报告暂停处理器安装后标记补传暂停生效。 */
 export function kernelRuntimeStatus(kernel, bridge) {
   if (!bridge?.online) return 'offline'
   if (kernel?.state !== 'ok' || bridge.kernelVersion !== bundledKernelVersion()
@@ -182,7 +182,7 @@ export function createBridgeSession({ token, syncSource }) {
     poll(payload) {
       session.lastSeen = Date.now()
       session.kernelVersion = payload?.kernel?.version ?? session.kernelVersion
-      // 不粘滞:换成旧内核/缺字段时立即撤销 B0 已生效判定。
+      // 不粘滞:换成旧内核/缺字段时立即撤销补传暂停已生效判定。
       session.kernelBuild = typeof payload?.kernel?.build === 'string' ? payload.kernel.build : null
       session.transferPaused = payload?.kernel?.transferPaused === true
       session.bootStage = payload?.kernel?.stage ?? session.bootStage

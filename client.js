@@ -82,7 +82,7 @@ window.__ModuleLoader__.load({
       '.nnk-rm-code .nnk-rm-codelabel{font-size:12px;color:var(--dsw-alias-label-secondary)}',
       '.nnk-rm-code .nnk-rm-codeval{font-family:Consolas,monospace;font-size:22px;font-weight:700;letter-spacing:3px;color:var(--dsw-alias-label-primary);user-select:all}',
       '.nnk-rm-code .nnk-copy{margin-top:0}',
-      '.nnk-rm-seats{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:8px}',
+      '.nnk-rm-seats,.nnk-rm-queue{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:8px}',
       '.nnk-seat{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--nnk-rs);background:var(--dsw-alias-bg-layer-2);min-width:0;text-align:center}',
       '.nnk-seat-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:#fff;flex:none}',
       '.nnk-seat-name{font-size:12px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}',
@@ -103,6 +103,9 @@ window.__ModuleLoader__.load({
       '.nnk-inv-ans{margin-top:6px}',
       '.nnk-inv-ans .nnk-label{margin-top:4px}'
     ].join('\n');
+    CSS += '\n' + ".nnk-scope{display:contents}\n.nnk-glyph-modern,.nnk-modern-only,.nnk-tab-pill,.nnk-skill-toggle{display:none}\n.nnk-glyph{display:inline}\n.nnk-modern .nnk-glyph-classic{display:none}\n.nnk-modern .nnk-glyph-modern{display:inline-block;width:16px;height:16px;vertical-align:-3px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}\n.nnk-scope button:focus-visible,.nnk-scope input:focus-visible,.nnk-scope textarea:focus-visible,.nnk-scope select:focus-visible,.nnk-scope [tabindex]:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:3px}\n.nnk-appearancebar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;min-height:30px}\n.nnk-identity{font-size:12px;font-weight:650;letter-spacing:1.3px;color:var(--dsw-alias-label-secondary)}\n.nnk-appearance-switch{display:inline-flex;gap:2px;margin-left:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:2px;background:var(--dsw-alias-bg-layer-1);flex:none}\n.nnk-appearance-switch button{border:0;border-radius:5px;padding:4px 10px;font:inherit;font-size:11px;line-height:1.5;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background .18s,color .18s}\n.nnk-appearance-switch button[aria-pressed=true]{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-weight:600}\n.nnk-scope .nnk-wrap{box-sizing:border-box;overflow-anchor:none;transition:none}\n.nnk-scope .nnk-panel{max-width:calc(100vw - 24px)}\n.nnk-modern .nnk-modern-only{display:block}\n.nnk-modern .nnk-wrap{--nnk-r:14px;--nnk-rs:9px;--nnk-gap:16px;--nnk-t:.18s ease;max-width:940px;padding:20px 24px 28px;color:var(--dsw-alias-label-primary);line-height:1.65}\n.nnk-modern .nnk-appearancebar{margin-bottom:18px}\n.nnk-modern .nnk-tabs{position:relative;isolation:isolate;display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;scrollbar-width:thin;margin-bottom:20px;padding:6px;border-radius:12px;background:var(--dsw-alias-bg-layer-1)}\n.nnk-modern .nnk-tab{position:relative;z-index:1;flex:none;display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:9px;font-size:12px}\n.nnk-modern .nnk-tab.nnk-active{background:transparent;color:var(--dsw-alias-label-primary);font-weight:600}\n.nnk-modern .nnk-tab-pill{display:block;position:absolute;top:6px;left:0;height:calc(100% - 12px);border:1px solid var(--dsw-alias-border-l2);box-sizing:border-box;border-radius:9px;background:var(--dsw-alias-bg-layer-2);opacity:0;pointer-events:none;transition:transform .28s cubic-bezier(.22,1,.36,1),width .28s cubic-bezier(.22,1,.36,1)}\n.nnk-modern .nnk-card,.nnk-modern .nnk-group{padding:22px 24px;border-color:var(--dsw-alias-border-l2);box-shadow:none}\n.nnk-modern .nnk-label{font-size:12px;line-height:1.65;font-weight:550;color:var(--dsw-alias-label-primary);margin:20px 0 8px;overflow-wrap:anywhere}\n.nnk-modern .nnk-input,.nnk-modern .nnk-textarea{padding:10px 12px;font-size:12px;line-height:1.8;background:var(--dsw-alias-bg-layer-2);border-radius:8px}\n.nnk-modern .nnk-textarea{min-height:48px}\n.nnk-modern .nnk-code{min-height:140px}\n.nnk-modern .nnk-input:focus,.nnk-modern .nnk-textarea:focus{border-color:var(--dsw-alias-brand-primary);box-shadow:none}\n.nnk-modern .nnk-input::placeholder,.nnk-modern .nnk-textarea::placeholder{color:var(--dsw-alias-label-secondary);opacity:.8}\n.nnk-modern .nnk-radios{gap:7px}\n.nnk-modern .nnk-radio{border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.6;background:var(--dsw-alias-bg-layer-1)}\n.nnk-modern .nnk-radio.nnk-radio-on{color:var(--dsw-alias-brand-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,var(--dsw-alias-border-l2));background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,var(--dsw-alias-bg-layer-1))}\n.nnk-modern .nnk-hint{font-size:11px;line-height:1.8}\n.nnk-modern .nnk-submit{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 20px;font-size:12px;border-radius:9px;margin-top:22px;transition:filter .18s,opacity .18s,transform .18s}\n.nnk-modern .nnk-smallbtn,.nnk-modern .nnk-copy{padding:6px 10px;font-size:11px;line-height:1.6;border-radius:7px;transition:background .18s,border-color .18s,color .18s}\n.nnk-modern .nnk-smallbtn:hover:not(:disabled),.nnk-modern .nnk-copy:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}\n.nnk-modern button:active:not(:disabled){transform:scale(.98)}\n.nnk-modern .nnk-taskrow{padding:16px;border-radius:11px}\n.nnk-modern .nnk-taskmeta{line-height:1.8}\n.nnk-modern .nnk-dash{grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px}\n.nnk-modern .nnk-dash .nnk-card{padding:18px}\n.nnk-modern .nnk-modal{padding:22px 24px;border-radius:16px}\n.nnk-modern .nnk-modal-mask{padding:12px}\n.nnk-modern .nnk-panel-head{padding:10px 12px}\n.nnk-modern .nnk-panel-body{overflow-anchor:none}\n.nnk-modern .nnk-page{animation:none}\n.nnk-skill-head{display:flex;gap:6px;align-items:center;margin-bottom:4px}\n.nnk-skill-fields{min-width:0}\n.nnk-modern .nnk-skill{padding:0!important;margin:12px 0!important;overflow:hidden;border-radius:11px;box-shadow:none}\n.nnk-modern .nnk-skill-head{padding:10px 12px;margin-bottom:0;gap:5px}\n.nnk-modern .nnk-skill-head>b{display:none}\n.nnk-modern .nnk-skill-head .nnk-smallbtn{display:inline-flex;align-items:center;justify-content:center;min-width:28px;padding:4px 6px;margin:0}\n.nnk-modern .nnk-skill-toggle{display:flex;align-items:center;gap:9px;flex:1;min-width:0;border:0;background:transparent;color:var(--dsw-alias-label-primary);padding:4px 2px;font:inherit;font-size:12px;text-align:left;cursor:pointer}\n.nnk-skill-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.nnk-skill-number{font-size:10px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary);flex:none}\n.nnk-skill-chevron{display:block;width:6px;height:6px;border-right:1.65px solid currentColor;border-top:1.65px solid currentColor;transform:rotate(45deg);margin:0 4px;transition:transform .3s cubic-bezier(.22,1,.36,1);flex:none}\n.nnk-skill-toggle[aria-expanded=true] .nnk-skill-chevron{transform:rotate(135deg)}\n.nnk-modern .nnk-skill-body{display:block;height:auto;overflow:hidden;opacity:1;transition:none}\n.nnk-modern .nnk-skill-body.nnk-skill-closed{height:0;opacity:0;visibility:hidden;transition:none}\n.nnk-modern .nnk-skill-inner{overflow:hidden;min-height:0}\n.nnk-modern .nnk-skill-fields{padding:4px 14px 14px}\n.nnk-modern .nnk-skill-fields .nnk-textarea{background:var(--dsw-alias-bg-layer-1)}\n.nnk-modern .nnk-skill-fields .nnk-input{background:var(--dsw-alias-bg-layer-1)}\n.nnk-modern .nnk-skill-fields .nnk-input:last-child{background:var(--dsw-alias-bg-layer-2);font-size:11px}\n@media(max-width:650px){.nnk-modern .nnk-wrap{padding:12px 10px 20px}.nnk-modern .nnk-host-frame{padding-left:12px!important}.nnk-modern .nnk-tabs{padding:5px;gap:2px}.nnk-modern .nnk-tab{padding:7px 9px;font-size:11px}.nnk-modern .nnk-tab-pill{top:5px;height:calc(100% - 10px)}.nnk-modern .nnk-card,.nnk-modern .nnk-group{padding:18px 14px}.nnk-modern .nnk-modal{padding:18px 14px}.nnk-modern .nnk-modal-mask{padding:10px}.nnk-modern .nnk-identity{font-size:11px;letter-spacing:1px}.nnk-modern .nnk-appearancebar{gap:8px;margin-bottom:12px}.nnk-modern .nnk-skill-head{padding:8px}.nnk-modern .nnk-skill-toggle{gap:5px}}\n@media(prefers-reduced-motion:reduce){.nnk-scope *,.nnk-scope *::before,.nnk-scope *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}\n@media(max-width:650px){.nnk-classic .nnk-dash{grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr))}}\n\n.nnk-motion-snapshot,.nnk-motion-snapshot *{pointer-events:none!important;animation:none!important;transition:none!important}\n";
+    CSS += '\n' + ".nnk-form-fields,.nnk-submit-area,.nnk-description-head,.nnk-description-body,.nnk-description-editor{display:contents}\n.nnk-description-toggle,.nnk-description-summary,.nnk-skill-excerpt{display:none}\n.nnk-modern .nnk-wrap{max-width:960px;padding:24px 24px 36px;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"PingFang SC\",\"Microsoft YaHei\",sans-serif;font-size:13px;line-height:1.65}\n.nnk-modern .nnk-appearancebar{margin-bottom:20px;min-height:34px}\n.nnk-modern .nnk-identity{font-size:14px;font-weight:650;letter-spacing:1.4px;color:var(--dsw-alias-label-primary)}\n.nnk-modern .nnk-tabs{padding:10px 14px;margin-bottom:0;border-radius:16px 16px 0 0;gap:4px}\n.nnk-modern .nnk-tab{padding:8px 14px;font-size:13px}\n.nnk-modern .nnk-tab-pill{top:10px;height:calc(100% - 20px)}\n.nnk-modern .nnk-page{border:1px solid var(--dsw-alias-border-l2);border-top:0;border-radius:0 0 16px 16px;background:var(--dsw-alias-bg-layer-1);padding:28px 30px 30px;min-width:0}\n.nnk-modern .nnk-task-form{padding:0;border:0;box-shadow:none;margin:0;border-radius:0;background:transparent}\n.nnk-modern .nnk-task-heading{margin-bottom:26px}\n.nnk-modern .nnk-task-heading>b{display:block;font-size:22px;line-height:1.4;font-weight:600;letter-spacing:-.3px}\n.nnk-modern .nnk-task-heading>.nnk-hint{display:block;font-size:12px;line-height:1.8;margin-top:8px}\n.nnk-modern .nnk-form-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:22px 20px;align-items:start}\n.nnk-modern .nnk-form-fields>*{grid-column:1/-1;min-width:0}\n.nnk-modern .nnk-form-fields>.nnk-field-compact{grid-column:auto;display:flex;flex-direction:column;align-self:stretch}\n.nnk-modern .nnk-task-form .nnk-label{font-size:13px;line-height:1.65;font-weight:550;margin:0 0 8px;color:var(--dsw-alias-label-primary)}\n.nnk-modern .nnk-label-detail{font-size:11px;font-weight:400;color:var(--dsw-alias-label-secondary);margin-left:6px;letter-spacing:0}\n.nnk-modern .nnk-field-compact .nnk-label-detail{display:block;margin-left:0;font-size:11px;line-height:1.65}\n.nnk-modern .nnk-field-compact>.nnk-label{margin-bottom:8px}\n.nnk-modern .nnk-textarea,.nnk-modern .nnk-input{font-size:13px;line-height:1.75;padding:10px 12px;border-radius:8px}\n.nnk-modern .nnk-field-compact>.nnk-textarea{display:block;height:46px;min-height:46px;resize:vertical;margin-top:auto}\n.nnk-modern .nnk-description-editor>.nnk-textarea{display:block;min-height:108px}\n.nnk-modern .nnk-description-editor>.nnk-code{min-height:150px}\n.nnk-modern .nnk-radio{position:relative;font-size:12px;padding:8px 12px}\n.nnk-modern .nnk-radio-input{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:1px;height:1px;opacity:0;clip-path:inset(50%)}\n.nnk-modern .nnk-radio:has(.nnk-radio-input:focus-visible){outline:2px solid var(--dsw-alias-brand-primary);outline-offset:3px}\n.nnk-modern .nnk-choices[data-nnk-choice=\"类型\"],.nnk-modern .nnk-choices[data-nnk-choice=\"写法版本\"],.nnk-modern .nnk-choices[data-nnk-choice=\"写入方式\"]{padding-top:23px;border-top:1px solid var(--dsw-alias-border-l2);margin-top:2px}\n.nnk-modern .nnk-form-fields>.nnk-label{margin-bottom:-14px}\n.nnk-modern .nnk-form-fields>.nnk-hint{margin-top:-10px;font-size:12px}\n.nnk-modern .nnk-description-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:8px}\n.nnk-modern .nnk-description-head>.nnk-label{margin:0;flex:1;min-width:0;cursor:pointer}\n.nnk-modern .nnk-description-toggle{display:flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);padding:0;cursor:pointer}\n.nnk-modern .nnk-description-toggle:hover{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary)}\n.nnk-description-toggle[aria-expanded=true] .nnk-skill-chevron{transform:rotate(135deg)}\n.nnk-modern .nnk-description-body{position:relative;display:block;height:auto;overflow:hidden;opacity:1;visibility:visible}\n.nnk-modern .nnk-description-editor{display:block;opacity:1;transition:opacity .16s ease}\n.nnk-modern .nnk-description-summary{display:flex;align-items:center;position:absolute;inset:0 0 auto;height:60px;box-sizing:border-box;padding:9px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.7;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .16s ease;overflow:hidden}\n.nnk-modern .nnk-description-excerpt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}\n.nnk-modern .nnk-description-body.nnk-skill-closed{height:60px;opacity:1;visibility:visible}\n.nnk-modern .nnk-description-body.nnk-skill-closed>.nnk-description-editor{opacity:0;pointer-events:none}\n.nnk-modern .nnk-description-body.nnk-skill-closed>.nnk-description-summary{opacity:1;visibility:visible}\n.nnk-modern .nnk-skill{margin:0!important;border-radius:11px}\n.nnk-modern .nnk-skill-head{padding:12px 14px;gap:7px}\n.nnk-modern .nnk-skill-toggle{font-size:13px;align-items:center;gap:10px}\n.nnk-modern .nnk-skill-caption{display:block;min-width:0;flex:1}\n.nnk-modern .nnk-skill-title{display:block;font-weight:550}\n.nnk-modern .nnk-skill-excerpt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.7;font-weight:400;color:var(--dsw-alias-label-secondary);margin-top:3px}\n.nnk-modern .nnk-skill-fields{padding:4px 16px 16px}\n.nnk-modern .nnk-skill-fields>.nnk-input:first-child{margin-bottom:10px!important}\n.nnk-modern .nnk-skill-fields>.nnk-textarea{min-height:112px!important}\n.nnk-modern .nnk-skill-fields>.nnk-input:last-child{margin-top:10px!important;font-size:12px}\n.nnk-modern .nnk-form-fields>.nnk-smallbtn{justify-self:start;margin:0}\n.nnk-modern .nnk-submit-area{display:flex;flex-wrap:wrap;align-items:center;gap:16px 24px;margin-top:28px;padding-top:22px;border-top:1px solid var(--dsw-alias-border-l2)}\n.nnk-modern .nnk-submit-area>.nnk-submit{margin:0;padding:12px 22px;font-size:13px;order:2;margin-left:auto}\n.nnk-modern .nnk-submit-area>.nnk-hint{flex:1 1 290px;margin:0;font-size:11px;line-height:1.8;order:1}\n.nnk-modern .nnk-submit-area>.nnk-err{flex-basis:100%;margin:0;order:0}\n.nnk-modern .nnk-taskrow{font-size:13px}\n.nnk-modern .nnk-page>.nnk-card:not(.nnk-task-form){box-shadow:none}\n@media(max-width:650px){.nnk-modern .nnk-wrap{padding:14px 10px 24px}.nnk-modern .nnk-appearancebar{padding:0 6px;margin-bottom:14px}.nnk-modern .nnk-tabs{padding:8px 7px;border-radius:13px 13px 0 0}.nnk-modern .nnk-tab{font-size:12px;padding:8px 10px;gap:5px}.nnk-modern .nnk-tab-pill{top:8px;height:calc(100% - 16px)}.nnk-modern .nnk-page{padding:22px 18px 24px;border-radius:0 0 13px 13px}.nnk-modern .nnk-task-heading>b{font-size:20px}.nnk-modern .nnk-form-fields{gap:20px 16px}.nnk-modern .nnk-field-compact>.nnk-label{min-height:0}.nnk-modern .nnk-label-detail{font-size:11px}.nnk-modern .nnk-submit-area>.nnk-submit{flex:1 1 100%;width:100%}.nnk-modern .nnk-skill-head{padding:10px;gap:3px}}\n@media(prefers-reduced-motion:reduce){.nnk-description-editor,.nnk-description-summary{transition:none!important}}\n";
+    CSS += '\n' + "/* Shared presentation styles; classic wrappers do not alter layout. */\n.nnk-settings-section,.nnk-task-skills{display:contents}\n.nnk-modal:focus{outline:none}\n.nnk-scope .nnk-panel{max-height:min(var(--nnk-panel-limit,560px),calc(100vh - var(--nnk-panel-y,8px) - 12px))!important}\n.nnk-scope .nnk-panel-body{box-sizing:border-box;min-height:0}\n.nnk-modern .nnk-card,.nnk-modern .nnk-group{box-shadow:none}\n.nnk-modern .nnk-hint{font-size:12px;line-height:1.75}\n.nnk-modern .nnk-smallbtn,.nnk-modern .nnk-copy{font-size:12px;line-height:1.55}\n.nnk-modern .nnk-smallbtn:disabled{opacity:.45;cursor:default}\n.nnk-modern .nnk-badge{font-size:11px;line-height:1.6;padding:3px 8px;border-radius:6px;white-space:normal}\n.nnk-modern .nnk-mini{min-height:100px;font-size:13px;line-height:1.75;padding:12px;border-radius:8px}\n.nnk-modern .nnk-mini:focus{border-color:var(--dsw-alias-brand-primary)}\n.nnk-modern .nnk-note{padding:10px 12px;line-height:1.75;overflow-wrap:anywhere}\n.nnk-modern .nnk-cmd{max-width:100%;box-sizing:border-box;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8;padding:12px}\n.nnk-modern .nnk-online-dashboard{display:flex;flex-direction:column;align-items:stretch;gap:18px;min-width:0}\n.nnk-modern .nnk-online-dashboard>.nnk-card{margin:0}\n.nnk-modern .nnk-online-notice{padding:14px 18px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);font-size:12px;line-height:1.7}\n.nnk-modern .nnk-online-notice .nnk-hint{margin-top:5px}\n.nnk-modern .nnk-online-status{padding:18px 20px}\n.nnk-modern .nnk-online-title{font-size:14px;font-weight:600;margin-bottom:10px}\n.nnk-modern .nnk-online-runtime{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center}\n.nnk-modern .nnk-online-runtime>*{grid-column:1/-1;margin-top:0}\n.nnk-modern .nnk-online-runtime>:first-child{grid-column:1;grid-row:1}\n.nnk-modern .nnk-online-runtime>.nnk-row{grid-column:2;grid-row:1;margin:0}\n.nnk-modern .nnk-online-runtime>.nnk-row button{margin:0}\n.nnk-modern .nnk-online-runtime>.nnk-phaseline{font-size:12px}\n.nnk-modern .nnk-online-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:16px}\n.nnk-modern .nnk-online-actions>.nnk-card{margin:0;padding:20px;min-width:0}\n.nnk-modern .nnk-online-primary>.nnk-hint{margin:10px 0 14px}\n.nnk-modern .nnk-online-primary>.nnk-row{gap:8px;margin-top:14px}\n.nnk-modern .nnk-online-primary .nnk-submit{font-size:12px;padding:10px 16px}\n.nnk-modern .nnk-online-primary>.nnk-input{font-variant-numeric:tabular-nums}\n.nnk-modern .nnk-online-primary>.nnk-copy{margin-right:6px}\n.nnk-modern .nnk-online-primary .nnk-danger{margin-left:auto}\n.nnk-modern .nnk-online-diagnostics{gap:16px}\n.nnk-modern .nnk-online-diagnostics>.nnk-card{margin:0;padding:20px;min-width:0}\n.nnk-modern .nnk-online-events .nnk-log{margin-top:12px;max-height:200px;padding:10px 12px;font-size:12px;line-height:1.9}\n.nnk-modern .nnk-online-events .nnk-log>.nnk-hint{margin:0}\n.nnk-modern .nnk-fold-head{display:flex;align-items:center;min-height:24px;font-size:13px;line-height:1.7;border-radius:4px}\n.nnk-modern .nnk-fold-head>b{display:flex;align-items:center;gap:5px}\n.nnk-modern .nnk-settings{padding:0;border:0;background:transparent}\n.nnk-modern .nnk-settings-section{display:block;padding:22px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;margin:0 0 16px;background:var(--dsw-alias-bg-layer-1);min-width:0}\n.nnk-modern .nnk-settings-section:last-child{margin-bottom:0}\n.nnk-modern .nnk-settings-heading{margin-top:0!important;line-height:1.7}\n.nnk-modern .nnk-settings-heading>b{display:block;font-size:15px;font-weight:600}\n.nnk-modern .nnk-settings-heading>.nnk-hint{display:block;margin:6px 0 14px}\n.nnk-modern .nnk-settings-section>.nnk-input{margin-top:12px}\n.nnk-modern .nnk-settings-section>.nnk-hint{margin-top:10px}\n.nnk-modern .nnk-settings-section>.nnk-radio{margin-top:8px!important;padding:12px}\n.nnk-modern .nnk-settings-section>.nnk-radio input{margin-right:6px;vertical-align:middle}\n.nnk-modern .nnk-settings-section>.nnk-radio .nnk-break{overflow-wrap:anywhere;word-break:normal}\n.nnk-modern .nnk-maintenance-row{padding-top:16px;margin-top:14px;border-top:1px solid var(--dsw-alias-border-l2)}\n.nnk-modern .nnk-settings-section>.nnk-maintenance-row:first-of-type{margin-top:0}\n.nnk-modern .nnk-maintenance-row>div:first-child{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}\n.nnk-modern .nnk-maintenance-row>div:first-child>.nnk-hint{margin:0}\n.nnk-modern .nnk-settings-about{padding:4px 0 0;border:0;background:transparent}\n.nnk-modern .nnk-settings>.nnk-err,.nnk-modern .nnk-settings>.nnk-ok{margin:0 0 16px}\n.nnk-modern .nnk-task-list{min-width:0}\n.nnk-modern .nnk-task-list>.nnk-hint:first-child{margin:0 0 18px}\n.nnk-modern .nnk-task-list>.nnk-label{margin:24px 0 12px}\n.nnk-modern .nnk-task-list .nnk-taskrow{padding:20px;border-radius:12px;margin-bottom:16px;overflow-wrap:anywhere}\n.nnk-modern .nnk-task-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}\n.nnk-modern .nnk-task-title>.nnk-badge{margin:0}\n.nnk-modern .nnk-task-title>b{font-size:15px;overflow-wrap:anywhere}\n.nnk-modern .nnk-task-actions{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:14px}\n.nnk-modern .nnk-task-actions>.nnk-smallbtn{margin:0}\n.nnk-modern .nnk-task-actions>.nnk-danger{margin-left:auto}\n.nnk-modern .nnk-smallbtn.nnk-danger{color:var(--dsw-alias-state-error-primary)}\n.nnk-modern .nnk-task-skills{display:block;margin:20px 0 0 7px;padding-left:19px;border-left:1px solid var(--dsw-alias-border-l2)}\n.nnk-modern .nnk-task-skill{position:relative;padding:14px!important;margin:0 0 10px!important;border-radius:9px;background:var(--dsw-alias-bg-layer-2)}\n.nnk-modern .nnk-task-skill:before{content:\"\";position:absolute;left:-20px;top:27px;width:19px;height:1px;background:var(--dsw-alias-border-l2);pointer-events:none}\n.nnk-modern .nnk-task-skill-head{flex-wrap:wrap;row-gap:8px!important}\n.nnk-modern .nnk-task-skill-head>b{font-size:13px!important;overflow-wrap:anywhere}\n.nnk-modern .nnk-task-skill-head>.nnk-badge{margin-right:2px}\n.nnk-modern .nnk-task-skill-head>.nnk-smallbtn{margin:0}\n.nnk-modern .nnk-task-skill>.nnk-hint{margin-top:10px}\n.nnk-modern .nnk-task-skill .nnk-fbrow{padding:6px 10px;margin-top:8px;line-height:1.7;border-left-width:2px}\n.nnk-modern .nnk-task-feedback{margin-top:16px;padding-top:14px;border-top:1px solid var(--dsw-alias-border-l2)}\n.nnk-modern .nnk-task-feedback>.nnk-hint{margin-top:0}\n.nnk-modern .nnk-task-feedback>.nnk-smallbtn{margin-top:10px}\n.nnk-modern .nnk-history-overview{padding:0;border:0;background:transparent}\n.nnk-modern .nnk-history-overview>b{display:block;font-size:17px;margin-bottom:16px}\n.nnk-modern .nnk-history-overview .nnk-taskrow{margin:0 0 14px;padding:18px 20px}\n.nnk-modern .nnk-history-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}\n.nnk-modern .nnk-history-heading>b{font-size:14px;overflow-wrap:anywhere}\n.nnk-modern .nnk-history-heading>.nnk-badge{margin:0!important}\n.nnk-modern .nnk-history-detail{padding:20px;background:var(--dsw-alias-bg-layer-2)}\n.nnk-modern .nnk-history-detail>b{display:block;font-size:15px;overflow-wrap:anywhere}\n.nnk-modern .nnk-history-note{align-items:center!important}\n.nnk-modern .nnk-history-note>.nnk-note{flex:1;min-width:0}\n.nnk-modern .nnk-tool-result{padding:16px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;line-height:1.75;min-width:0}\n.nnk-modern .nnk-tool-result>.nnk-note{margin-top:12px;font-size:12px}\n.nnk-modern .nnk-modal-mask{box-sizing:border-box;padding:24px;overscroll-behavior:contain}\n.nnk-modern .nnk-modal{position:relative;box-sizing:border-box;width:680px;max-width:100%;max-height:calc(100dvh - 48px);padding:26px 28px;border-radius:16px;box-shadow:none;overscroll-behavior:contain;scrollbar-gutter:stable}\n.nnk-modern .nnk-modal-close{display:flex;align-items:center;justify-content:center;position:absolute;right:20px;top:20px;width:28px;height:28px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font:inherit}\n.nnk-modern .nnk-modal-close:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}\n.nnk-modern .nnk-modal>.nnk-modal-title,.nnk-modern .nnk-modal>.nnk-rm-head{padding-right:34px}\n.nnk-modern .nnk-modal-title{font-size:18px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}\n.nnk-modern .nnk-modal>.nnk-modal-title{padding-bottom:18px;margin-bottom:0;border-bottom:1px solid var(--dsw-alias-border-l2)}\n.nnk-modern .nnk-modal-body{padding-top:8px}\n.nnk-modern .nnk-modal .nnk-label{margin:18px 0 8px}\n.nnk-modern .nnk-modal .nnk-code{white-space:pre-wrap;overflow-wrap:anywhere;min-height:110px;font-size:12px}\n.nnk-modern .nnk-modal-actions{gap:10px;margin-top:22px;padding-top:16px;border-top:1px solid var(--dsw-alias-border-l2)}\n.nnk-modern .nnk-modal-actions>.nnk-copy{margin-top:0}\n.nnk-modern .nnk-modal-actions>.nnk-copy:last-child{margin-left:auto}\n.nnk-modern .nnk-rm-head{gap:12px;align-items:flex-start}\n.nnk-modern .nnk-rm-head>.nnk-modal-title{margin:0}\n.nnk-modern .nnk-rm-code{margin-top:20px;padding:15px 16px;border-radius:10px;gap:12px}\n.nnk-modern .nnk-rm-codeval{font-size:26px;letter-spacing:4px}\n.nnk-modern .nnk-rm-code>.nnk-copy{margin-left:auto}\n.nnk-modern .nnk-rm-seats,.nnk-modern .nnk-rm-queue{grid-template-columns:repeat(auto-fit,minmax(min(100%,128px),1fr));gap:10px;margin-top:16px}\n.nnk-modern .nnk-rm-queue{grid-template-columns:repeat(auto-fill,minmax(min(100%,128px),1fr))}\n.nnk-modern .nnk-seat{padding:14px 8px;gap:8px;border-radius:10px}\n.nnk-modern .nnk-seat-avatar{width:38px;height:38px;font-size:15px}\n.nnk-modern .nnk-seat-name{font-size:12px;font-weight:550}\n.nnk-modern .nnk-rm-ops{margin-top:22px;padding-top:4px}\n.nnk-modern .nnk-rm-ops>.nnk-hint{padding:12px 0}\n.nnk-modern .nnk-rm-ops .nnk-radios{gap:8px}\n.nnk-modern .nnk-rm-ops .nnk-radio{font-size:12px}\n.nnk-modern .nnk-inv-box{margin-top:20px}\n.nnk-modern .nnk-inv-row{padding:14px;margin-top:10px;border-radius:10px}\n.nnk-modern .nnk-inv-head{gap:8px}\n.nnk-modern .nnk-inv-head .nnk-smallbtn{margin:0}\n.nnk-modern .nnk-inv-state{white-space:normal;overflow-wrap:anywhere}\n.nnk-modern .nnk-panel{box-sizing:border-box;border-radius:14px;box-shadow:none}\n.nnk-modern .nnk-panel-head{padding:12px 14px;gap:12px;flex-shrink:0}\n.nnk-modern .nnk-panel-title{font-size:13px;line-height:1.6}\n.nnk-modern .nnk-panel-close{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;flex-shrink:0}\n.nnk-modern .nnk-panel-close:hover{background:var(--dsw-alias-bg-layer-2)}\n.nnk-modern .nnk-panel-body{padding:16px;min-height:0;overscroll-behavior:contain}\n.nnk-modern .nnk-panel .nnk-wrap{padding:0!important;height:auto}\n.nnk-modern .nnk-panel .nnk-page{padding:18px 14px}\n.nnk-modern .nnk-panel .nnk-tabs{padding:10px 6px}\n.nnk-modern .nnk-panel .nnk-tab{padding:7px 9px;font-size:12px}\n.nnk-modern .nnk-panel .nnk-appearancebar{margin-bottom:14px}\n.nnk-modern .nnk-panel .nnk-online-actions{grid-template-columns:minmax(0,1fr)}\n.nnk-modern .nnk-panel .nnk-settings-section,.nnk-modern .nnk-panel .nnk-online-actions>.nnk-card,.nnk-modern .nnk-panel .nnk-online-diagnostics>.nnk-card{padding:16px}\n.nnk-modern .nnk-panel .nnk-task-list .nnk-taskrow{padding:14px}\n.nnk-modern .nnk-panel .nnk-task-skills{padding-left:12px;margin-left:3px}\n.nnk-modern .nnk-panel .nnk-task-skill:before{left:-13px;width:12px}\n@media(max-width:650px){\n.nnk-modern .nnk-settings-section{padding:18px 16px}\n.nnk-modern .nnk-online-notice{padding:12px 14px}\n.nnk-modern .nnk-online-status,.nnk-modern .nnk-online-actions>.nnk-card,.nnk-modern .nnk-online-diagnostics>.nnk-card{padding:16px}\n.nnk-modern .nnk-online-runtime{column-gap:8px}\n.nnk-modern .nnk-task-list .nnk-taskrow{padding:16px}\n.nnk-modern .nnk-task-skills{padding-left:12px;margin-left:3px}\n.nnk-modern .nnk-task-skill{padding:12px!important}\n.nnk-modern .nnk-task-skill:before{left:-13px;width:12px}\n.nnk-modern .nnk-modal-mask{padding:12px}\n.nnk-modern .nnk-modal{padding:20px 16px;max-height:calc(100dvh - 24px);border-radius:12px}\n.nnk-modern .nnk-modal-title{font-size:16px}\n.nnk-modern .nnk-modal-actions>.nnk-copy{max-width:100%;text-align:left}\n.nnk-modern .nnk-rm-codeval{font-size:22px}\n.nnk-modern .nnk-rm-seats,.nnk-modern .nnk-rm-queue{grid-template-columns:repeat(auto-fit,minmax(min(100%,116px),1fr))}\n.nnk-modern .nnk-rm-queue{grid-template-columns:repeat(auto-fill,minmax(min(100%,116px),1fr))}\n.nnk-modern .nnk-modal-close{top:16px;right:12px}\n.nnk-modern .nnk-seat{padding:12px 6px}\n.nnk-modern .nnk-inv-row{padding:12px}\n}\n\n";
     if (typeof document !== 'undefined' && document.querySelector('style[data-plugin-css="dsh-noname-kit/ui"]') === null) {
       var tag = document.createElement('style');
       tag.dataset.plugin = 'dsh-noname-kit';
@@ -111,8 +114,368 @@ window.__ModuleLoader__.load({
       document.head.appendChild(tag);
     }
 
+    // 动效只作用于现有展示节点；没有第二套 React/表单/联机实例。
+    var motionEase = 'cubic-bezier(.22,1,.36,1)';
+    var motionPreference = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+    var appearanceMotion = [];
+    var skillMotion = new Map();
+    var motionInteractionBound = false;
+
+    function endMotionForInteraction(ev) {
+      if (ev.type === 'pointermove' && !ev.buttons) return;
+      if (ev.target && ev.target.closest && ev.target.closest('.nnk-appearance-switch')) return;
+      appearanceMotion.slice().forEach(finishAppearanceMotion);
+    }
+
+    function bindMotionInteraction() {
+      if (motionInteractionBound) return;
+      motionInteractionBound = true;
+      ['pointerdown','pointermove','wheel','keydown','beforeinput'].forEach(function (name) { document.addEventListener(name, endMotionForInteraction, { capture: true, passive: true }) });
+    }
+
+    function motionAllowed() {
+      return typeof document !== 'undefined' && typeof Element !== 'undefined' && typeof Element.prototype.animate === 'function' && !(motionPreference && motionPreference.matches);
+    }
+
+    function finishAppearanceMotion(entry) {
+      if (entry.observer) entry.observer.disconnect();
+      if (entry.fade) entry.fade.cancel();
+      if (entry.live) entry.live.cancel();
+      entry.layer.remove();
+      appearanceMotion = appearanceMotion.filter(function (item) { return item !== entry });
+      if (!appearanceMotion.length && motionInteractionBound) {
+        ['pointerdown','pointermove','wheel','keydown','beforeinput'].forEach(function (name) { document.removeEventListener(name, endMotionForInteraction, true) });
+        motionInteractionBound = false;
+      }
+    }
+
+    function prepareAppearanceMotion(target) {
+      if (!motionAllowed()) return;
+      var returned = [];
+      appearanceMotion.slice().forEach(function (entry) {
+        if (!entry.root.isConnected || entry.look === target) { returned.push(entry.root); finishAppearanceMotion(entry) }
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.nnk-scope .nnk-wrap'), function (root) {
+        if (root.closest('.nnk-motion-snapshot') || returned.indexOf(root) >= 0 || root.querySelector('.nnk-modal-mask')) return;
+        var rect = root.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.top >= innerHeight) return;
+        var covered = Array.prototype.some.call(document.querySelectorAll('.nnk-panel,.nnk-modal-mask,[role="dialog"],[role="menu"],[role="tooltip"]'), function (overlay) {
+          if (overlay.contains(root) || overlay.closest('.nnk-motion-snapshot')) return false;
+          var bounds = overlay.getBoundingClientRect();
+          return bounds.width > 0 && bounds.height > 0 && bounds.left < rect.right && bounds.right > rect.left && bounds.top < rect.bottom && bounds.bottom > rect.top;
+        });
+        // 独立浮窗/宿主菜单优先；不以旧画面盖住仍可操作的上层控件。
+        if (covered) return;
+        // 连续反向共用当前快照，不堆叠动画或反复复制 DOM。
+        if (appearanceMotion.some(function (entry) { return entry.root === root })) return;
+        var scope = root.closest('.nnk-scope'), style = getComputedStyle(root);
+        var clip = { left: Math.max(0, rect.left), top: Math.max(0, rect.top), right: Math.min(innerWidth, rect.right), bottom: Math.min(innerHeight, rect.bottom) };
+        for (var ancestor = root.parentElement; ancestor; ancestor = ancestor.parentElement) {
+          var bounds = ancestor.getBoundingClientRect(), overflow = getComputedStyle(ancestor);
+          if (/(auto|scroll|hidden|clip)/.test(overflow.overflowX)) { clip.left = Math.max(clip.left, bounds.left + ancestor.clientLeft); clip.right = Math.min(clip.right, bounds.left + ancestor.clientLeft + ancestor.clientWidth) }
+          if (/(auto|scroll|hidden|clip)/.test(overflow.overflowY)) { clip.top = Math.max(clip.top, bounds.top + ancestor.clientTop); clip.bottom = Math.min(clip.bottom, bounds.top + ancestor.clientTop + ancestor.clientHeight) }
+        }
+        if (clip.right <= clip.left || clip.bottom <= clip.top) return;
+        var layer = document.createElement('div');
+        layer.className = 'nnk-scope nnk-motion-snapshot ' + (scope.classList.contains('nnk-classic') ? 'nnk-classic' : 'nnk-modern');
+        layer.setAttribute('aria-hidden', 'true'); layer.setAttribute('inert', '');
+        Object.assign(layer.style, { display: 'block', position: 'fixed', left: clip.left + 'px', top: clip.top + 'px', width: (clip.right - clip.left) + 'px', height: (clip.bottom - clip.top) + 'px', overflow: 'hidden', pointerEvents: 'none', zIndex: '99999', margin: '0' });
+        ['fontFamily','fontSize','fontWeight','lineHeight','color'].forEach(function (name) { layer.style[name] = style[name] });
+        for (var i = 0; i < style.length; i++) { var variable = style[i]; if (variable.indexOf('--ds') === 0 || variable.indexOf('--nnk-') === 0) layer.style.setProperty(variable, style.getPropertyValue(variable)); }
+        var clone = root.cloneNode(true);
+        var originals = [root].concat(Array.prototype.slice.call(root.querySelectorAll('*')));
+        var copies = [clone].concat(Array.prototype.slice.call(clone.querySelectorAll('*')));
+        copies.forEach(function (node, index) {
+          // 特别移除 name：惯性或 disabled 不能隔离原生 radio 的同名分组。
+          ['id','name','form','autofocus','tabindex','contenteditable','for','aria-controls','aria-labelledby','aria-describedby'].forEach(function (name) { node.removeAttribute(name) });
+          Array.prototype.slice.call(node.attributes).forEach(function (attr) { if (/^on/i.test(attr.name)) node.removeAttribute(attr.name) });
+          if (node.tagName === 'BUTTON') node.type = 'button';
+          if ('value' in node) node.value = originals[index].value;
+          if ('checked' in node) node.checked = originals[index].checked;
+          if ('selected' in node) node.selected = originals[index].selected;
+          node.style.animation = 'none'; node.style.transition = 'none';
+          if (originals[index].matches('.nnk-tab-pill,.nnk-skill-body,.nnk-skill-chevron')) {
+            var visible = getComputedStyle(originals[index]);
+            ['height','opacity','visibility','transform'].forEach(function (name) { node.style[name] = visible[name] });
+          }
+        });
+        Object.assign(clone.style, { position: 'absolute', left: (rect.left - clip.left) + 'px', top: (rect.top - clip.top) + 'px', width: rect.width + 'px', maxWidth: 'none', height: rect.height + 'px', margin: '0', opacity: '1' });
+        layer.appendChild(clone); document.body.appendChild(layer);
+        copies.forEach(function (node, index) { node.scrollTop = originals[index].scrollTop; node.scrollLeft = originals[index].scrollLeft });
+        var entry = { root: root, layer: layer, live: null, fade: null, look: scope.classList.contains('nnk-classic') ? 'classic' : 'modern' };
+        appearanceMotion.push(entry);
+        // 真实异步弹窗在过渡中的任意一帧到达，都立即优先展示原控件。
+        if (typeof MutationObserver !== 'undefined') {
+          entry.observer = new MutationObserver(function () { if (root.querySelector('.nnk-modal-mask')) finishAppearanceMotion(entry) });
+          entry.observer.observe(root, { childList: true, subtree: true });
+        }
+        bindMotionInteraction();
+        entry.fade = layer.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 240, easing: motionEase, fill: 'forwards' });
+        entry.fade.finished.then(function () { finishAppearanceMotion(entry) }, function () {});
+      });
+    }
+
+    function playAppearanceMotion() {
+      if (!motionAllowed()) { appearanceMotion.slice().forEach(finishAppearanceMotion); return }
+      appearanceMotion.forEach(function (entry) {
+        if (!entry.root.isConnected || entry.root.querySelector('.nnk-modal-mask')) { finishAppearanceMotion(entry); return }
+        var opacity = entry.live ? getComputedStyle(entry.root).opacity : .65;
+        if (entry.live) entry.live.cancel();
+        entry.live = entry.root.animate([{ opacity: opacity }, { opacity: 1 }], { duration: 180, easing: motionEase });
+      });
+    }
+
+    function finishSkillMotion(body, entry) {
+      if (skillMotion.get(body) !== entry) return;
+      if (entry.frame !== null) cancelAnimationFrame(entry.frame);
+      if (entry.animation) entry.animation.cancel();
+      ['height','opacity','visibility','overflow'].forEach(function (name) { body.style[name] = '' });
+      if (skillMotion.get(body) === entry) skillMotion.delete(body);
+    }
+
+    function prepareSkillMotion(id) {
+      if (!motionAllowed()) return;
+      var body = document.getElementById(id);
+      if (!body || !body.closest('.nnk-modern')) return;
+      var from = body.getBoundingClientRect().height, opacity = getComputedStyle(body).opacity;
+      var previous = skillMotion.get(body);
+      if (previous) finishSkillMotion(body, previous);
+      Object.assign(body.style, { height: from + 'px', opacity: opacity, visibility: 'visible', overflow: 'hidden' });
+      var entry = { frame: null, animation: null };
+      skillMotion.set(body, entry);
+      entry.frame = requestAnimationFrame(function () {
+        entry.frame = null;
+        if (!body.isConnected || !body.closest('.nnk-modern') || !motionAllowed()) { finishSkillMotion(body, entry); return }
+        var open = !body.classList.contains('nnk-skill-closed');
+        var description = body.hasAttribute('data-nnk-description');
+        var to = open ? body.firstElementChild.scrollHeight : (description ? 60 : 0);
+        entry.animation = body.animate([{ height: from + 'px', opacity: opacity }, { height: to + 'px', opacity: open || description ? 1 : 0 }], { duration: 300, easing: motionEase, fill: 'forwards' });
+        entry.animation.finished.then(function () { finishSkillMotion(body, entry) }, function () {});
+      });
+    }
+
+    // 入场只跟随栏目操作；切换外观不再重复触发“整页闪暗”。
+    function WorkshopPage(props) {
+      var root = React.useRef(null), previous = React.useRef(props.active);
+      React.useLayoutEffect(function () {
+        if (previous.current === props.active) return;
+        previous.current = props.active;
+        var node = root.current;
+        if (!node || !node.closest('.nnk-modern') || !motionAllowed()) return;
+        node.getAnimations().forEach(function (animation) { animation.cancel() });
+        node.animate([{ opacity: .92 }, { opacity: 1 }], { duration: 160, easing: motionEase });
+      }, [props.active]);
+      return h('div', { ref: root, className: 'nnk-page', id: props.id + '-page-' + props.active, role: 'tabpanel', 'aria-labelledby': props.id + '-tab-' + props.active }, props.children);
+    }
+
+    function mountMotionLifecycle() {
+      var onPreferenceChange = function (ev) {
+        if (!ev.matches) return;
+        appearanceMotion.slice().forEach(finishAppearanceMotion);
+        skillMotion.forEach(function (entry, body) { finishSkillMotion(body, entry) });
+      };
+      if (motionPreference && motionPreference.addEventListener) motionPreference.addEventListener('change', onPreferenceChange);
+      return function () {
+        if (motionPreference && motionPreference.removeEventListener) motionPreference.removeEventListener('change', onPreferenceChange);
+        appearanceMotion.slice().forEach(finishAppearanceMotion);
+        skillMotion.forEach(function (entry, body) { finishSkillMotion(body, entry) });
+        if (appearanceBus.frame !== null) cancelAnimationFrame(appearanceBus.frame);
+        appearanceBus.frame = null;
+        appearanceBus.revision++;
+      };
+    }
+
+
+    // 外观层独立于业务；只更新作用域 class，不重建表单或联机组件。
+    var appearanceBus = {
+      value: (function () { try { return localStorage.getItem('dsh-noname-kit.appearance') === 'classic' ? 'classic' : 'modern' } catch (err) { return 'modern' } })(),
+      subs: [], revision: 0, frame: null, positions: {},
+      sub: function (fn) { this.subs.push(fn); var self = this; return function () { self.subs = self.subs.filter(function (item) { return item !== fn }) } },
+      capture: function () {
+        if (typeof document === 'undefined') return null;
+        var active = document.activeElement;
+        var scroll = Array.prototype.slice.call(document.querySelectorAll('.nnk-scope .nnk-wrap,.nnk-scope .nnk-panel-body,.nnk-scope .nnk-modal,.nnk-scope textarea,.nnk-scope .nnk-log'));
+        scroll = scroll.filter(function (node) { return !node.closest('.nnk-motion-snapshot') });
+        for (var parent = active; parent; parent = parent.parentElement) if (scroll.indexOf(parent) < 0) scroll.push(parent);
+        var snapshot = { active: active, scroll: scroll.map(function (node) {
+          var panel = node.closest('[role="tabpanel"]') || node.querySelector('[role="tabpanel"]');
+          return { node: node, context: panel && panel.id || '', top: node.scrollTop, left: node.scrollLeft };
+        }) };
+        try { snapshot.start = active.selectionStart; snapshot.end = active.selectionEnd; snapshot.direction = active.selectionDirection } catch (err) {}
+        return snapshot;
+      },
+      set: function (value, snapshot) {
+        if (value === this.value) return;
+        var self = this, revision = ++this.revision;
+        this.positions[this.value] = snapshot && snapshot.scroll;
+        var previous = this.positions[value] || [];
+        var positions = (snapshot && snapshot.scroll || []).map(function (item) {
+          // 同一滚动节点可能承载不同栏目，缓存只在同一栏目里恢复。
+          return previous.filter(function (saved) { return saved.node === item.node && saved.context === item.context })[0] || item;
+        });
+        prepareAppearanceMotion(value);
+        skillMotion.forEach(function (entry, body) { finishSkillMotion(body, entry) });
+        this.value = value;
+        this.focusTarget = snapshot && snapshot.active;
+        try { localStorage.setItem('dsh-noname-kit.appearance', value) } catch (err) {}
+        this.subs.slice().forEach(function (fn) { fn(value) });
+        if (this.frame !== null) cancelAnimationFrame(this.frame);
+        this.frame = requestAnimationFrame(function () {
+          if (self.revision !== revision) return;
+          self.frame = null;
+          if (snapshot && snapshot.active && snapshot.active.isConnected) {
+            snapshot.active.focus({ preventScroll: true });
+            try { if (typeof snapshot.start === 'number') snapshot.active.setSelectionRange(snapshot.start, snapshot.end, snapshot.direction) } catch (err) {}
+          }
+          positions.forEach(function (item) { if (item.node.isConnected) { item.node.scrollTop = item.top; item.node.scrollLeft = item.left } });
+          playAppearanceMotion();
+        });
+      }
+    };
+
+    function useAppearance() {
+      var state = React.useState(appearanceBus.value);
+      React.useEffect(function () { return appearanceBus.sub(state[1]) }, []);
+      return state[0];
+    }
+
+    var skillScopeSerial = 0;
+
+    function AppearanceScope(props) {
+      var appearance = useAppearance();
+      return h('div', { className: 'nnk-scope nnk-' + appearance, 'data-nnk-appearance': appearance }, props.children);
+    }
+
+    function AppearanceSwitch() {
+      var appearance = useAppearance();
+      return h('div', { className: 'nnk-appearance-switch', role: 'group', 'aria-label': '工坊外观' },
+        ['modern', 'classic'].map(function (value) {
+          return h('button', {
+            key: value, type: 'button', 'aria-pressed': appearance === value,
+            onPointerDown: function (ev) {
+              var active = document.activeElement;
+              if (ev.button === 0 && active && (active.matches('input,textarea,select') || active.isContentEditable)) ev.preventDefault();
+            },
+            onClick: function () {
+              appearanceBus.set(value, appearanceBus.capture());
+            }
+          }, value === 'modern' ? '新版' : '经典');
+        })
+      );
+    }
+
+    // 图标仅改变显示节点；原始文案、输入值、占位提示、业务消息均原样保留。
+    function visualIcons(child) {
+      if (Array.isArray(child)) return child.map(visualIcons);
+      if (typeof child !== 'string') return child;
+      if (!/[\u{1F000}-\u{1FAFF}\u2600-\u27BF\u2B00-\u2BFF\u21A9\u21BA\u21BB\u2191\u2193\u23E9-\u23F3]/u.test(child)) return child;
+      var cache = visualIcons.cache || (visualIcons.cache = new Map());
+      if (cache.has(child)) return cache.get(child);
+      var paths = {
+        tools: 'M14 6a4 4 0 0 0-5 5L3 17l4 4 6-6a4 4 0 0 0 5-5l-3 3-4-4 3-3M15 3l6 6M18 6l-3 3',
+        list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
+        history: 'M3 10a9 9 0 1 1 0 5M3 4v6h6M12 7v5l3 2',
+        globe: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18',
+        settings: 'M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1 1-3M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
+        plus: 'M12 5v14M5 12h14',
+        folder: 'M3 7V4h7l2 3h9v13H3V7',
+        sword: 'M5 20 19 6l1-3-3 1L3 18M4 14l6 6M3 21l2-2',
+        card: 'M4 3h16v18H4V3M12 7l4 5-4 5-4-5 4-5',
+        dice: 'M4 4h16v16H4V4M8 8h.01M16 8h.01M12 12h.01M8 16h.01M16 16h.01',
+        edit: 'M4 20l4-1L20 7l-3-3L5 16l-1 4M14 7l3 3',
+        check: 'M5 12l4 4L19 6',
+        close: 'M6 6l12 12M6 18 18 6',
+        warning: 'M12 3 2 21h20L12 3M12 9v5M12 17h.01',
+        refresh: 'M20 8a8 8 0 0 0-14-2L3 9M3 3v6h6M4 16a8 8 0 0 0 14 2l3-3M21 21v-6h-6',
+        image: 'M3 3h18v18H3V3M3 17l6-6 4 4 3-3 5 5M9 7h.01',
+        audio: 'M3 9h4l5-5v16l-5-5H3V9M16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14',
+        trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7',
+        user: 'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M4 21v-2a8 8 0 0 1 16 0v2',
+        signal: 'M4 9a12 12 0 0 1 16 0M7 12a8 8 0 0 1 10 0M10 15a3 3 0 0 1 4 0M12 19h.01',
+        book: 'M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1v15',
+        file: 'M5 3h9l5 5v13H5V3M14 3v6h5M8 13h8M8 17h6',
+        link: 'M10 13l4-4M8 15l-2 2a3 3 0 0 1-4-4l5-5a3 3 0 0 1 4 0M16 9l2-2a3 3 0 0 1 4 4l-5 5a3 3 0 0 1-4 0',
+        lock: 'M5 10h14v11H5V10M8 10V7a4 4 0 0 1 8 0v3',
+        play: 'M7 3v18l14-9L7 3',
+        search: 'M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0M15 15l6 6',
+        clock: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M12 7v5l3 2',
+        up: 'M12 20V4M5 11l7-7 7 7',
+        down: 'M12 4v16M5 13l7 7 7-7',
+        send: 'M3 3l18 9-18 9 4-9-4-9M7 12h14',
+        bolt: 'M13 2 4 14h7l-1 8 10-13h-7V2',
+        dot: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0'
+      };
+      var glyphs = { '🛠':'tools','📋':'list','📜':'history','🌐':'globe','⚙':'settings','🆕':'plus','📂':'folder','⚔':'sword','🃏':'card','🎲':'dice','✨':'plus','✏':'edit','✅':'check','❌':'close','⚠':'warning','🔨':'tools','➕':'plus','♻':'refresh','🔁':'refresh','📷':'image','🔊':'audio','🗑':'trash','👤':'user','📡':'signal','📖':'book','📦':'folder','🔗':'link','🔒':'lock','🔓':'lock','▶':'play','🚀':'send','🔍':'search','🔎':'search','⏳':'clock','💡':'bolt','🟡':'dot','🟠':'dot','🟢':'dot','🔴':'dot','✕':'close','↑':'up','↓':'down','💾':'file','📄':'file','📁':'folder','🧩':'card','🎯':'check','🧪':'dice','🔧':'tools','📝':'edit','📥':'down','📤':'up','⏸':'clock','⏹':'close','🔄':'refresh','🕒':'clock','💬':'file','🎮':'dice','🏠':'folder','🚪':'folder','🧹':'trash','🔑':'lock','📌':'link','💻':'card','🌟':'plus','☑':'check','⛔':'close','🛑':'close','📚':'book','🧑':'user','🎵':'audio','🖼':'image','🪑':'user','🏁':'check','🎉':'check','🏛':'folder','👑':'user','📨':'send','🔌':'link','🔵':'dot','🤝':'link','🚏':'clock','🚫':'close','🛡':'lock','🛰':'signal','⚪':'dot','☐':'card','✖':'close','⏪':'history','⬆':'up','↩':'refresh','↺':'refresh','✓':'check' };
+      var expression = /[\u{1F000}-\u{1FAFF}\u2600-\u27BF\u2B00-\u2BFF\u21A9\u21BA\u21BB\u2191\u2193\u23E9-\u23F3]\uFE0F?/gu;
+      var pieces = [], index = 0, match;
+      while ((match = expression.exec(child))) {
+        var glyph = match[0], name = glyphs[glyph.replace(/\uFE0F/g, '')];
+        if (!name) continue;
+        if (match.index > index) pieces.push(child.slice(index, match.index));
+        pieces.push(React.createElement('span', { key: 'icon-' + match.index, className: 'nnk-glyph', 'aria-hidden': true },
+          React.createElement('span', { className: 'nnk-glyph-classic' }, glyph),
+          React.createElement('svg', { className: 'nnk-glyph-modern', viewBox: '0 0 24 24', focusable: 'false' }, React.createElement('path', { d: paths[name] }))));
+        index = match.index + glyph.length;
+      }
+      if (!pieces.length) return child;
+      if (index < child.length) pieces.push(child.slice(index));
+      if (cache.size >= 256) cache.clear();
+      cache.set(child, pieces);
+      return pieces;
+    }
+
+    function WorkshopTabs(props) {
+      var nav = React.useRef(null), pill = React.useRef(null), measureRef = React.useRef(null);
+      var appearance = useAppearance();
+      var tabs = [['new','🛠 任务'],['tasklist','📋 任务列表'],['history','📜 历史'],['online','🌐 联机'],['settings','⚙ 设置']];
+      React.useLayoutEffect(function () {
+        var node = nav.current;
+        function measure() {
+          var selected = node && node.querySelector('[aria-selected="true"]');
+          if (!selected || !pill.current) return;
+          pill.current.style.width = selected.offsetWidth + 'px';
+          pill.current.style.transform = 'translateX(' + selected.offsetLeft + 'px)';
+          pill.current.style.opacity = '1';
+        }
+        measureRef.current = measure;
+        measure();
+        var observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+        if (observer && node) { observer.observe(node); Array.prototype.forEach.call(node.querySelectorAll('button'), function (button) { observer.observe(button) }) }
+        return function () { if (observer) observer.disconnect() };
+      }, []);
+      React.useLayoutEffect(function () { if (measureRef.current) measureRef.current() }, [props.active, appearance]);
+      return h('div', { className: 'nnk-tabs', ref: nav, role: 'tablist', 'aria-label': '无名杀工坊栏目' },
+        h('span', { className: 'nnk-tab-pill', ref: pill, 'aria-hidden': true }),
+        tabs.map(function (tab, index) {
+          return h('button', {
+            key: tab[0], type: 'button', role: 'tab', id: props.id + '-tab-' + tab[0],
+            'aria-selected': props.active === tab[0], 'aria-controls': props.id + '-page-' + tab[0],
+            tabIndex: props.active === tab[0] ? 0 : -1,
+            className: 'nnk-tab' + (props.active === tab[0] ? ' nnk-active' : ''),
+            onClick: function () { props.setActive(tab[0]) },
+            onKeyDown: function (ev) {
+              var next = ev.key === 'ArrowRight' ? (index + 1) % tabs.length : ev.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : ev.key === 'Home' ? 0 : ev.key === 'End' ? tabs.length - 1 : -1;
+              if (next < 0) return;
+              ev.preventDefault(); props.setActive(tabs[next][0]);
+              nav.current.querySelectorAll('button')[next].focus();
+            }
+          }, tab[1]);
+        })
+      );
+    }
+
+
     function h(type, props) {
       var children = Array.prototype.slice.call(arguments, 2);
+      var className = props && props.className || '';
+      if (typeof className !== 'string') className = '';
+      var iconLabel = children.length === 1 && typeof children[0] === 'string' ? children[0] : '';
+      if (type === 'button' && /^(?:↑|↓|✕|📋|🗑)$/u.test(iconLabel) && !(props && props['aria-label'])) {
+        props = Object.assign({}, props, { 'aria-label': props && props.title || ({ '↑': '上移技能', '↓': '下移技能', '✕': '关闭', '📋': '任务列表', '🗑': '删除注意点' })[iconLabel] });
+      }
+      // 仅装饰 UI 文字；代码、日志、用户正文及所有控件属性均原样传递。
+      var decorate = type === 'button' || type === 'label' || /(?:^| )nnk-(?:tab|label|hint|err|ok|panel-title|group-title|modal-title|badge|seat-state|ui-text)(?: |$)/.test(className);
+      if (decorate && !(props && props['data-nnk-literal']) && typeof visualIcons === 'function') children = children.map(visualIcons);
       return React.createElement.apply(React, [type, props].concat(children));
     }
     // e(tag, className, ...children):className 为字符串(可为空串);子元素数量不限。
@@ -132,10 +495,65 @@ window.__ModuleLoader__.load({
       return h.apply(null, [tag, props].concat(kids));
     }
 
+    // 仅展示层：输入节点常驻，折叠状态不进入表单数据或提交文本。
+    function fieldLabelParts(label) {
+      if (typeof label !== 'string') return label;
+      var at = label.search(/[（(]/);
+      if (at < 0) return label;
+      return [label.slice(0, at), h('span', { key: 'detail', className: 'nnk-label-detail' }, label.slice(at))];
+    }
+
+    function FormField(props) {
+      var appearance = useAppearance();
+      var foldedState = React.useState(false), folded = foldedState[0], setFolded = foldedState[1];
+      var root = React.useRef(null), control = React.useRef(null);
+      var id = 'nnk-field-' + React.useId(), bodyId = id + '-body';
+      var hidden = props.foldable && folded && appearance === 'modern';
+      React.useEffect(function () {
+        return appearanceBus.sub(function (value) {
+          var active = appearanceBus.focusTarget;
+          if (value === 'modern' && active && root.current && root.current.contains(active) && active.matches('input,textarea,select')) setFolded(false);
+        });
+      }, []);
+      React.useEffect(function () {
+        var body = document.getElementById(bodyId);
+        return function () {
+          var entry = body && skillMotion.get(body);
+          if (entry) finishSkillMotion(body, entry);
+        };
+      }, [bodyId]);
+      var toggle = function () {
+        control.current.focus({ preventScroll: true });
+        prepareSkillMotion(bodyId);
+        setFolded(function (previous) { return !previous });
+      };
+      var input = React.cloneElement(props.children, { id: id, 'aria-label': props.label });
+      var label = h('label', { className: 'nnk-label', htmlFor: id, onClick: function (ev) {
+        if (props.foldable && appearance === 'modern') { ev.preventDefault(); toggle() }
+      } }, fieldLabelParts(props.label));
+      if (!props.foldable) return h('div', { ref: root, className: 'nnk-field' + (props.compact ? ' nnk-field-compact' : ''), 'data-nnk-field': props.fieldKey }, label, input);
+      var value = String(props.value || '');
+      return h('div', { ref: root, className: 'nnk-field nnk-description', 'data-nnk-field': props.fieldKey },
+        h('div', { className: 'nnk-description-head' }, label,
+          h('button', {
+            ref: control, type: 'button', className: 'nnk-description-toggle',
+            'aria-label': (folded ? '展开' : '收起') + props.label, 'aria-expanded': !folded, 'aria-controls': bodyId,
+            onClick: toggle
+          }, h('span', { className: 'nnk-skill-chevron', 'aria-hidden': true }))
+        ),
+        h('div', { id: bodyId, className: 'nnk-skill-body nnk-description-body' + (folded ? ' nnk-skill-closed' : ''), 'data-nnk-description': true },
+          h('div', { className: 'nnk-description-editor', inert: hidden ? '' : undefined, 'aria-hidden': hidden || undefined }, input),
+          h('div', { className: 'nnk-description-summary', 'aria-hidden': !hidden || undefined, 'data-nnk-literal': true },
+            h('span', { className: 'nnk-description-excerpt' }, value || props.children.props.placeholder || ''))
+        )
+      );
+    }
+
     function textField(label, value, onChange, opts) {
       opts = opts || {};
-      return h('div', { key: label },
-        e('label', 'nnk-label', label),
+      var key = /任务ID/.test(label) ? 'taskId' : /扩展包名称/.test(label) ? 'folder' : /^(武将|卡牌|模式)名称/.test(label) ? 'title' : /^ID 前缀/.test(label) ? 'idPrefix' : /基本信息/.test(label) ? 'charInfo' : /核心玩法/.test(label) ? 'brief' : /胜利条件/.test(label) ? 'winConfig' : 'reference';
+      var compact = /^(taskId|folder|title|idPrefix)$/.test(key);
+      return h(FormField, { key: key, fieldKey: key, label: label, value: value, compact: compact, foldable: !compact },
         h('textarea', {
           className: 'nnk-textarea' + (opts.code ? ' nnk-code' : ''),
           value: value,
@@ -145,13 +563,75 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function radioGroup(label, value, options, onChange) {
-      return h('div', {},
-        e('label', 'nnk-label', label),
-        h('div', { className: 'nnk-radios' }, options.map(function (opt) {
+
+    // Shared presentation shell: closing a dialog only calls its existing UI close action.
+    function ModalFrame(props) {
+      var maskRef = React.useRef(null);
+      var dialogRef = React.useRef(null);
+      var closeRef = React.useRef(props.onClose);
+      closeRef.current = props.onClose;
+      function isTop() {
+        var masks = document.querySelectorAll('.nnk-modal-mask');
+        return masks.length && masks[masks.length - 1] === maskRef.current;
+      }
+      React.useEffect(function () {
+        var before = document.activeElement, dialog = dialogRef.current;
+        function keepFocus(ev) { if (dialog && isTop() && !dialog.contains(ev.target)) dialog.focus({ preventScroll: true }) }
+        function keepKeys(ev) { if (dialog && !dialog.contains(ev.target)) onKeyDown(ev) }
+        document.addEventListener('focusin', keepFocus);
+        document.addEventListener('keydown', keepKeys);
+        if (dialog && isTop()) dialog.focus({ preventScroll: true });
+        return function () {
+          document.removeEventListener('focusin', keepFocus);
+          document.removeEventListener('keydown', keepKeys);
+          var active = document.activeElement;
+          if (active && active !== document.body && active.isConnected && !(dialog && dialog.contains(active))) return;
+          var masks = document.querySelectorAll('.nnk-modal-mask');
+          var top = masks.length ? masks[masks.length - 1] : null;
+          var restore = before && before !== document.body && before.isConnected && !before.disabled && before.getClientRects().length ? before : props.returnFocusRef && props.returnFocusRef.current;
+          if (restore && restore.isConnected && !restore.disabled && typeof restore.focus === 'function' && (!top || top.contains(restore))) restore.focus({ preventScroll: true });
+          else if (top) { var target = top.querySelector('.nnk-modal'); if (target) target.focus({ preventScroll: true }) }
+        };
+      }, []);
+      function onKeyDown(ev) {
+        if (!isTop() || ev.isComposing || ev.nativeEvent && ev.nativeEvent.isComposing || ev.keyCode === 229) return;
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeRef.current(); return }
+        if (ev.key !== 'Tab') return;
+        var dialog = dialogRef.current;
+        var items = Array.prototype.filter.call(dialog.querySelectorAll('button,input,textarea,select,a[href],[tabindex]'), function (el) {
+          return !el.disabled && el.tabIndex >= 0 && !el.closest('[inert]') && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden';
+        });
+        var first = items[0], last = items[items.length - 1], active = document.activeElement, outside = !dialog.contains(active);
+        if (!first) { ev.preventDefault(); dialog.focus({ preventScroll: true }); return }
+        if (ev.shiftKey && (outside || active === first || active === dialog)) { ev.preventDefault(); last.focus(); }
+        else if (!ev.shiftKey && (outside || active === last || active === dialog)) { ev.preventDefault(); first.focus(); }
+      }
+      return h('div', { className: 'nnk-modal-mask', ref: maskRef, onKeyDown: onKeyDown, onClick: function (ev) { if (ev.target === ev.currentTarget && isTop()) closeRef.current() } },
+        h('div', { className: 'nnk-modal', ref: dialogRef, role: 'dialog', 'aria-modal': true, 'aria-label': props.title, tabIndex: -1 },
+          h('button', { type: 'button', className: 'nnk-modal-close nnk-modern-only', 'aria-label': '收起', title: '收起', onClick: function () { if (isTop()) closeRef.current() } }, '✕'),
+          props.children));
+    }
+
+
+    function renderRadioGroup(scope, label, value, options, onChange) {
+      return h('div', { className: 'nnk-choices', 'data-nnk-choice': label },
+        e('label', 'nnk-label', fieldLabelParts(label)),
+        h('div', { className: 'nnk-radios', role: 'radiogroup', 'aria-label': label,
+          onKeyDown: function (ev) {
+            if (!ev.target || ev.target.type !== 'radio') return;
+            var radios = Array.prototype.slice.call(ev.currentTarget.querySelectorAll('input[type=radio]'));
+            var index = radios.indexOf(ev.target), next = -1;
+            if (ev.key === 'ArrowRight' || ev.key === 'ArrowDown') next = (index + 1) % options.length;
+            if (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp') next = (index + options.length - 1) % options.length;
+            if (ev.key === 'Home') next = 0;
+            if (ev.key === 'End') next = options.length - 1;
+            if (next < 0) return;
+            ev.preventDefault(); onChange(options[next].value); radios[next].focus();
+          }
+        }, options.map(function (opt) {
           var on = value === opt.value;
           return h('label', { key: opt.value, className: 'nnk-radio' + (on ? ' nnk-radio-on' : '') },
-            h('input', { type: 'radio', name: label + opt.value, className: 'nnk-radio-input', checked: on, onChange: function () { onChange(opt.value) } }),
+            h('input', { type: 'radio', name: scope + ':' + label, className: 'nnk-radio-input', checked: on, onChange: function () { onChange(opt.value) } }),
             opt.text
           );
         }))
@@ -183,6 +663,29 @@ window.__ModuleLoader__.load({
       });
       // pickedSkills = [{ id, name, note }]:勾选的技能 + 用户当场写的修改内容
       var form = state[0], setForm = state[1];
+      var skillViewState = React.useState({ ids: [1], serial: 1, folded: {} });
+      var skillView = skillViewState[0], setSkillView = skillViewState[1];
+      var appearanceState = React.useState(function () { return typeof appearanceBus === 'undefined' ? 'classic' : appearanceBus.value });
+      var appearance = appearanceState[0];
+      React.useEffect(function () {
+        if (typeof appearanceBus === 'undefined') return;
+        return appearanceBus.sub(function (value) {
+          appearanceState[1](value);
+          // 经典里正在编辑的技能切回新版时保持可见，避免把焦点控件设为 inert。
+          var active = appearanceBus.focusTarget;
+          var body = active && active.closest && active.closest('.nnk-skill-body');
+          if (value === 'modern' && body && body.id.indexOf(skillScope + '-') === 0) {
+            var id = body.id.slice((skillScope + '-').length);
+            setSkillView(function (prev) { if (!prev.folded[id]) return prev; var folded = Object.assign({}, prev.folded); folded[id] = false; return Object.assign({}, prev, { folded: folded }) });
+          }
+        });
+      }, []);
+      var skillScopeState = React.useState(function () { return typeof document === 'undefined' ? 'fixture' : 'skills-' + (++skillScopeSerial) });
+      var skillScope = skillScopeState[0];
+      // Each mounted form owns its native radio groups; choices within one group share a name.
+      function radioGroup(label, value, options, onChange) {
+        return renderRadioGroup(skillScope, label, value, options, onChange);
+      }
       var set = function (key) { return function (v) { setForm(function (prev) { var next = {}; next[key] = v; return Object.assign({}, prev, next) }) } };
       var patch = function (p) { setForm(function (prev) { return Object.assign({}, prev, p) }) };
 
@@ -335,9 +838,16 @@ window.__ModuleLoader__.load({
       };
 
       // 技能列表行:{ name, desc, audios }(audios = 配音源路径,逗号分隔的原始输入)
-      var addSkill = function () { patch({ skills: form.skills.concat([{ name: '', desc: '' }]) }) };
+      var addSkill = function () {
+        setSkillView(function (prev) { return { ids: prev.ids.concat([prev.serial + 1]), serial: prev.serial + 1, folded: prev.folded } });
+        patch({ skills: form.skills.concat([{ name: '', desc: '' }]) });
+      };
       var removeSkill = function (idx) {
         var skills = form.skills.filter(function (row, i) { return i !== idx });
+        setSkillView(function (prev) {
+          var folded = Object.assign({}, prev.folded); delete folded[prev.ids[idx]];
+          return { ids: prev.ids.filter(function (id, i) { return i !== idx }), serial: prev.serial, folded: folded };
+        });
         patch({ skills: skills });
       };
       var moveSkill = function (idx, dir) {
@@ -345,6 +855,7 @@ window.__ModuleLoader__.load({
         var j = idx + dir;
         if (j < 0 || j >= skills.length) return;
         var tmp = skills[idx]; skills[idx] = skills[j]; skills[j] = tmp;
+        setSkillView(function (prev) { var ids = prev.ids.slice(), id = ids[idx]; ids[idx] = ids[j]; ids[j] = id; return Object.assign({}, prev, { ids: ids }) });
         patch({ skills: skills });
       };
       var setSkill = function (idx, key) { return function (v) {
@@ -578,26 +1089,41 @@ window.__ModuleLoader__.load({
       // 技能列表编辑器(创建新武将 / 编辑已有+新增技能 共用)
       var skillRows = function () {
         return [
-          e('label', 'nnk-label', '技能列表(按此顺序逐个实现;可增删、排序)'),
+          e('label', 'nnk-label', fieldLabelParts('技能列表(按此顺序逐个实现;可增删、排序)')),
           form.skills.map(function (s, idx) {
-            return h('div', { key: idx, className: 'nnk-card', style: { padding: '8px', marginBottom: '6px' } },
-              h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '4px' } },
+            var id = skillView.ids[idx], folded = !!skillView.folded[id];
+            var hidden = appearance === 'modern' && folded, bodyId = skillScope + '-' + id;
+            return h('div', { key: id, className: 'nnk-card nnk-skill', style: { padding: '8px', marginBottom: '6px' } },
+              h('div', { className: 'nnk-skill-head' },
                 h('b', { style: { fontSize: '12px' } }, '技能 ' + (idx + 1)),
+                h('button', {
+                  type: 'button', className: 'nnk-skill-toggle', 'aria-expanded': !folded, 'aria-controls': bodyId,
+                  'aria-label': (folded ? '展开' : '收起') + '技能 ' + (idx + 1),
+                  onClick: function () { if (typeof prepareSkillMotion === 'function') prepareSkillMotion(bodyId); setSkillView(function (prev) { var next = Object.assign({}, prev.folded); next[id] = !next[id]; return Object.assign({}, prev, { folded: next }) }) }
+                }, h('span', { className: 'nnk-skill-chevron', 'aria-hidden': true }),
+                  e('span', 'nnk-skill-number', String(idx + 1).padStart(2, '0')),
+                  h('span', { className: 'nnk-skill-title', 'data-nnk-literal': true }, s.name || ('技能 ' + (idx + 1)))),
                 h('button', { className: 'nnk-smallbtn', onClick: function () { moveSkill(idx, -1) }, disabled: idx === 0 }, '↑'),
                 h('button', { className: 'nnk-smallbtn', onClick: function () { moveSkill(idx, 1) }, disabled: idx === form.skills.length - 1 }, '↓'),
-                h('button', { className: 'nnk-smallbtn', onClick: function () { removeSkill(idx) }, disabled: form.skills.length <= 1 }, '✕')
+                h('button', { className: 'nnk-smallbtn', onClick: function () { removeSkill(idx) }, disabled: form.skills.length <= 1, 'aria-label': '删除技能 ' + (idx + 1) }, '✕')
               ),
+              h('div', { id: bodyId, className: 'nnk-skill-body' + (s.desc ? ' nnk-description-body' : '') + (folded ? ' nnk-skill-closed' : ''), 'data-nnk-description': s.desc ? true : undefined },
+                h('div', { className: 'nnk-skill-inner nnk-description-editor', inert: hidden ? '' : undefined, 'aria-hidden': hidden || undefined }, h('div', { className: 'nnk-skill-fields' },
               h('input', { className: 'nnk-input', value: s.name, placeholder: '技能名(显示名,例: 挥砍)', style: { marginBottom: '4px' }, onChange: function (ev) { setSkill(idx, 'name')(ev.target.value) } }),
               h('textarea', { className: 'nnk-textarea', style: { minHeight: '60px' }, value: s.desc, placeholder: '效果:触发/频率/目标/数值/边界', onChange: function (ev) { setSkill(idx, 'desc')(ev.target.value) } }),
               h('input', { className: 'nnk-input', value: s.audios || '', placeholder: '配音文件(可选;本地 mp3 路径,多句用逗号分隔)——复制进包内 audio/skill/ 后按 内部ID1.mp3、内部ID2.mp3 编号', style: { marginTop: '4px' }, onChange: function (ev) { setSkill(idx, 'audios')(ev.target.value) } })
+                )),
+                s.desc ? h('div', { className: 'nnk-description-summary', 'aria-hidden': !hidden || undefined, 'data-nnk-literal': true }, h('span', { className: 'nnk-description-excerpt' }, s.desc)) : null
+              )
             );
           }),
           h('button', { className: 'nnk-smallbtn', onClick: addSkill }, '➕ 添加技能')
         ];
       };
       try {
-      return h('div', { className: 'nnk-card' },
-        e('div', '', h('b', null, isEdit ? '编辑已有扩展包' : '创建新扩展包'), h('span', { className: 'nnk-hint' }, '　任务粒度:' + (form.type === 'mode' ? '一个完整的自定义游戏模式' : '一个完整武将(含全部技能)或一张卡牌'))),
+      return h('div', { className: 'nnk-card nnk-task-form' },
+        e('div', 'nnk-task-heading', h('b', null, isEdit ? '编辑已有扩展包' : '创建新扩展包'), h('span', { className: 'nnk-hint' }, '　任务粒度:' + (form.type === 'mode' ? '一个完整的自定义游戏模式' : '一个完整武将(含全部技能)或一张卡牌'))),
+        h('div', { className: 'nnk-form-fields' },
         radioGroup('模式', form.mode, [{ value: 'new', text: '🆕 创建新扩展包' }, { value: 'edit', text: '📂 编辑已有扩展包' }], switchMode),
         textField('任务ID(留空自动按「文件夹名-序号」生成;反馈时用它精准定位)', form.taskId, set('taskId'), { placeholder: '例: my-pack-01' }),
         isEdit && form.taskId.trim() && (form.usedIds || []).some(function (u) { return u.id === form.taskId.trim() })
@@ -630,8 +1156,8 @@ window.__ModuleLoader__.load({
             h('input', { className: 'nnk-input', type: 'number', min: 2, max: 20, value: (form.numCustom === '' || form.numCustom === undefined) ? '' : form.numCustom, placeholder: '例: 12', onChange: function (ev) { set('numCustom')(ev.target.value) } })
           ) : null,
                     textField('胜利条件(可选;不填则以玩法细节为准)', form.winConfig, set('winConfig'), { placeholder: '例: 场上只剩 1 人时结算,幸存者获胜' }),
-          e('label', 'nnk-label', '玩法细节描述(自由描述所有规则:特殊机制/阶段效果/阵营/限制…越具体,AI 的确认单越准)'),
-          h('textarea', { className: 'nnk-textarea', style: { minHeight: '120px' }, value: form.rules, placeholder: '例: 全场按 冬→春→夏→秋 每 3 轮轮换季节;准备阶段强制执行当季效果——冬:少摸一张牌或流失1点体力;春:多摸一张牌或回复1点体力…', onChange: function (ev) { set('rules')(ev.target.value) } }),
+          h(FormField, { fieldKey: 'rules-create', label: '玩法细节描述(自由描述所有规则:特殊机制/阶段效果/阵营/限制…越具体,AI 的确认单越准)', value: form.rules, foldable: true },
+          h('textarea', { className: 'nnk-textarea', style: { minHeight: '120px' }, value: form.rules, placeholder: '例: 全场按 冬→春→夏→秋 每 3 轮轮换季节;准备阶段强制执行当季效果——冬:少摸一张牌或流失1点体力;春:多摸一张牌或回复1点体力…', onChange: function (ev) { set('rules')(ev.target.value) } })),
           e('div', 'nnk-hint', '提交后 AI 会先探测你的游戏引擎版本、把描述逐条拆成规则并给出【需求理解确认】;回复「确认」后生成完整模式。生成后进游戏实测,逐条规则点「确认无误」自动收口。')
         ] : null,
         editingExisting ? [
@@ -660,29 +1186,29 @@ window.__ModuleLoader__.load({
           form.entryId && !form.entrySkillsLoading && !form.entrySkills.length
             ? e('div', 'nnk-hint', '未从该条目解析出技能清单(技能改动可直接写进下面的改动描述,由 AI 在确认阶段澄清)')
             : null,
-          e('label', 'nnk-label', form.type === 'mode'
+          h(FormField, { fieldKey: 'editNotes', label: form.type === 'mode'
             ? '模式骨架改动(要改什么:开局流程/人数/胜利条件/规则增删等;可选)'
             : form.type === 'card'
               ? '卡牌改动描述(条目本身的变化:类别/花色点数/名称等;可选)'
-              : '武将改动描述(条目本身的变化:体力/护甲/名称等;可选)'),
-          h('textarea', { className: 'nnk-textarea', style: { minHeight: '80px' }, value: form.editNotes, placeholder: form.type === 'mode' ? '例: 人数上限改成 12;胜利条件改为计分制,先到 100 分获胜' : form.type === 'card' ? '例: 类别改为锦囊牌,花色点数改为黑桃 5;卡面描述同步修改' : '例: 初始体力信息改为 3/4/1(3 点体力、4 点上限、1 点护甲);显示名保持不变', onChange: function (ev) { set('editNotes')(ev.target.value) } }),
-          form.type === 'mode' ? [e('label', 'nnk-label', '新增或调整的规则(可选;AI 会先读现有代码,确认单按改动前后逐项列)'), h('textarea', { className: 'nnk-textarea', style: { minHeight: '80px' }, value: form.rules, placeholder: '例: 新增一条规则——雪天全场武力-1;秋季距离修正改为无视坐骑只对玩家生效', onChange: function (ev) { set('rules')(ev.target.value) } })] : null,
+              : '武将改动描述(条目本身的变化:体力/护甲/名称等;可选)', value: form.editNotes, foldable: true },
+          h('textarea', { className: 'nnk-textarea', style: { minHeight: '80px' }, value: form.editNotes, placeholder: form.type === 'mode' ? '例: 人数上限改成 12;胜利条件改为计分制,先到 100 分获胜' : form.type === 'card' ? '例: 类别改为锦囊牌,花色点数改为黑桃 5;卡面描述同步修改' : '例: 初始体力信息改为 3/4/1(3 点体力、4 点上限、1 点护甲);显示名保持不变', onChange: function (ev) { set('editNotes')(ev.target.value) } })),
+          form.type === 'mode' ? [h(FormField, { fieldKey: 'rules-edit', label: '新增或调整的规则(可选;AI 会先读现有代码,确认单按改动前后逐项列)', value: form.rules, foldable: true }, h('textarea', { className: 'nnk-textarea', style: { minHeight: '80px' }, value: form.rules, placeholder: '例: 新增一条规则——雪天全场武力-1;秋季距离修正改为无视坐骑只对玩家生效', onChange: function (ev) { set('rules')(ev.target.value) } }))] : null,
                     form.type === 'character' ? radioGroup('是否新增技能', form.addSkills ? 'yes' : 'no', [{ value: 'no', text: '不新增' }, { value: 'yes', text: '新增技能(填下面的技能列表)' }], function (v) { patch({ addSkills: v === 'yes' }) }) : null,
           form.addSkills && form.type === 'character' ? skillRows() : null
         ] : null,
         textField(form.type === 'mode' ? '模式名称(显示名,注册为模式翻译)' : (form.type === 'card' ? '卡牌名称' : '武将名称') + (editingExisting ? '(新显示名,可选;留空 = 不改名)' : '(显示名,会写入 translate)'), form.title, set('title'), { placeholder: form.type === 'mode' ? '例: 季节乱斗' : (form.type === 'card' ? '例: 疾风符' : '例: 凌霜') }),
         (editingExisting && !(form.addSkills && form.type === 'character')) ? null : textField('ID 前缀(防止与其他扩展包的技能/武将/卡牌重名;可选但强烈建议)', form.idPrefix, set('idPrefix'), { placeholder: '例: cs_ (则内部 ID 形如 cs_tianfa)' }),
         !editingExisting && form.type === 'character' ? textField('武将基本信息(势力、体力、性别…;可选)', form.charInfo, set('charInfo'), { placeholder: '例:群势力,3 体力,男性,风格偏辅助' }) : null,
-        form.type === 'mode' ? null : h('div', { key: 'img' },
-          e('label', 'nnk-label', '图片路径(武将立绘/卡牌图;可选)'),
+        form.type === 'mode' ? null : h('div', { key: 'img', className: 'nnk-field' },
+          e('label', 'nnk-label', fieldLabelParts('图片路径(武将立绘/卡牌图;可选)')),
           h('input', { className: 'nnk-input', value: form.image, placeholder: '例: D:\\pic\\hero.png —— AI 复制进扩展包 image/ 后按 ID 命名', onChange: function (ev) { set('image')(ev.target.value) } })
         ),
-        !editingExisting && form.type === 'character' ? h('div', { key: 'dieaudio' },
-          e('label', 'nnk-label', '阵亡语音文件(可选;本地 mp3,多句逗号分隔)'),
+        !editingExisting && form.type === 'character' ? h('div', { key: 'dieaudio', className: 'nnk-field' },
+          e('label', 'nnk-label', fieldLabelParts('阵亡语音文件(可选;本地 mp3,多句逗号分隔)')),
           h('input', { className: 'nnk-input', value: form.dieAudios, placeholder: '例: D:\\audio\\die1.mp3 —— 复制进扩展包 audio/die/ 后按武将ID命名,引擎自动播放', onChange: function (ev) { set('dieAudios')(ev.target.value) } })
         ) : null,
         (editingExisting || form.type === 'mode') ? null : (form.type === 'character' ? skillRows() : [
-          e('label', 'nnk-label', '卡牌效果'),
+          h(FormField, { fieldKey: 'card-effect', label: '卡牌效果', value: form.skills[0].desc, foldable: true },
           h('textarea', { className: 'nnk-textarea', value: form.skills[0].desc, placeholder: '效果:类型/花色点数需求/效果/边界', onChange: (function () {
             return function (ev) {
               var skills = form.skills.slice();
@@ -690,7 +1216,7 @@ window.__ModuleLoader__.load({
               skills[0] = Object.assign({}, skills[0]); skills[0].desc = ev.target.value;
               patch({ skills: skills });
             };
-          })() })
+          })() }))
         ]),
         isEdit ? e('div', 'nnk-hint', '写法将自动跟随现有代码(选中扩展包后会显示检测结果)。') : (form.type === 'mode' ? e('div', 'nnk-hint', '🎲 新玩法使用新版 ES Module 写法(模式注册依赖新版引擎机制)。') : radioGroup('写法版本', form.style, [{ value: 'classic', text: '老版 game.import' }, { value: 'module', text: '新版 ES Module' }], set('style'))),
         !editingExisting && form.type === 'card' ? [
@@ -713,7 +1239,7 @@ window.__ModuleLoader__.load({
                   var rows = form.pileRows.slice(); rows[idx2] = Object.assign({}, rows[idx2]); rows[idx2].point = ev.target.value;
                   patch({ pileRows: rows });
                 } })(idx) }),
-                h('button', { className: 'nnk-smallbtn', disabled: form.pileRows.length <= 1, onClick: function () { patch({ pileRows: form.pileRows.filter(function (r, i2) { return i2 !== idx }) }) } }, '✕')
+                h('button', { className: 'nnk-smallbtn', disabled: form.pileRows.length <= 1, 'aria-label': '删除牌堆行 ' + (idx + 1), onClick: function () { patch({ pileRows: form.pileRows.filter(function (r, i2) { return i2 !== idx }) }) } }, '✕')
               );
             }),
             h('button', { className: 'nnk-smallbtn', onClick: function () { patch({ pileRows: form.pileRows.concat([{ suit: 'spade', point: '' }]) }) } }, '➕ 加一张')
@@ -721,9 +1247,12 @@ window.__ModuleLoader__.load({
         ] : null,
         radioGroup('写入方式', form.writeMode, [{ value: 'auto', text: '自动写入(校验通过后直接落盘)' }, { value: 'manual', text: '手动复制(只生成代码)' }], set('writeMode')),
         textField('示例参考代码(你找到的想模仿的官方实现;可选)', form.reference, set('reference'), { code: true, placeholder: '粘贴官方技能代码,AI 会优先参考它的写法' }),
+        ),
+        h('div', { className: 'nnk-submit-area' },
         form.err ? e('div', 'nnk-err', form.err) : null,
         h('button', { className: 'nnk-submit', disabled: form.busy, onClick: submit }, form.busy ? '已发送…' : (isEdit ? '发给 AI 修改' : '发给 AI 开工')),
         e('div', 'nnk-hint', '提交后 AI 会逐技能给出【需求理解确认】并停下等待——回复「确认」后才会动笔写代码;有歧义它会先问你。')
+        )
       );
       } catch (renderError) {
         return e('div', 'nnk-err', '表单渲染错误: ' + (renderError && renderError.message || renderError));
@@ -786,13 +1315,13 @@ window.__ModuleLoader__.load({
       if (data.msg && data.extensions.length === 0) return e('div', 'nnk-err', data.msg);
       var fmt = function (ts) { return new Date(ts).toLocaleString() };
 
-      return h('div', {},
+      return h('div', { className: 'nnk-history' },
         data.msg ? e('div', 'nnk-ok', data.msg) : null,
         // 详情卡片放列表上方:点「备份/注意点」后立即可见(列表很长时沉底等于没反应)
         data.detail ? (function () {
           var detail = data.detail, backups = detail.backups || [];
-          return h('div', { className: 'nnk-card', ref: function (el) {
-            if (el && !el.__nnkScrolled) { el.__nnkScrolled = true; el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }
+          return h('div', { className: 'nnk-card nnk-history-detail', ref: function (el) {
+            if (el && !el.__nnkScrolled) { el.__nnkScrolled = true; el.scrollIntoView({ behavior: motionPreference && motionPreference.matches ? 'instant' : 'smooth', block: 'nearest' }) }
           } },
             h('b', null, '备份与注意点: ' + detail.folder),
             backups.length ? [
@@ -807,7 +1336,7 @@ window.__ModuleLoader__.load({
             (detail.history && detail.history.notes && detail.history.notes.length) ? [
               e('div', 'nnk-label', '注意点清单(无关/过时的单条删除,AI 仅按需拉取)'),
               detail.history.notes.map(function (n, i) {
-                return h('div', { key: i, style: { display: 'flex', gap: '6px', alignItems: 'flex-start', marginBottom: '4px' } },
+                return h('div', { key: i, className: 'nnk-history-note', style: { display: 'flex', gap: '6px', alignItems: 'flex-start', marginBottom: '4px' } },
                   e('div', 'nnk-note', n),
                   h('button', { className: 'nnk-smallbtn', onClick: function () { deleteNote(detail.folder, i) } }, '🗑')
                 )
@@ -815,12 +1344,12 @@ window.__ModuleLoader__.load({
             ] : null
           );
         })() : null,
-        h('div', { className: 'nnk-card' },
+        h('div', { className: 'nnk-card nnk-history-overview' },
           e('b', null, '扩展总览'),
           data.extensions.length === 0 ? e('div', 'nnk-hint', '还没有记录:完成第一个任务后这里会出现历史。') : null,
           data.extensions.map(function (ext) {
             return h('div', { key: ext.folder, className: 'nnk-taskrow' },
-              h('div', {},
+              h('div', { className: 'nnk-history-heading' },
                 h('b', null, ext.folder),
                 h('span', { className: 'nnk-badge', style: { marginLeft: '8px' } }, ext.taskCount + ' 个任务'),
                 h('span', { className: 'nnk-badge' }, '累计 ' + ext.totalRounds + ' 轮'),
@@ -836,6 +1365,7 @@ window.__ModuleLoader__.load({
 
     // ── 设置面板(⚙ 子页):游戏目录 / AI 输出阀门 / 关于 ─────────
     function SettingsPanel() {
+      var settingsScope = React.useId();
       var state = React.useState({ loading: true, version: '', nonameDir: '', source: 'none', bashMax: 64000, bashMaxK: '64', updateCheck: true, manual: '', scanning: false, scanned: false, candidates: [], extensions: [], busy: false, healthBusy: false, msg: '', err: '', healthMsg: '', healthErr: '' });
       var form = state[0], setForm = state[1];
       var set = function (patch) { setForm(function (prev) { return Object.assign({}, prev, patch) }) };
@@ -936,7 +1466,7 @@ window.__ModuleLoader__.load({
           line = e('div', 'nnk-hint', '尚未检查(点右侧「检查更新」)。');
         }
         var cmd = check && check.hasUpdate ? (health.installHint || check.installHint) : null;
-        return e('div', {},
+        return e('div', 'nnk-maintenance-row',
           h('div', {},
             h('b', null, '插件'),
             h('span', { className: 'nnk-hint' }, '　当前 v' + (form.version || '?') + (installForm === 'link' ? ' · link 方式加载' : ''))
@@ -970,7 +1500,7 @@ window.__ModuleLoader__.load({
         }
         else line = e('div', 'nnk-hint', '⚠️ ' + (preset.error || '状态未知'));
         var declarative = preset && preset.state === 'declarative';
-        return e('div', {},
+        return e('div', 'nnk-maintenance-row',
           h('div', {},
             h('b', null, '开发模式 preset'),
             h('span', { className: 'nnk-hint' }, '　AI 的人格、常驻工具名单与技能文档')
@@ -985,11 +1515,12 @@ window.__ModuleLoader__.load({
 
       if (form.loading) return e('div', 'nnk-hint', '加载中…');
       var PRESETS = [['64K', 64000], ['128K', 128000], ['256K', 256000]];
-      return h('div', { className: 'nnk-card' },
+      return h('div', { className: 'nnk-card nnk-settings' },
         form.msg ? e('div', 'nnk-ok', form.msg) : null,
         form.err ? e('div', 'nnk-err', form.err) : null,
 
-        e('div', {}, h('b', null, '游戏目录'), h('span', { className: 'nnk-hint' }, '　AI 自动写入扩展的游戏本体位置——填到能看见 extension 文件夹的那一层(新版结构如 resources/app/src),别把 extension 本身填进路径')),
+        h('section', { className: 'nnk-settings-section' },
+        e('div', 'nnk-settings-heading', h('b', null, '游戏目录'), h('span', { className: 'nnk-hint' }, '　AI 自动写入扩展的游戏本体位置——填到能看见 extension 文件夹的那一层(新版结构如 resources/app/src),别把 extension 本身填进路径')),
         e('div', 'nnk-hint', form.nonameDir
           ? '当前: ' + form.nonameDir + '(' + (form.source === 'cordis.yml' ? '由配置文件指定' : '工坊设置') + ')'
           : '⚠️ 未配置——AI 无法自动写入,只能用「手动复制」模式'),
@@ -1004,12 +1535,14 @@ window.__ModuleLoader__.load({
           : '目录已连接,但 extension/ 下还没有扩展包') : null,
         form.candidates.map(function (dir) {
           return h('label', { key: dir, className: 'nnk-radio', style: { display: 'block', margin: '4px 0', whiteSpace: 'normal' } },
-            h('input', { type: 'radio', name: 'nnk-set-candidate', checked: form.manual === dir, onChange: function () { set({ manual: dir }) } }),
+            h('input', { type: 'radio', name: settingsScope + '-candidate', checked: form.manual === dir, onChange: function () { set({ manual: dir }) } }),
             h('span', { className: 'nnk-break' }, dir)
           );
         }),
 
-        h('div', { style: { marginTop: '14px' } }, h('b', null, 'AI 单次命令输出上限'), h('span', { className: 'nnk-hint' }, '　直接影响 token 消耗(新会话生效)')),
+        ),
+        h('section', { className: 'nnk-settings-section' },
+        h('div', { className: 'nnk-settings-heading', style: { marginTop: '14px' } }, h('b', null, 'AI 单次命令输出上限'), h('span', { className: 'nnk-hint' }, '　直接影响 token 消耗(新会话生效)')),
         e('div', 'nnk-hint', '控制 AI 每次执行命令/查资料最多往对话里灌多少内容。'),
         h('div', {}, PRESETS.map(function (p) {
           var active = Number(form.bashMax) === p[1];
@@ -1021,14 +1554,19 @@ window.__ModuleLoader__.load({
           h('button', { className: 'nnk-smallbtn', disabled: form.busy, onClick: function () { saveBashMax((parseInt(form.bashMaxK, 10) || 0) * 1000) } }, '💾 保存上限')
         ),
 
-        h('div', { style: { marginTop: '14px' } }, h('b', null, '版本与一致性'), h('span', { className: 'nnk-hint' }, '　插件本体与开发模式 preset')),
+        ),
+        h('section', { className: 'nnk-settings-section' },
+        h('div', { className: 'nnk-settings-heading', style: { marginTop: '14px' } }, h('b', null, '版本与一致性'), h('span', { className: 'nnk-hint' }, '　插件本体与开发模式 preset')),
         form.healthMsg ? e('div', 'nnk-ok', form.healthMsg) : null,
         form.healthErr ? e('div', 'nnk-err', form.healthErr) : null,
         renderUpdateRow(),
         h('div', { style: { marginTop: '12px' } }, renderPresetRow()),
 
-        h('div', { style: { marginTop: '14px' } }, h('b', null, '关于')),
+        ),
+        h('section', { className: 'nnk-settings-section nnk-settings-about' },
+        h('div', { className: 'nnk-settings-heading', style: { marginTop: '14px' } }, h('b', null, '关于')),
         e('div', 'nnk-hint', '无名杀工坊(noname-kit)v' + (form.version || '?') + ' · 「无名杀开发模式」与工坊同属一套,本页设置保存在 ~/.dsh/noname-kit.json')
+        )
       );
     }
 
@@ -1084,12 +1622,13 @@ window.__ModuleLoader__.load({
       }
       return null;
     }
-    function onlineManifestCheck(evs) {
+    function onlineManifestCheck(evs, currentScope) {
       var start = -1, check = null, diff = null, reference = onlinePickEvent(evs, 'manifest_diff');
+      function scoped(data) { return !currentScope || data && data.scope && ['sessionId','roundId','documentGeneration','bindingId','bindingNonce'].every(function(key) { return currentScope[key] === undefined || data.scope[key] === currentScope[key]; }); }
       if (!Array.isArray(evs)) return { check: null, diff: null, reference: null, verified: false };
       for (var i = evs.length - 1; i >= 0; i--) {
         var d = evs[i] && evs[i].data;
-        if (evs[i] && evs[i].type === 'manifest_check' && d && d.status === 'pending'
+        if (evs[i] && evs[i].type === 'manifest_check' && d && scoped(d) && d.status === 'pending'
           && typeof d.peerId === 'string' && d.peerId && Number.isSafeInteger(d.request) && d.request > 0) {
           start = i; check = d; break;
         }
@@ -1097,7 +1636,7 @@ window.__ModuleLoader__.load({
       /* 单卡跟随最近发起的检查;另一对端的迟到完成不能替换它。 */
       for (var j = start + 1; start >= 0 && j < evs.length; j++) {
         var ev = evs[j], data = ev && ev.data;
-        if (!data || data.peerId !== check.peerId || data.request !== check.request || data.role !== check.role) continue;
+        if (!data || !scoped(data) || data.peerId !== check.peerId || data.request !== check.request || data.role !== check.role) continue;
         if (ev.type === 'manifest_check' && check.status !== 'closed') check = data;
         if (ev.type === 'manifest_diff' && data.verification === 'verified') diff = ev;
       }
@@ -1177,6 +1716,8 @@ window.__ModuleLoader__.load({
       }
     }
     function OnlinePanel() {
+      var onlineScope = React.useId();
+      var roomOpenerRef = React.useRef(null);
       var statusState = React.useState(null);
       var status = statusState[0], setStatus = statusState[1];
       var modeState = React.useState('identity');
@@ -1321,6 +1862,16 @@ window.__ModuleLoader__.load({
           if (!d.ok) setNote('❌ ' + (d.error || '命令发送失败'));
         }, function () { setNote('❌ 插件服务不可达'); });
       };
+      var returnedRoomState = React.useState(null);
+      var returnedRoomSeen = returnedRoomState[0], setReturnedRoomSeen = returnedRoomState[1];
+      React.useEffect(function () {
+        var state = status && status.bridge && status.bridge.state;
+        var room = state && state.continuation && state.continuation.room;
+        if (room && room.complete && room.returnId && room.returnId !== returnedRoomSeen) {
+          setReturnedRoomSeen(room.returnId);
+          setRoomPopupOpen(true);
+        }
+      });
       var installBusyState = React.useState(false);
       var installBusy = installBusyState[0], setInstallBusy = installBusyState[1];
       var installKernel = function () {
@@ -1363,26 +1914,31 @@ window.__ModuleLoader__.load({
       var bridge = status.bridge || {};
       var evs = Array.isArray(bridge.events) ? bridge.events : [];
       var phase = (bridge.state && bridge.state.phase) || 'idle';
+      var onlineRound = bridge.state && bridge.state.round;
+      var onlineNext = bridge.state && bridge.state.continuation && bridge.state.continuation.next;
+      var onlineRoom = bridge.state && bridge.state.continuation && bridge.state.continuation.room;
       var phaseText = ONLINE_PHASE_TEXT[phase] || phase;
       var bridgeOnline = Boolean(bridge.online);
-      var hostFlow = HOST_PHASES.indexOf(phase) >= 0;
-      var guestFlow = GUEST_PHASES.indexOf(phase) >= 0;
+      var hostFlow = bridge.role !== 'guest' && HOST_PHASES.indexOf(phase) >= 0;
+      var guestFlow = bridge.role !== 'host' && (GUEST_PHASES.indexOf(phase) >= 0 || bridge.role === 'guest' && HOST_PHASES.indexOf(phase) >= 0);
       /* 房间角色:内核自己上报(最准),阶段启发式只作旧内核后备
        * (注意先后:先算 hostFlow/guestFlow,旧内核没有 role 时才有后备可用) */
-      var isRoomHost = hostFlow || bridge.role === 'host';
+      var isRoomHost = bridge.role === 'host' || !bridge.role && hostFlow;
       var kernelBad = !kernel || kernel.state === 'unknown';
       /* 回执码只在客人侧的对应阶段展示:事件会长期留存,无条件展示会让人对着
        * 已作废的码继续操作(邀请码那侧已改成"列表常驻 + 按行取用") */
       var answerEv = (phase === 'joining' || phase === 'answer_ready' || phase === 'entering') ? onlinePickEvent(evs, 'answer_ready') : null;
       /* bridge.state 在内核首次心跳前是 null——房号一律走安全局部变量。
        * 内核这一拍没报房号(老内核 answer_ready 不带 code)时用「本次会话见过的
-       * 最后一个房号」兜住,让大厅入口不闪没;阶段落回 idle 视为散场,清掉记忆 */
-      var roomCode = (bridge.state && (bridge.state.roomCode || bridge.state.code)) || null;
-      if (roomCode) {
+       * 最后一个房号」兜住;当前内核显式关闭大厅或阶段落回 idle 时清掉记忆 */
+      var roomClosed = Boolean(bridge.state && (bridge.state.lobbyOpen === false || Object.prototype.hasOwnProperty.call(bridge.state, 'roomCode') && bridge.state.roomCode === null));
+      var roomCode = phase === 'idle' || roomClosed ? null : (bridge.state && (bridge.state.roomCode || bridge.state.code)) || null;
+      if (phase === 'idle' || roomClosed) {
+        if (lastRoomCode) setLastRoomCode(null);   /* 显式关闭同时作废本拍与缓存房号 */
+      } else if (roomCode) {
         if (lastRoomCode !== roomCode) setLastRoomCode(roomCode);
       } else if (lastRoomCode) {
-        if (phase === 'idle') setLastRoomCode(null);   /* 散场:记忆作废 */
-        else roomCode = lastRoomCode;                  /* 只是这一拍没报:用记忆兜住 */
+        roomCode = lastRoomCode;                 /* 进行中的会话短暂没报房号 */
       }
       return renderOnlinePanel();
       } catch (renderErr) {
@@ -1409,12 +1965,11 @@ window.__ModuleLoader__.load({
           : text + '——放太久会失效,建议 3 分钟内用完';
       }
       function renderCodeModal(opts) {
-        return h('div', { className: 'nnk-modal-mask', onClick: function (ev) { if (ev.target === ev.currentTarget) opts.onClose() } },
-          h('div', { className: 'nnk-modal' },
-            e('div', 'nnk-modal-title', opts.title),
-            opts.body,
-            h('div', { className: 'nnk-modal-actions' },
-              h('button', { className: 'nnk-copy', onClick: opts.onClose }, '收起(下方卡片里仍可操作)'))));
+        return h(ModalFrame, { title: opts.title, onClose: opts.onClose },
+          e('div', 'nnk-modal-title', opts.title),
+          h('div', { className: 'nnk-modal-body' }, opts.body),
+          h('div', { className: 'nnk-modal-actions' },
+            h('button', { className: 'nnk-copy', onClick: opts.onClose }, '收起(下方卡片里仍可操作)')));
       }
       /* 码交接弹窗(按行号):生成后自动弹一次,也可从列表那行的「🔎 再看」重开——
        * 误触关掉不再等于丢码(列表里随时能复制)。回执码就贴这一行的 */
@@ -1458,8 +2013,8 @@ window.__ModuleLoader__.load({
         var next = Object.assign({}, folds);
         next[key] = !folds[key];
         return h('div', { className: 'nnk-card' + (full ? ' nnk-dash-full' : '') },
-          h('div', { className: 'nnk-fold-head', onClick: function () { setFolds(next) } },
-            h('b', null, (folds[key] ? '▾ ' : '▸ ') + title)),
+          h('div', { className: 'nnk-fold-head', role: 'button', tabIndex: 0, 'aria-expanded': !!folds[key], onKeyDown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.currentTarget.click() } }, onClick: function () { setFolds(next) } },
+            h('b', { className: 'nnk-ui-text' }, (folds[key] ? '▾ ' : '▸ ') + title)),
           folds[key] ? contentFn() : null);
       }
 
@@ -1537,7 +2092,7 @@ window.__ModuleLoader__.load({
           var retryable=bridgeOnline&&!finalFile&&q.role==='host'&&(['cancelled','expired','failed'].indexOf(q.status)>=0 || file&&['failed','cancelled','expired'].indexOf(file.status)>=0);
           if(collapsed)return h('div',{className:'nnk-card',key:key},e('div','nnk-hint','补传提示已收起；提议和文件事务仍按原状态运行。'),h('button',{className:'nnk-copy',onClick:function(){setBatchUi(Object.assign({},batchUi,{[key]:false}))}},'展开补传提示'));
           return h('div', { className: 'nnk-card', key: q.session + q.proposal },
-            e('div', null, h('b', null, '📦 完整批次补传提议')),
+            e('div', null, h('b', { className: 'nnk-ui-text' }, '📦 完整批次补传提议')),
             e('div', 'nnk-hint', '来源：' + q.source + ' · ' + batch.extensions.length + ' 个扩展 · ' + batch.count + ' 个文件 · ' + batch.total + ' 字节'),
             batch.extensions.map(function (ext) { return e('div', 'nnk-break', ext.name + '（' + (ext.files ? ext.files.length : ext.fileCount) + ' 个文件）'); }),
             e('div', 'nnk-err', '扩展可执行代码。是否信任房主并授权这一完整批次？点击“是”仅授权当前提议，不授权后续批次。文件事务安全验证完成前不会发送文件，也不会写入游戏目录。'),
@@ -1560,12 +2115,15 @@ window.__ModuleLoader__.load({
       }
 
       function renderManifestCard(evs, hostFlow) {
-        var current = onlineManifestCheck(evs);
+        var roundState = bridge.state && bridge.state.round;
+        var engineState = bridge.state && bridge.state.keepaliveDiagnostics && bridge.state.keepaliveDiagnostics.engine;
+        var currentScope = engineState && engineState.current && engineState.current.scope || roundState && { sessionId: roundState.partySessionId, roundId: roundState.roundId };
+        var current = onlineManifestCheck(evs, currentScope);
         var verified = current.verified && bridge.online !== false;
         var diffEv = verified ? current.diff : current.check ? null : current.reference;
         var reason = current.check && current.check.reason;
-        var checkHint = !verified ? e('div', 'nnk-hint', reason && reason.indexOf('本次尚未核验') >= 0 ? reason : '本次尚未核验' + (reason ? '：' + reason : '')) : null;
-        var pauseHint = e('div', 'nnk-err', '⚠️ 补传已暂停：旧协议缺少客人逐请求授权与整批完整性／回滚保障，不接受 legacy 降级。正常联机及包体检仍可使用；缺包可能影响对局兼容性。已运行的旧内核须另行升级并重启，才会应用此止损。');
+        var uncheckedText = currentScope ? '本局尚未核验' : '本次尚未核验';
+        var checkHint = !verified ? e('div', 'nnk-hint', reason && reason.indexOf('本次尚未核验') >= 0 ? reason.replace('本次尚未核验', uncheckedText) : uncheckedText + (reason ? '：' + reason : '')) : null;
         /* 重置按钮常驻:隔离名单持久化在游戏配置里,清它不能依赖会话内的事件记录 */
         var resetBtn = (function () {
           var qEv = onlinePickEvent(evs, 'ext_quarantined');
@@ -1575,11 +2133,10 @@ window.__ModuleLoader__.load({
         })();
         if (!diffEv || !diffEv.data) {
           return h('div', { className: 'nnk-card' },
-            e('div', null, h('b', null, '📦 包体检')),
+            e('div', null, h('b', { className: 'nnk-ui-text' }, '📦 包体检')),
             checkHint,
             current.check && current.check.identity && current.check.identity.name ? e('div', 'nnk-hint', '👤 对方(' + (hostFlow ? '客人' : '房主') + '):「' + current.check.identity.name + '」') : null,
             e('div', 'nnk-hint', '客人进房后自动对比双方扩展清单,缺什么这里会列出来。'),
-            pauseHint,
             !hostFlow ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('manifest_recheck',{})}},'重新体检') : null,
             resetBtn);
         }
@@ -1603,10 +2160,9 @@ window.__ModuleLoader__.load({
         var peerKernel = verified ? (hostFlow ? (d.guestKernel || null) : (d.hostKernel || null)) : null;
         var mineKernel = (bridge && bridge.kernelVersion) || null;
         return h('div', { className: 'nnk-card' },
-          e('div', null, h('b', null, '📦 包体检')),
+          e('div', null, h('b', { className: 'nnk-ui-text' }, '📦 包体检')),
           checkHint,
           !verified ? e('div', 'nnk-hint', '以下仅为历史或参考记录，不代表本次检查结果。') : null,
-          pauseHint,
           e('div', 'nnk-hint', (bridge.cfg && bridge.cfg.root === false)
             ? '⚠️ 本机无法定位游戏目录,扩展分类已跳过(全部扩展会参与联机加载)。'
             : '联机只加载带武将/卡牌的扩展。'),
@@ -1622,7 +2178,7 @@ window.__ModuleLoader__.load({
               stillMissing.map(function (name) {
                 return h('div', { key: name, style: { marginTop: '6px' } },
                   h('span', null, name + ' '),
-                  hostFlow ? h('button', { className: 'nnk-copy', disabled: true, title: 'B0 安全止损：自动及手动补传均已暂停' }, '📦 补传已暂停') : null);
+                  hostFlow ? h('button', { className: 'nnk-copy', disabled: true, title: '补传暂不可用' }, '📦 补传已暂停') : null);
               }))
             : verified&&!missPacks.length&&!disabled.length&&!changed.length&&!unverified.length&&d.exts&&Array.isArray(d.exts.matching) ? e('div', 'nnk-ok', '✅ 已体检的启用扩展内容一致。') : null,
           disabled.length ? e('div','nnk-hint',verified ? '已安装但未启用，文件内容一致：'+disabled.join('、')+'。请客人在游戏扩展设置中自行启用并重启，再重新体检；无需下载。' : '参考记录中的未启用扩展：'+disabled.join('、')+'。请重新核对。') : null,
@@ -1707,7 +2263,11 @@ window.__ModuleLoader__.load({
         return h('div', { key: r.id, className: 'nnk-inv-row' },
           h('div', { className: 'nnk-inv-head' },
             e('span', 'nnk-inv-id', '#' + r.id),
-            e('span', 'nnk-inv-state', inviteStatusText(r)),
+            h('span', { className: 'nnk-inv-state' }, (function () {
+              var text = inviteStatusText(r), prefix = text.match(/^(?:⏳|🔗|✅|⚠️)/);
+              if (r.status === 'pending') return e('span', 'nnk-ui-text', text);
+              return prefix ? [e('span', 'nnk-ui-text', prefix[0]), text.slice(prefix[0].length)] : text;
+            })()),
             r.code ? h('button', { className: 'nnk-smallbtn', onClick: function () { copyText(r.code) } }, '📋 复制码') : null,
             r.code && r.status === 'pending'
               ? h('button', { className: 'nnk-smallbtn', onClick: function () { setInvPop({ popped: r.id, dismissed: null }) } }, '🔎 再看')
@@ -1783,33 +2343,35 @@ window.__ModuleLoader__.load({
           var isHost = mm.role === 'host';
           return h('div', { key: 'm' + i, className: 'nnk-seat' + (isHost ? ' nnk-seat-host' : '') },
             seatAvatar(sName(mm)),
-            h('div', { className: 'nnk-seat-name', title: sName(mm) }, (isHost ? '👑 ' : '') + sName(mm)),
+            h('div', { className: 'nnk-seat-name', title: sName(mm) }, isHost ? e('span', 'nnk-ui-text', '👑 ') : null, sName(mm)),
             e('div', 'nnk-seat-state', mm.entered ? '✅ 已进入' : '⏳ 等待载入'));
-        }).concat(queuedList.map(function (mm, i) {
-          return h('div', { key: 'q' + i, className: 'nnk-seat nnk-seat-queued' },
-            seatAvatar(sName(mm)),
-            h('div', { className: 'nnk-seat-name', title: sName(mm) }, sName(mm)),
-            e('div', 'nnk-seat-state', '🚏 排队中'));
-        })).concat(Array.apply(null, Array(empties)).map(function (_, i) {
+        }).concat(Array.apply(null, Array(empties)).map(function (_, i) {
           return h('div', { key: 'e' + i, className: 'nnk-seat nnk-seat-empty' },
-            h('div', { className: 'nnk-seat-avatar' }, '🪑'),
+            h('div', { className: 'nnk-seat-avatar nnk-ui-text' }, '🪑'),
             e('div', 'nnk-seat-state', '空位'));
         }));
-        return h('div', { className: 'nnk-modal-mask', onClick: function (ev) { if (ev.target === ev.currentTarget) setRoomPopupOpen(false) } },
-          h('div', { className: 'nnk-modal' },
+        return h(ModalFrame, { title: 'NONAME-KIT 插件房间', returnFocusRef: roomOpenerRef, onClose: function () { setRoomPopupOpen(false) } },
             h('div', { className: 'nnk-rm-head' },
-              e('div', 'nnk-modal-title', '🏛 房间大厅'),
+              e('div', 'nnk-modal-title', '🏛 NONAME-KIT 插件房间'),
               e('span', 'nnk-badge', !brief.has ? '同步中…' : (hostEntered ? '✅ 游戏房间已建好' : seated.length + '/' + cap + ' 人在房'))),
             /* 房号牌:大号等宽 + 一键复制 */
             h('div', { className: 'nnk-rm-code' },
               e('span', 'nnk-rm-codelabel', '房号'),
-              e('span', 'nnk-rm-codeval', roomCode || '…'),
-              h('button', { className: 'nnk-copy', onClick: function () { copyText(roomCode || '') } }, '📋 复制')),
+              e('span', 'nnk-rm-codeval', roomCode || (onlineRoom && onlineRoom.complete ? '原连接房间' : '…')),
+              roomCode ? h('button', { className: 'nnk-copy', onClick: function () { copyText(roomCode) } }, '📋 复制') : null),
             /* 座位网格:成员 → 排队 → 空位;成员表还没到就显示同步中,
              * 不摆一排空位让人误以为房间是空的 */
             brief.has
               ? h('div', { className: 'nnk-rm-seats' }, seats)
               : e('div', 'nnk-hint', '正在同步房间信息…一秒内就位。'),
+            queuedList.length ? h('div', {},
+              e('div', 'nnk-label', '排队等待(' + queuedList.length + ' 人)'),
+              h('div', { className: 'nnk-rm-queue' }, queuedList.map(function (mm, i) {
+                return h('div', { key: 'q' + i, className: 'nnk-seat nnk-seat-queued' },
+                  seatAvatar(sName(mm)),
+                  h('div', { className: 'nnk-seat-name', title: sName(mm) }, sName(mm)),
+                  e('div', 'nnk-seat-state', '🚏 排队中'));
+              }))) : null,
             /* 操作区:主机换模式+载入;客人只读 */
             h('div', { className: 'nnk-rm-ops' },
               isRoomHost
@@ -1818,27 +2380,28 @@ window.__ModuleLoader__.load({
                   h('div', { className: 'nnk-radios' },
                     ONLINE_MODES.map(function (m) {
                       return h('label', { key: m.id, className: 'nnk-radio' + (roomMode === m.id ? ' nnk-radio-on' : '') },
-                        h('input', { type: 'radio', name: 'nnk-room-mode', checked: roomMode === m.id, onChange: function () { setRoomMode(m.id); sendCmd('set_mode', { mode: m.id }); } }),
+                        h('input', { type: 'radio', name: onlineScope + '-room-mode', checked: roomMode === m.id, onChange: function () { setRoomMode(m.id); sendCmd('set_mode', { mode: m.id }); } }),
                         m.name + '(最多 ' + capFor(m.id) + ' 人)');
                     })),
-                  h('button', { className: 'nnk-submit', onClick: function () { sendCmd('restart_room', { mode: roomMode }); setNote('🚀 载入中——成员会自动进入(原地进房不断线;需重载时自动跟随)'); } }, '🚀 载入到游戏(按所选模式)'),
-                  e('div', 'nnk-hint', '载入时主机尽量原地进房(成员不断线);需要重载时成员自动跟随进入。开局/禁将在游戏内点。'),
+                  h('button', { className: 'nnk-submit', disabled: onlineRound && ['playing','settling','settled','returning','preparing','loading','seating'].indexOf(onlineRound.phase) >= 0 || onlineNext && onlineNext.retryAvailable, onClick: function () { sendCmd('restart_room', { mode: roomMode }); setNote('正在按所选模式载入游戏，原连接保持…'); } }, '🚀 载入到游戏(按所选模式)'),
+                  onlineNext && onlineNext.retryAvailable ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('retry_round', {}); setNote('正在明确重试本次新局载入；原连接保持。'); } }, '明确重试本次载入(一次)') : null,
+                  e('div', 'nnk-hint', '结算后点击“返回插件房间”。在这里调整模式，再点“载入到游戏”；客人自动跟随，原连接保持。'),
                   /* 邀请码列表常驻这里:码随时可复制、回执码随时可粘,不依赖弹窗 */
-                  renderInviteCard())
+                  roomCode ? renderInviteCard() : null)
                 : e('div', 'nnk-hint', '模式与载入由房主操作——他点「载入到游戏」后,你会自动跟着进房。')),
             h('div', { className: 'nnk-modal-actions' },
               h('button', { className: 'nnk-copy nnk-danger', onClick: function () { leaveRoom(isRoomHost) } }, isRoomHost ? '🗑 解散房间' : '🚪 退出房间'),
-              h('button', { className: 'nnk-copy', onClick: function () { setRoomPopupOpen(false) } }, '收起(连接继续保持,可随时再打开)'))));
+              h('button', { className: 'nnk-copy', onClick: function () { setRoomPopupOpen(false) } }, '收起(连接继续保持,可随时再打开)')));
       }
 
       function renderOnlinePanel() {
-        return h('div', { className: 'nnk-dash' },
-        h('div', { className: 'nnk-card nnk-dash-full' },
-          h('b', { style: { color: 'var(--dsw-alias-state-warning-primary, #b8860b)' } }, '⚠️ 联机功能仅适配官方版无名杀(无 UI 美化),第三方套壳尽力而为:'),
+        return h('div', { className: 'nnk-dash nnk-online-dashboard' },
+        h('div', { className: 'nnk-card nnk-dash-full nnk-online-notice' },
+          h('b', { className: 'nnk-ui-text', style: { color: 'var(--dsw-alias-state-warning-primary, #b8860b)' } }, '⚠️ 联机功能仅适配官方版无名杀(无 UI 美化),第三方套壳尽力而为:'),
           h('a', { href: 'https://github.com/libnoname/noname', target: '_blank', rel: 'noopener', style: { color: 'var(--dsw-alias-brand-primary)', marginLeft: '6px' } }, 'github.com/libnoname/noname'),
           e('div', 'nnk-hint', '建议联机双方尽量使用相同版本的官方无名杀，以减少兼容性问题；不同小版本仍可尝试联机。')),
-        h('div', { className: 'nnk-card nnk-dash-full' },
-          e('div', null, h('b', null, '🌐 联机助手')),
+        h('div', { className: 'nnk-card nnk-dash-full nnk-online-status' },
+          e('div', 'nnk-online-title', h('b', { className: 'nnk-ui-text' }, '🌐 联机助手')),
           status.batchRecovery && status.batchRecovery.status!=='none'
             ? h('div', {className:'nnk-err'},
                 e('div', null, '补传批次尚未完成恢复，安装和普通扩展写入已暂停。离线恢复不需要连接房主或启动游戏。'),
@@ -1851,7 +2414,7 @@ window.__ModuleLoader__.load({
                 : '还没配置游戏目录——先到「⚙ 设置」页配好,再回来装内核。')
             : kernelBad
               ? e('div', 'nnk-err', '❌ ' + ((kernel && kernel.error) || '内核状态未知'))
-              : h('div', {},
+              : h('div', { className: 'nnk-online-runtime' },
                 kernel.state === 'missing' ? e('div', 'nnk-hint', '内核未安装,点下面按钮安装。')
                   : kernel.state === 'stale' ? e('div', 'nnk-hint', kernel.error || '插件更新过,内核也该升级了。')
                     : e('div', 'nnk-ok', '✅ 内核已安装' + (bridge.kernelVersion ? '(v' + bridge.kernelVersion + ')' : '')),
@@ -1916,34 +2479,34 @@ window.__ModuleLoader__.load({
             /* 左右各包一层列容器:网格的行高取整行最高项,主机卡展开邀请码区
              * 很高时,右栏的动态/体检会跟它裂开大空隙——列内 flex 纵排让每栏
              * 自己紧密堆叠(实测反馈的空隙病根) */
-            h('div', { key: 'col-host', className: 'nnk-col' },
-            h('div', { className: 'nnk-card' },
-              e('div', null, h('b', null, '🏠 我要当主机')),
+            h('div', { key: 'col-host', className: 'nnk-col nnk-online-actions' },
+            h('div', { className: 'nnk-card nnk-online-primary' },
+              e('div', 'nnk-online-title', h('b', { className: 'nnk-ui-text' }, '🏠 我要当主机')),
               e('div', 'nnk-hint', '创建 P2P 房间 → 房间大厅里选模式、载入到游戏,大家自动进入(房号连不上的朋友用「📨 生成邀请码」)。开局/禁将在游戏里点。'),
               h('div', { className: 'nnk-row' },
                 h('button', { className: 'nnk-submit', style: { marginTop: '0' }, disabled: !bridgeOnline || guestFlow || hostFlow || (bridge.role === 'host' && roomCode), onClick: function () { setOfferText(''); sendCmd('create_room', { mode: roomMode }); setRoomPopupOpen(true) } }, '🏛 创建 P2P 房间'),
                 /* 邀请码 = 同一房间的第二道门,按需生成(一客一张、可同时挂多张)。
                  * 列表与回执码入口都在「房间大厅」里;这里只管"再来一张"和换房号。
                  * 只在主机侧显示——客人的 roomCode 是自己那个房间的 */
-                roomCode && !guestFlow && phase !== 'host_booting'
+                roomCode && isRoomHost && phase !== 'host_booting'
                   ? h('button', { className: 'nnk-copy', style: { marginTop: '0' }, onClick: function () { sendCmd('invite_refresh', { kind: 'invite' }) } }, '📨 生成邀请码')
                   : null,
-                roomCode && !guestFlow && (phase === 'room_open' || phase === 'mqtt_waiting' || phase === 'hosting')
+                roomCode && isRoomHost && (phase === 'room_open' || phase === 'mqtt_waiting' || phase === 'hosting')
                   ? h('button', { className: 'nnk-copy', style: { marginTop: '0' }, onClick: function () { sendCmd('invite_refresh') } }, '♻️ 换一个房号')
                   : null),
               !bridgeOnline ? e('div', 'nnk-hint', '内核离线(先启动游戏)') : null,
-              roomCode && !guestFlow && !roomPopupOpen
+              (roomCode || onlineRoom && onlineRoom.complete) && isRoomHost && !roomPopupOpen
                 ? h('div', { className: 'nnk-row', style: { marginTop: '8px' } },
-                  h('button', { className: 'nnk-copy', style: { marginTop: '0' }, onClick: function () { setRoomPopupOpen(true) } }, (function () {
+                  h('button', { ref: roomOpenerRef, className: 'nnk-copy', style: { marginTop: '0' }, onClick: function () { setRoomPopupOpen(true) } }, (function () {
                     var b = roomBrief();
                     var seatedN = b.list.filter(function (mm) { return mm && !mm.queued; }).length;
-                    return '🏛 房间大厅(房号 ' + roomCode + ' · ' + seatedN + '/' + b.cap + ' 人)';
+                    return '🏛 插件房间(' + (roomCode ? '房号 ' + roomCode : '原连接') + ' · ' + seatedN + '/' + b.cap + ' 人)';
                   })()),
                   h('button', { className: 'nnk-copy nnk-danger', style: { marginTop: '0' }, onClick: function () { leaveRoom(true) } }, '🗑 解散'))
                 : null,
               /* 邀请码:列表常驻在「房间大厅」里,这里给汇总入口——有码在等结果时
                * 一眼看到有几张,点它直接打开大厅并展开第一张的「粘回执码」 */
-              roomCode && !guestFlow && (function () {
+              roomCode && isRoomHost && (function () {
                 var rows = inviteRows();
                 var pend = rows.filter(function (r) { return r.status === 'pending'; });
                 var answering = rows.filter(function (r) { return r.status === 'answering'; });
@@ -1953,17 +2516,17 @@ window.__ModuleLoader__.load({
                   setRoomPopupOpen(true);
                 } }, '📨 ' + (pend.length ? pend.length + ' 张邀请码等回执码' + (answering.length ? '(另 ' + answering.length + ' 张在打通)' : '') : answering.length + ' 张邀请码正在打通') + ' → 去粘贴/复制');
               })()),
-            h('div', { className: 'nnk-card' },
-              e('div', null, h('b', null, '🔗 我要加入')),
+            h('div', { className: 'nnk-card nnk-online-primary' },
+              e('div', 'nnk-online-title', h('b', { className: 'nnk-ui-text' }, '🔗 我要加入')),
               e('div', 'nnk-hint', '输入 6 位房号,点「加入」,直连打通后自动进房;房间坐满会排队,有空位自动进。'),
               h('input', { className: 'nnk-input', value: roomText, maxLength: 6, onChange: function (ev) { setRoomText(ev.target.value.toUpperCase()) }, placeholder: '输入 6 位房号,如 AB2C9X', style: { textTransform: 'uppercase', letterSpacing: '4px', fontSize: '16px' } }),
               h('button', { className: 'nnk-copy', disabled: !bridgeOnline || hostFlow || guestFlow, onClick: function () { sendCmd('join_room', { code: roomText }) } }, '🚪 加入房间'),
-              (guestFlow || phase === 'connected') && roomCode
+              guestFlow && !isRoomHost && (roomCode || onlineRoom && onlineRoom.complete)
                 ? h('div', { className: 'nnk-row', style: { marginTop: '8px' } },
-                  h('button', { className: 'nnk-copy', style: { marginTop: '0' }, onClick: function () { setRoomPopupOpen(true) } }, (function () {
+                  h('button', { ref: roomOpenerRef, className: 'nnk-copy', style: { marginTop: '0' }, onClick: function () { setRoomPopupOpen(true) } }, (function () {
                     var b = roomBrief();
                     var seatedN = b.list.filter(function (mm) { return mm && !mm.queued; }).length;
-                    return '🏛 房间大厅(房号 ' + roomCode + ' · ' + seatedN + '/' + b.cap + ' 人)';
+                    return '🏛 插件房间(' + (roomCode ? '房号 ' + roomCode : '原连接') + ' · ' + seatedN + '/' + b.cap + ' 人)';
                   })()),
                   h('button', { className: 'nnk-copy nnk-danger', style: { marginTop: '0' }, onClick: function () { leaveRoom(false) } }, '🚪 退出'))
                 : null,
@@ -2003,10 +2566,10 @@ window.__ModuleLoader__.load({
              * 堆叠,不再被网格行高顶出大空隙 */
             renderFoldCard('identity', '👤 人物标识', function () { return renderIdentityCard() }),
             renderFoldCard('signaling', '📡 信令服务器', function () { return renderSignalingCard() })),
-            h('div', { key: 'col-info', className: 'nnk-col' },
-            h('div', { className: 'nnk-card' },
-              e('div', null, h('b', null, '📡 动态')),
-              h('div', { className: 'nnk-log' }, evs.length
+            h('div', { key: 'col-info', className: 'nnk-col nnk-online-diagnostics' },
+            h('div', { className: 'nnk-card nnk-online-events' },
+              e('div', 'nnk-online-title', h('b', { className: 'nnk-ui-text' }, '📡 动态')),
+              h('div', { className: 'nnk-log' }, evs.some(function (ev2) { return ev2 && ev2.type !== 'room_members'; })
                 ? evs.filter(function (ev2) { return ev2 && ev2.type !== 'room_members'; }).slice(-20).reverse().map(function (ev, i) {
                   return h('div', { key: i, className: 'nnk-break' }, new Date(ev.ts).toLocaleTimeString() + ' · ' + onlineEventText(ev, bridgeOnline ? evs : []));
                 })
@@ -2017,12 +2580,12 @@ window.__ModuleLoader__.load({
               e('div', 'nnk-hint',
                 '0.【官方版一次性】设置→通用→打开「自动导入扩展」→重载,否则扩展列表里没有「联机助手」。\n' +
                 '1. 两边都装插件、配好目录;本页点「📦 安装内核」→ 游戏扩展菜单给「联机助手」点「启」→ 重载。\n' +
-                '2. 主机:「创建 P2P 房间」→ 大厅选模式点「载入到游戏」;客人输房号加入,人满自动排队。房号连不上的朋友,主机点「📨 生成邀请码」发他一张——进的是同一个房间,一样等载入。打完一把自动回大厅,再点载入就行,房号不变。\n' +
+                '2. 主机:「创建 P2P 房间」→ 大厅选模式点「载入到游戏」;客人输房号加入,人满自动排队。房号连不上的朋友,主机点「📨 生成邀请码」发他一张——进的是同一个房间,一样等载入。结算后点“返回插件房间”，房主可换模式，再点“载入到游戏”，客人自动跟随，原连接保持。\n' +
                 '3. 主机在游戏里点「开始游戏」。禁将/包/人数在等待房间右上角「房间设置」改,点「启」广播全房。'),
               e('div', 'nnk-hint', '连接信息经加密信令交换,游戏数据点对点直连。个别网络连不上房号门,就用邀请码从另一道门进(同一个房间)。')) }))]
           : null,
         note ? h('div', { className: 'nnk-dash-full ' + (note.indexOf('❌') === 0 ? 'nnk-err' : (note.indexOf('✅') === 0 ? 'nnk-ok' : '')) }, note) : null,
-        roomPopupOpen && roomCode ? renderRoomModal() : null,
+        roomPopupOpen && phase !== 'idle' && (roomCode || onlineRoom && onlineRoom.complete) ? renderRoomModal() : null,
         /* 新码弹窗(按行号):生成后自动弹一次;误触收起不影响——列表里随时能复制,
          * 那行的「🔎 再看」也能重开 */
         (function () {
@@ -2041,6 +2604,7 @@ window.__ModuleLoader__.load({
       // Hooks 规则:所有 hook 必须在任何条件返回之前声明
       var ready = React.useState(null); // null=检测中, false=需初始化, true=正常
       var phase = ready[0], setPhase = ready[1];
+      var viewId = React.useId();
       var tab = React.useState('new');
       var active = tab[0], setActive = tab[1];
       React.useEffect(function () {
@@ -2083,19 +2647,17 @@ window.__ModuleLoader__.load({
        * 抛错都改成把错误文字亮出来,不许静默空白 */
       try {
         return h('div', { className: 'nnk-wrap' },
-          h('div', { className: 'nnk-tabs' },
-            h('button', { className: 'nnk-tab' + (active === 'new' ? ' nnk-active' : ''), onClick: function () { setActive('new') } }, '🛠 任务'),
-            h('button', { className: 'nnk-tab' + (active === 'tasklist' ? ' nnk-active' : ''), onClick: function () { setActive('tasklist') } }, '📋 任务列表'),
-            h('button', { className: 'nnk-tab' + (active === 'history' ? ' nnk-active' : ''), onClick: function () { setActive('history') } }, '📜 历史'),
-            h('button', { className: 'nnk-tab' + (active === 'online' ? ' nnk-active' : ''), onClick: function () { setActive('online') } }, '🌐 联机'),
-            h('button', { className: 'nnk-tab' + (active === 'settings' ? ' nnk-active' : ''), onClick: function () { setActive('settings') } }, '⚙ 设置')
-          ),
+          h('div', { className: 'nnk-appearancebar' },
+            e('span', 'nnk-identity nnk-modern-only', 'NONAME-KIT'), h(AppearanceSwitch)),
+          h(WorkshopTabs, { active: active, setActive: setActive, id: viewId }),
+          h(WorkshopPage, { active: active, id: viewId },
           phase === false && active === 'new' ? e('div', 'nnk-err', '⚠️ 还没配置游戏目录——到「⚙ 设置」页填一下就能自动写入;暂时不配也行,把写入方式设为「手动复制」。') : null,
           active === 'new' ? h(NewTaskForm, { send: send }) : null,
           active === 'tasklist' ? h(TaskListContent, { sessions: props.sessions, uiSession: props.uiSession }) : null,
           active === 'history' ? h(HistoryPanel) : null,
           active === 'online' ? h(OnlinePanel) : null,
           active === 'settings' ? h(SettingsPanel) : null
+          )
         );
       } catch (viewErr) {
         console.error('[联机助手] 工坊页渲染出错(' + active + '):', viewErr);
@@ -2124,7 +2686,7 @@ window.__ModuleLoader__.load({
       if (parsed.isError) return e('div', 'nnk-err', '❌ 校验返回异常,详见文本结果。');
       // render 文本是工具结果的唯一载体(无结构化值通道),按文本前缀判定,正文全量展示
       var ok = (parsed.text || '').indexOf('校验通过') === 0;
-      return h('div', {},
+      return h('div', { className: 'nnk-tool-result' },
         e('div', {}, h('b', null, '扩展代码校验')),
         ok ? e('div', 'nnk-ok', '✅ 校验通过') : e('div', 'nnk-err', '❌ 校验未通过(未写入)'),
         h('pre', { className: 'nnk-note', style: { whiteSpace: 'pre-wrap', maxHeight: '260px', overflow: 'auto' } }, parsed.text || '(无返回)')
@@ -2141,8 +2703,8 @@ window.__ModuleLoader__.load({
         : head.indexOf('手动模式') === 0 ? '📋 代码已生成(手动复制模式)'
         : (head.indexOf('写入被拒') === 0 || head.indexOf('校验未通过') === 0) ? '❌ 未写入'
         : '写入结果';
-      return h('div', {},
-        e('div', {}, h('b', null, title)),
+      return h('div', { className: 'nnk-tool-result' },
+        e('div', {}, h('b', { className: 'nnk-ui-text' }, title)),
         head.indexOf('手动模式') === 0 ? e('div', 'nnk-hint', '代码在 AI 的消息里,从对话中的代码块复制保存到目标文件即可。') : null,
         h('pre', { className: 'nnk-note', style: { whiteSpace: 'pre-wrap', maxHeight: '260px', overflow: 'auto' } }, text)
       );
@@ -2154,9 +2716,9 @@ window.__ModuleLoader__.load({
       if (parsed.isError) return e('div', 'nnk-err', '❌ 收口返回异常,详见文本结果。');
       var text = parsed.text || '';
       var ok = text.indexOf('已标记') === 0;
-      return h('div', {},
-        e('div', {}, h('b', null, ok ? '🏁 技能已写入,待游戏测试' : '⚠️ 收口未完成')),
-        h('div', { className: ok ? 'nnk-ok' : 'nnk-err' }, text),
+      return h('div', { className: 'nnk-tool-result' },
+        e('div', {}, h('b', { className: 'nnk-ui-text' }, ok ? '🏁 技能已写入,待游戏测试' : '⚠️ 收口未完成')),
+        h('div', { className: ok ? 'nnk-ok' : 'nnk-err', 'data-nnk-literal': true }, text),
         ok ? null : e('div', 'nnk-hint', '若任务列表状态未更新,可让 AI 重试收口;或直接在「📋 任务列表」里操作。')
       );
     }
@@ -2365,28 +2927,28 @@ window.__ModuleLoader__.load({
         var skills = Array.isArray(task.skills) ? task.skills : [];
         var isModeTask = task.type === 'mode';
         return h('div', { key: task.id, className: 'nnk-taskrow' },
-          h('div', {},
+          h('div', { className: 'nnk-task-title' },
             h('span', { className: 'nnk-badge ' + (task.status === 'open' ? 'nnk-status-open' : 'nnk-status-done') },
               task.status === 'open' ? '🔵进行中' : '✅已完成'),
             h('b', null, task.id)
           ),
-          e('div', 'nnk-taskmeta', '📂 ' + task.folder + ' · 返工 ' + task.rounds + ' 轮 · ' + fmt(task.updatedAt)),
+          h('div', { className: 'nnk-taskmeta' }, e('span', 'nnk-ui-text', '📂 '), task.folder + ' · 返工 ' + task.rounds + ' 轮 · ' + fmt(task.updatedAt)),
           skills.length
-            ? e('div', 'nnk-taskmeta', (isModeTask ? '规则确认进度: ' : '技能确认进度: ') + skills.filter(function (s) { return s.status === 'confirmed' }).length + '/' + skills.length + (isModeTask ? ' · 模式任务:不涉及图片' : (!task.image && !task.target ? ' · 📷 缺图片(不登记图片不会自动完成)' : (!task.image && task.target ? ' · 编辑任务:不涉及图片' : ''))) + (audioNeed(task) ? ' · 🔊 缺配音(已登记的配音复制齐才会自动完成)' : ''))
+            ? e('div', 'nnk-taskmeta nnk-ui-text', (isModeTask ? '规则确认进度: ' : '技能确认进度: ') + skills.filter(function (s) { return s.status === 'confirmed' }).length + '/' + skills.length + (isModeTask ? ' · 模式任务:不涉及图片' : (!task.image && !task.target ? ' · 📷 缺图片(不登记图片不会自动完成)' : (!task.image && task.target ? ' · 编辑任务:不涉及图片' : ''))) + (audioNeed(task) ? ' · 🔊 缺配音(已登记的配音复制齐才会自动完成)' : ''))
             : null,
-          h('div', {},
+          h('div', { className: 'nnk-task-actions' },
             h('button', { className: 'nnk-smallbtn', onClick: function () { setD({ expanded: expanded ? null : task.id, fbFor: null, msg: '' }) } }, expanded ? '收起' : (skills.length ? '展开技能树' : '展开')),
             !isDoneSection ? h('button', { className: 'nnk-smallbtn', onClick: function () { setD({ expanded: task.id, fbFor: fbTarget && !fbTarget.skill ? null : { id: task.id, skill: '' }, issue: '', msg: '' }) } }, '🔁 反馈') : null,
             !isDoneSection && !task.image && !isModeTask ? h('button', { className: 'nnk-smallbtn', onClick: function () { addImage(task) } }, '📷 补图') : null,
             !isDoneSection && audioNeed(task) ? h('button', { className: 'nnk-smallbtn', onClick: function () { addAudio(task) } }, '🔊 补配音') : null,
             !isDoneSection ? h('button', { className: 'nnk-smallbtn', onClick: function () { markDone(task) } }, '✅ 标记完成') : null,
             isDoneSection ? h('button', { className: 'nnk-smallbtn', title: '回到进行中:可补图/补配音或重新确认后再次收口' , onClick: function () { reopenTask(task) } }, '🔁 重开') : null,
-            h('button', { className: 'nnk-smallbtn', onClick: function () { removeTask(task) } }, '🗑 删除')
+            h('button', { className: 'nnk-smallbtn nnk-danger', onClick: function () { removeTask(task) } }, '🗑 删除')
           ),
-          expanded && skills.length ? skills.map(function (s, i) {
+          expanded && skills.length ? h('div', { className: 'nnk-task-skills', role: 'list' }, skills.map(function (s, i) {
             var badge = SKILL_BADGE[s.status] || SKILL_BADGE.open;
-            return h('div', { key: s.name + '-' + i, className: 'nnk-card', style: { padding: '8px', marginBottom: '4px' } },
-              h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
+            return h('div', { key: s.name + '-' + i, className: 'nnk-card nnk-task-skill', role: 'listitem', style: { padding: '8px', marginBottom: '4px' } },
+              h('div', { className: 'nnk-task-skill-head', style: { display: 'flex', gap: '6px', alignItems: 'center' } },
                 h('span', { className: 'nnk-badge ' + badge[0] }, badge[1]),
                 h('b', { style: { fontSize: '12px' } }, (i + 1) + '. ' + (s.name || '(未命名)')),
                 s.rounds ? e('span', 'nnk-hint', '返工 ' + s.rounds + ' 轮') : null,
@@ -2394,13 +2956,13 @@ window.__ModuleLoader__.load({
                 !isDoneSection && s.status !== 'confirmed' ? h('button', { className: 'nnk-smallbtn', onClick: function () { confirmSkill(task, s.name) } }, '✅ 确认无误') : null,
                 !isDoneSection ? h('button', { className: 'nnk-smallbtn', onClick: function () { setD({ expanded: task.id, fbFor: fbTarget && fbTarget.skill === s.name ? null : { id: task.id, skill: s.name }, issue: '', msg: '' }) } }, '🔁 反馈') : null
               ),
-              s.desc ? e('div', 'nnk-hint', s.desc.slice(0, 100) + (s.desc.length > 100 ? '…' : '')) : null,
+              s.desc ? h('div', { className: 'nnk-hint', 'data-nnk-literal': true }, s.desc.slice(0, 100) + (s.desc.length > 100 ? '…' : '')) : null,
               s.feedbacks && s.feedbacks.length ? s.feedbacks.map(function (f, j) {
                 return e('div', 'nnk-fbrow', '第' + (j + 1) + '轮: ' + (f.issue || '').slice(0, 80));
               }) : null
             );
-          }) : null,
-          expanded && fbTarget && !isDoneSection ? h('div', {},
+          })) : null,
+          expanded && fbTarget && !isDoneSection ? h('div', { className: 'nnk-task-feedback' },
             e('div', 'nnk-hint', '向' + (fbTarget.skill ? '技能「' + fbTarget.skill + '」' : '任务「' + task.id + '」') + '反馈(记录后自动发给当前会话的 AI):'),
             h('textarea', {
               className: 'nnk-mini', value: box.issue,
@@ -2419,7 +2981,7 @@ window.__ModuleLoader__.load({
         );
       };
 
-      return h('div', {},
+      return h('div', { className: 'nnk-task-list' },
         box.err ? e('div', 'nnk-err', box.err) : null,
         box.msg ? e('div', 'nnk-ok', box.msg) : null,
         e('div', 'nnk-hint', '🔵 进行中 ' + open.length + ' 个 · ✅ 已完成 ' + done.length + ' 个'),
@@ -2434,12 +2996,22 @@ window.__ModuleLoader__.load({
     /** 浮窗位置按当前视口钳制:位置存在 localStorage,换机器/换分辨率/缩放窗口后
      *  可能落在屏幕外(实测新机上工坊浮窗右侧/上方被截,"上方内容显示不全")——
      *  渲染时强制收回可视区;双击标题栏可一键复位。 */
+    function usePanelViewport(active) {
+      var updateViewport = React.useState(0)[1];
+      React.useEffect(function () {
+        if (!active) return;
+        var onResize = function () { updateViewport(function (value) { return value + 1 }) };
+        window.addEventListener('resize', onResize);
+        return function () { window.removeEventListener('resize', onResize) };
+      }, [active]);
+    }
+
     function clampPanelPos(pos, width) {
       var vw = window.innerWidth || 1200;
       var vh = window.innerHeight || 800;
       return {
         x: Math.min(Math.max(8, Number(pos.x) || 8), Math.max(8, vw - width - 8)),
-        y: Math.min(Math.max(8, Number(pos.y) || 8), Math.max(8, vh - 90))
+        y: Math.min(Math.max(8, Number(pos.y) || 8), Math.max(8, vh - 240))
       };
     }
 
@@ -2449,35 +3021,45 @@ window.__ModuleLoader__.load({
       var uiSession = props && props.uiSession;
       var openState = React.useState(panelBus.open);
       var isOpen = openState[0], setIsOpen = openState[1];
+      usePanelViewport(isOpen);
       var posState = React.useState(function () {
         try { return JSON.parse(localStorage.getItem('dsh-noname-kit.panelPos')) || { x: 90, y: 70 } } catch (e) { return { x: 90, y: 70 } }
       });
       var pos = posState[0], setPos = posState[1];
+      var dragCleanup = React.useRef(null);
+      React.useEffect(function () { return function () { if (dragCleanup.current) dragCleanup.current() } }, []);
 
       React.useEffect(function () { return panelBus.sub(function (v) { setIsOpen(v) }) }, []);
 
       // 拖动:标题栏 mousedown → document mousemove/mouseup
       var startDrag = function (ev) {
-        var startX = ev.clientX - pos.x, startY = ev.clientY - pos.y;
+        if (dragCleanup.current) dragCleanup.current();
+        var origin = clampPanelPos(pos, 380);
+        var startX = ev.clientX - origin.x, startY = ev.clientY - origin.y;
         var latest = null;
         var move = function (e2) {
           var next = { x: Math.max(0, e2.clientX - startX), y: Math.max(0, e2.clientY - startY) };
           latest = next;
           setPos(next);
         };
-        var up = function () {
+        var clearDrag = function () {
           document.removeEventListener('mousemove', move);
           document.removeEventListener('mouseup', up);
+          if (dragCleanup.current === clearDrag) dragCleanup.current = null;
+        };
+        var up = function () {
+          clearDrag();
           // 闭包里的 pos 是拖动前的快照,必须存 move 里更新过的 latest
           try { localStorage.setItem('dsh-noname-kit.panelPos', JSON.stringify(latest || pos)) } catch (e) {}
         };
+        dragCleanup.current = clearDrag;
         document.addEventListener('mousemove', move);
         document.addEventListener('mouseup', up);
       };
 
       if (!isOpen) return null;
       var safePos = clampPanelPos(pos, 380);
-      return h('div', { className: 'nnk-panel', style: { left: safePos.x + 'px', top: safePos.y + 'px', maxHeight: 'min(560px, calc(100vh - 24px))' } },
+      return h('div', { className: 'nnk-panel', style: { '--nnk-panel-y': safePos.y + 'px', '--nnk-panel-limit': '560px', left: safePos.x + 'px', top: safePos.y + 'px', maxHeight: 'min(560px, calc(100vh - 24px))' } },
         h('div', { className: 'nnk-panel-head', onMouseDown: startDrag, onDoubleClick: function () {
           var d = { x: 90, y: 70 };
           setPos(d);
@@ -2581,27 +3163,37 @@ window.__ModuleLoader__.load({
       var uiSession = props && props.uiSession;
       var openState = React.useState(workshopBus.open);
       var isOpen = openState[0], setIsOpen = openState[1];
+      usePanelViewport(isOpen);
       var posState = React.useState(function () {
         try { return JSON.parse(localStorage.getItem('dsh-noname-kit.workshopPanelPos')) || { x: 620, y: 70 } } catch (e) { return { x: 620, y: 70 } }
       });
       var pos = posState[0], setPos = posState[1];
+      var dragCleanup = React.useRef(null);
+      React.useEffect(function () { return function () { if (dragCleanup.current) dragCleanup.current() } }, []);
       React.useEffect(function () { return workshopBus.sub(function (v) { setIsOpen(v) }) }, []);
       var startDrag = function (ev) {
-        var startX = ev.clientX - pos.x, startY = ev.clientY - pos.y;
+        if (dragCleanup.current) dragCleanup.current();
+        var origin = clampPanelPos(pos, 420);
+        var startX = ev.clientX - origin.x, startY = ev.clientY - origin.y;
         var latest = null;
         var move = function (e2) { var next = { x: Math.max(0, e2.clientX - startX), y: Math.max(0, e2.clientY - startY) }; latest = next; setPos(next) };
-        var up = function () {
+        var clearDrag = function () {
           document.removeEventListener('mousemove', move);
           document.removeEventListener('mouseup', up);
+          if (dragCleanup.current === clearDrag) dragCleanup.current = null;
+        };
+        var up = function () {
+          clearDrag();
           try { localStorage.setItem('dsh-noname-kit.workshopPanelPos', JSON.stringify(latest || pos)) } catch (e) {}
         };
+        dragCleanup.current = clearDrag;
         document.addEventListener('mousemove', move);
         document.addEventListener('mouseup', up);
       };
       if (!isOpen) return null;
       var sid = readCurrentSessionId(sessions, uiSession);
       var safePos = clampPanelPos(pos, 420);
-      return h('div', { className: 'nnk-panel', style: { left: safePos.x + 'px', top: safePos.y + 'px', width: '420px', maxHeight: 'min(640px, calc(100vh - 24px))' } },
+      return h('div', { className: 'nnk-panel', style: { '--nnk-panel-y': safePos.y + 'px', '--nnk-panel-limit': '640px', left: safePos.x + 'px', top: safePos.y + 'px', width: '420px', maxHeight: 'min(640px, calc(100vh - 24px))' } },
         h('div', { className: 'nnk-panel-head', onMouseDown: startDrag, onDoubleClick: function () {
           var d = { x: 620, y: 70 };
           setPos(d);
@@ -2619,6 +3211,7 @@ window.__ModuleLoader__.load({
     }
 
     exports.apply = function (ctx) {
+      ctx.effect(mountMotionLifecycle);
       var slots = ctx.get('slots');
       var sessions = ctx.get('sessions');
       // uiSession 容错取:不进 inject——某版缺这个服务时只降级「当前会话」读法,不拖垮插件
@@ -2638,8 +3231,9 @@ window.__ModuleLoader__.load({
           // DSH 布局的侧栏拖宽手柄是透明覆盖层,侵入内容区约 40px(z=8):
           // 工坊内容贴左渲染时,左侧按钮的点击会被它吃掉(现象=点了没反应)。
           // 留出安全边距让内容避开手柄热区;手柄压在空白上,拖拽功能不受影响。
-          return React.createElement('div', { style: { paddingLeft: '48px' } },
-            React.createElement(WorkshopView, Object.assign({}, props, { sessions: sessions, uiSession: uiSession })));
+          return React.createElement(AppearanceScope, null,
+            React.createElement('div', { className: 'nnk-host-frame', style: { paddingLeft: '48px' } },
+              React.createElement(WorkshopView, Object.assign({}, props, { sessions: sessions, uiSession: uiSession }))));
         });
       });
 
@@ -2647,7 +3241,7 @@ window.__ModuleLoader__.load({
       var card = function (key, component) {
         slots.inject('tool.call.toolview', function () {
           return slots.register({ name: 'tool.call.toolview', key: key }, function (props) {
-            return React.createElement(component, props);
+            return React.createElement(AppearanceScope, null, React.createElement(component, props));
           });
         });
       };
@@ -2658,12 +3252,12 @@ window.__ModuleLoader__.load({
       // 悬浮任务列表:侧栏按钮开关 + shell 浮层渲染(传 sessions 供浮窗反馈发消息)
       ctx.slots.inject('sidebar.footer.action', function () {
         return ctx.slots.register({ name: 'sidebar.footer.action', id: 'noname-kit-tasks', order: 5 }, function (props) {
-          return React.createElement(SidebarTaskButton, props);
+          return React.createElement(AppearanceScope, null, React.createElement(SidebarTaskButton, props));
         });
       });
       ctx.slots.inject('shell.overlay', function () {
         return ctx.slots.register({ name: 'shell.overlay', id: 'noname-kit-tasks' }, function (props) {
-          return React.createElement(TaskPanelWindow, Object.assign({}, props, { sessions: sessions, uiSession: uiSession }));
+          return React.createElement(AppearanceScope, null, React.createElement(TaskPanelWindow, Object.assign({}, props, { sessions: sessions, uiSession: uiSession })));
         });
       });
 
@@ -2671,12 +3265,12 @@ window.__ModuleLoader__.load({
       // 纯插件方案,不动 DSH 源码——发布自包含是硬约束。
       ctx.slots.inject('conversation.input.left', function () {
         return ctx.slots.register({ name: 'conversation.input.left', id: 'noname-workshop-chip', order: 90 }, function (props) {
-          return React.createElement(WorkshopChipButton, props);
+          return React.createElement(AppearanceScope, null, React.createElement(WorkshopChipButton, props));
         });
       });
       ctx.slots.inject('shell.overlay', function () {
         return ctx.slots.register({ name: 'shell.overlay', id: 'noname-kit-workshop' }, function (props) {
-          return React.createElement(WorkshopPanelWindow, Object.assign({}, props, { sessions: sessions, uiSession: uiSession }));
+          return React.createElement(AppearanceScope, null, React.createElement(WorkshopPanelWindow, Object.assign({}, props, { sessions: sessions, uiSession: uiSession })));
         });
       });
     };

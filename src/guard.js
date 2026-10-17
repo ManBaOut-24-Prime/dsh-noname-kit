@@ -297,7 +297,7 @@ export function bashGuardReason(command, protectRoot, baseDirs) {
 }
 
 /** pwsh 工具交付的是脚本正文,不带 `pwsh -Command` 外壳,不能只复用 bash 解释器匹配。
- * B0 覆盖常见文件 cmdlet/别名、.NET 文件写入和字面量工作目录切换;
+ * 覆盖常见文件 cmdlet/别名、.NET 文件写入和字面量工作目录切换;
  * 保留只读命令。不是 PowerShell 解释器,动态脚本仍属于上述尽力而为边界。 */
 export function powershellGuardReason(command, protectRoot, baseDirs) {
   const cmd = String(command ?? '')

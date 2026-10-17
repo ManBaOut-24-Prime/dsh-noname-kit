@@ -31,6 +31,7 @@
  */
 
 import { createEpochPromotion } from './compaction-epoch.mjs'
+import { ensureWorkingDirectory } from './working-directory.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'instruction-hint'
@@ -107,7 +108,7 @@ export function apply(ctx, config) {
   const promotion = createEpochPromotion(promoteEvents)
   ctx.on('session/event', (session, event) => promotion.observe(session, event))
 
-  /** Sessions that already received the hint. */
+  /** Session/directory pairs that already received the hint. */
   const hinted = new Set()
   let warned = false
   const warnOnce = (message) => {
@@ -125,12 +126,13 @@ export function apply(ctx, config) {
     try {
       if (promotion.status(agent).promoted !== true) return decision
       const session = agent.session
-      if (session === undefined || hinted.has(session.id)) return decision
-      hinted.add(session.id)
-
+      if (session === undefined) return decision
       const fs = ctx.get('fs')
       if (fs === undefined) return decision
-      const cwd = session.header.cwd ?? process.cwd()
+      const cwd = await ensureWorkingDirectory(ctx, agent, signal) ?? process.cwd()
+      const hintKey = JSON.stringify([session.id, cwd])
+      if (hinted.has(hintKey)) return decision
+      hinted.add(hintKey)
 
       const projectFiles = []
       const root = await findProjectRoot(fs, cwd, signal)
@@ -163,7 +165,7 @@ export function apply(ctx, config) {
       return {
         ...decision,
         messages: [...decision.messages, {
-          id: `instruction-hint-${session.id}`,
+          id: `instruction-hint-${session.id}-${hinted.size}`,
           role: 'user',
           content: [{ type: 'text', text }],
           source: { kind: 'instruction-hint', form: 'hint' },

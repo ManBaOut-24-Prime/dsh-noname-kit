@@ -222,7 +222,7 @@
 	 * "接线前先缓冲、接线后回放"——否则主机握手首条 ["opened"]
 	 * 会在引擎接管前到达而丢失。
 	 */
-	function FakeWebSocket(channel) {
+	function FakeWebSocket(channel,options) {
 		var self = this;
 		this.channel = channel;
 		this.onopen = null;
@@ -270,8 +270,9 @@
 				onclose.call(self);
 			}
 		};
+		this._ownedChannelCallbacks = { onopen: channel.onopen, onmessage: channel.onmessage, onerror: channel.onerror, onclose: channel.onclose };
 		if (nnk.modules.consent) nnk.modules.consent.attach(self, "guest");
-        if (nnk.modules.manifest) nnk.modules.manifest.attach(self, "guest");
+        if (nnk.modules.manifest) nnk.modules.manifest.attach(self, "guest", options);
 	}
 	FakeWebSocket.prototype.onUp = function(fn) { this._upHooks.push(fn); };
 	FakeWebSocket.prototype.onDown = function(fn) { this._downHooks.push(fn); };
@@ -289,6 +290,7 @@
 		});
 	};
 	FakeWebSocket.prototype.send = function(data) {
+		if (this._disposed || this._closed) return;
 		if (this.channel.readyState === "open") {
 			this.channel.send(data);
 		}
@@ -300,15 +302,21 @@
 	/* 释放尝试资源;正常引擎 close 回调由当前 owner 明确交付。 */
 	FakeWebSocket.prototype.dispose = function() {
 		if (this._disposed) return;
+		this._disposed = true;
+		this._closed = true;
 		if (nnk.modules.manifest) nnk.modules.manifest.detach(this);
 		if (nnk.modules.consent) nnk.modules.consent.detach(this);
-		this._disposed = true;
 		this._open = false;
 		this._buffer = []; this._upHooks = []; this._downHooks = [];
 		this.onopen = this.onmessage = this.onerror = this.onclose = null;
-		this.channel.onopen = this.channel.onmessage = this.channel.onerror = this.channel.onclose = null;
+		releaseFacadeCallbacks(this);
 		this.close();
 	};
+	function releaseFacadeCallbacks(socket) {
+		var owned = socket._ownedChannelCallbacks || {};
+		Object.keys(owned).forEach(function(name) { if (socket.channel[name] === owned[name]) socket.channel[name] = null; });
+		socket._ownedChannelCallbacks = null;
+	}
 
 	/*
 	 * 主机侧桥:lib.init.connection(ws) 要求 ws 具备
@@ -316,7 +324,7 @@
 	 * onDown 额外提供"连接断开"钩子:引擎会通过 on("close") 覆盖 onclose,
 	 * 所以扩展自己的清理逻辑必须走钩子列表,不能占用 onclose 槽位。
 	 */
-	function HostBridge(channel) {
+	function HostBridge(channel,options) {
 		var self = this;
 		this.channel = channel;
 		/* 通道实例的唯一代号:label 两端都叫 "nnk-link"(RTCDataChannel 协议名),
@@ -340,11 +348,13 @@
 			if (engineClose) engineClose.call(self);
 		};
 		channel.onerror = function() { /* 引擎侧无对应处理,忽略 */ };
+		this._ownedChannelCallbacks = { onmessage: channel.onmessage, onerror: channel.onerror, onclose: channel.onclose };
 		if (nnk.modules.consent) nnk.modules.consent.attach(self, "host");
-        if (nnk.modules.manifest) nnk.modules.manifest.attach(self, "host");
+        if (nnk.modules.manifest) nnk.modules.manifest.attach(self, "host", options);
 	}
 	var HOST_BRIDGE_SEQ = 0;
 	HostBridge.prototype.send = function(data) {
+		if (this._disposed || this._closed) return;
 		if (this.channel.readyState === "open") {
 			this.channel.send(data);
 		}
@@ -352,6 +362,19 @@
 	HostBridge.prototype.close = function() {
 		if (nnk.modules.manifest) nnk.modules.manifest.detach(this);
 		try { this.channel.close(); } catch (e) { /* 已关 */ }
+	};
+	/* Retire a per-document facade without closing its channel or transport.
+	 * A normal legacy close still uses close() above; endpoint retirement owns
+	 * only these NNK registrations and callback properties. */
+	HostBridge.prototype.dispose = function() {
+		if (this._disposed) return;
+		this._disposed = true;
+		this._closed = true;
+		if (nnk.modules.manifest) nnk.modules.manifest.detach(this);
+		if (nnk.modules.consent) nnk.modules.consent.detach(this);
+		this._downHooks = [];
+		this.onopen = this.onmessage = this.onerror = this.onclose = null;
+		releaseFacadeCallbacks(this);
 	};
 	HostBridge.prototype.on = function(type, func) {
 		this["on" + type] = func;

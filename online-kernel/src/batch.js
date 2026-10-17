@@ -1,4 +1,4 @@
-/* B8 candidate integration. Review/B9 are still pending; no remote toggle. */
+/* Batch file integration. Content transfer is paused; no remote toggle. */
 (function(){
   var nnk=window.__nnk__,req=typeof window.require==='function'?window.require:typeof require==='function'?require:null;
   var CONTENT_PAUSED=true;

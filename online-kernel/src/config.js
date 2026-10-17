@@ -13,9 +13,9 @@
 		/* 房号信令(MQTT over WebSocket):默认公共 broker,工坊「📡 信令服务器」
 		 * 卡可改(自建/其它公共服务器,双方须一致),空值经 set_config 恢复此默认 */
 		mqttUrl: "wss://broker.emqx.io:8084/mqtt",
-		/* M4 自动补包的单次传输体积上限(MB) */
+		/* 自动补包的单次传输体积上限(MB) */
 		transferLimitMB: 300,
-		/* M3 联机开闸的总开关 */
+		/* 联机开闸的总开关 */
 		autoUnlockExtensions: true,
 		/* 美化类扩展(不带武将/卡牌包的)是否也参与联机加载:默认关——
 		 * 美化族是联机不稳定的大头,默认只开内容扩展保稳定 */

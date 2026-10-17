@@ -25,6 +25,8 @@
  * the composition must NOT mount both, or the catalog injection returns.
  */
 
+import { ensureWorkingDirectory } from './working-directory.mjs'
+
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'skill-search'
 
@@ -65,9 +67,10 @@ export function apply(ctx) {
       const wanted = tokens(args.query)
       const scope = exec?.agent ?? ctx
       try {
+        const cwd = await ensureWorkingDirectory(ctx, exec?.agent, exec?.signal)
         const all = await ctx.skills.list({
           scope,
-          cwd: exec?.agent?.session?.header?.cwd,
+          cwd,
           signal: exec?.signal,
         })
         const matches = all.filter((skill) => {
@@ -103,9 +106,10 @@ export function apply(ctx) {
       try {
         const agent = exec?.agent
         if (agent === undefined) return { text: 'skill_load requires an agent context.' }
+        const cwd = await ensureWorkingDirectory(ctx, agent, exec?.signal)
         const skill = await ctx.skills.get(args.name, {
           scope: agent,
-          cwd: agent.session.header.cwd,
+          cwd,
           signal: exec?.signal,
         })
         if (skill === undefined) {

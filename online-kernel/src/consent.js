@@ -1,9 +1,12 @@
-/* B6 authority protocol. B8 consumes local grants through private socket hooks;
+/* Authority protocol. Batch transfer consumes local grants through private socket hooks;
  * this module still carries metadata only, with no legacy fallback. */
 (function() {
 	var nnk = window.__nnk__;
 	var VERSION = 2, TTL = 120000, MAX_FILES = 4096, MAX_META = 1048576;
-	var peers = new WeakMap(), live = new Set(), guest = null;
+	var peers = new WeakMap(), live = new Set(), guest = null, guestHistory = null, pending = new Set();
+	var pendingDigests = 0, pendingScans = 0;
+	function operationStarted(p) { p.pendingOperations++; pending.add(p); }
+	function operationFinished(p) { p.pendingOperations--; if (!p.pendingOperations && !p.pendingScans && !p.pendingDigests) pending.delete(p); }
 	function emit(type, data) { if (nnk.modules.bridge) nnk.modules.bridge.emit(type, data); }
 	function id() {
 		var b = new Uint8Array(16); window.crypto.getRandomValues(b);
@@ -40,18 +43,22 @@
 		return { extensions: extensions, total: total, count: count };
 	}
 	function limit() { return Math.min(300, Number(nnk.modules.config && nnk.modules.config.get("transferLimitMB")) || 300) * 1048576; }
-	async function digest(batch) {
-		var bytes = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(batch)));
-		return Array.from(new Uint8Array(bytes)).map(function(x) { return x.toString(16).padStart(2, "0"); }).join("");
+	async function digest(batch, p) {
+		pendingDigests++; if (p) { p.pendingDigests++; pending.add(p); }
+		try {
+			var bytes = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(batch)));
+			return Array.from(new Uint8Array(bytes)).map(function(x) { return x.toString(16).padStart(2, "0"); }).join("");
+		} finally { pendingDigests--; if (p) { p.pendingDigests--; if (!p.pendingOperations && !p.pendingScans && !p.pendingDigests) pending.delete(p); } }
 	}
 	function view(p, summary) {
+		if (p && p.closed && p.history) return JSON.parse(JSON.stringify(summary ? p.history.summary : p.history.full));
 		if (!p || !p.proposal) return null;
 		var q = p.proposal;
 		return { session: p.local, peerSession: p.remote, proposal: q.id, digest: q.digest, role: p.role,
 			status: q.status, source: q.source, batch: q.batch ? (summary ? { extensions: q.batch.extensions.map(function(e) { return { name: e.name, fileCount: e.files.length }; }), total: q.batch.total, count: q.batch.count } : JSON.parse(JSON.stringify(q.batch))) : null,
 			expires: q.expires, reason: q.reason || "", transferPaused: !nnk.modules.batch || nnk.modules.batch.paused };
 	}
-	function changed(p) { var q = p.proposal; emit("batch_consent", { session: p.local, proposal: q.id, status: q.status, reason: q.reason || "" }); if (nnk.modules.batch) nnk.modules.batch.changed(p.socket); }
+	function changed(p) { var q = p.proposal; emit("batch_consent", { session: p.local, proposal: q.id, status: q.status, reason: q.reason || "" }); if (!p.closed && p.socket && nnk.modules.batch) nnk.modules.batch.changed(p.socket); }
 	function hello(p) { return { role: p.role, files: nnk.modules.batch ? nnk.modules.batch.capability : 0 }; }
 	function send(p, kind, fields) {
 		if (p.closed || p.socket.channel.readyState !== "open") throw new Error("补传连接已断开");
@@ -63,28 +70,39 @@
 		var q = p.proposal, rank = { declined: 1, expired: 2, cancelled: 3, failed: 4, disconnected: 5 };
 		// Terminal states can only move toward a stronger stop; delayed messages never revive consent.
 		if (!q || (!active(q) && !(rank[status] > (rank[q.status] || 0)))) return;
-		clearTimeout(q.timer); clearTimeout(q.retry); q.status = status; q.reason = reason || status;
+		clearTimeout(q.timer); clearTimeout(q.retry); q.timer = q.retry = null; q.status = status; q.reason = reason || status;
 		changed(p);
 		if (notify) { try { send(p, "cancel", Object.assign(bound(q), { status: status })); } catch (e) { /* peer expires independently */ } }
 	}
 	function arm(p, q) {
 		q.expires = Date.now() + TTL;
-		q.timer = setTimeout(function() { if (p.proposal === q) finish(p, "expired", "提议已超时", true); }, TTL);
+		q.timer = setTimeout(function() { q.timer = null; if (!p.closed && p.proposal === q) finish(p, "expired", "提议已超时", true); }, TTL);
 	}
 	function detach(socket) {
 		var p = peers.get(socket); if (!p || p.closed) return;
-		finish(p, "disconnected", "连接结束，授权失效", false); p.closed = true;
-		clearTimeout(p.helloTimer); live.delete(p);
-		if (nnk.modules.batch) nnk.modules.batch.detach(socket);
+		// Invalidate first, including against reentrant terminal notifications.
+		p.closed = true;
+		try { finish(p, "disconnected", "连接结束，授权失效", false); }
+		finally {
+			clearTimeout(p.helloTimer); p.helloTimer = null;
+			if (p.proposal) { clearTimeout(p.proposal.timer); clearTimeout(p.proposal.retry); p.proposal.timer = p.proposal.retry = null; }
+			var full = view(p, false), summary = view(p, true);
+			p.history = full ? { full: full, summary: summary } : null;
+			if (guest === p) { guest = null; guestHistory = p.history; }
+			live.delete(p); p.socket = null; p.proposal = null; p.used.clear();
+			if (nnk.modules.batch) nnk.modules.batch.detach(socket);
+		}
 	}
 	function attach(socket, role) {
 		if (peers.has(socket)) return;
-		var p = { socket: socket, role: role, local: id(), remote: null, closed: false, proposal: null, used: new Set() };
-		peers.set(socket, p); live.add(p); if (role === "guest") guest = p;
+		var p = { socket: socket, role: role, local: id(), remote: null, closed: false, proposal: null, used: new Set(), helloTimer: null, history: null,
+			pendingOperations: 0, pendingScans: 0, pendingDigests: 0 };
+		peers.set(socket, p); live.add(p); if (role === "guest") { guest = p; guestHistory = null; }
 		if (nnk.modules.batch) nnk.modules.batch.attach(socket, role);
 		socket.onDown(function() { detach(socket); });
 		// A single delayed hello lets both bridge constructors finish. No engine slots are replaced.
 		p.helloTimer = setTimeout(function() {
+			p.helloTimer = null;
 			try { send(p, "hello", hello(p)); } catch (e) { /* channel not open yet */ }
 		}, 0);
 		if (role === "guest") socket.onUp(function() { try { send(p, "hello", hello(p)); } catch (e) {} });
@@ -114,7 +132,7 @@
 			p.proposal = q; p.used.add(q.id); arm(p, q);
 			try {
 				q.batch = normalize(m.batch);
-				if (await digest(q.batch) !== q.digest) throw new Error("提议摘要不匹配");
+				if (await digest(q.batch, p) !== q.digest) throw new Error("提议摘要不匹配");
 				if (p.closed || p.proposal !== q || q.status !== "preparing") return;
 				q.status = "pending"; changed(p);
 			} catch (e) { if (p.proposal === q) finish(p, "failed", e.message, true); }
@@ -133,7 +151,7 @@
 			else finish(p, "declined", "客人拒绝补传", false);
 			send(p, "result", Object.assign(bound(q), { status: q.status }));
 		} else if (m.kind === "result" && p.role === "guest" && q.status === "accepting" && m.status === "authorized_paused") {
-			clearTimeout(q.retry); q.status = "authorized_paused"; changed(p);
+			clearTimeout(q.retry); q.retry = null; q.status = "authorized_paused"; changed(p);
 		} else if (m.kind === "result" && p.role === "guest" && q.status === "rejecting" && m.status === "declined") {
 			finish(p, "declined", "你已拒绝补传", false);
 		} else if (m.kind === "result" && p.role === "guest" && ["cancelled", "expired", "failed"].includes(m.status)) {
@@ -150,11 +168,15 @@
 		var p = peers.get(socket);
 		if (p && !p.closed) {
 			if (raw.length > MAX_META) finish(p, "failed", "补传元数据超过上限", true);
-			else receive(p, m).catch(function(e) { finish(p, "failed", e.message, true); });
+			else {
+				operationStarted(p);
+				receive(p, m).catch(function(e) { if (!p.closed) finish(p, "failed", e.message, true); }).finally(function() { operationFinished(p); });
+			}
 		}
 		return true;
 	}
-	async function collect(names) {
+	async function collectFiles(names, owns) {
+		if (!owns()) throw new Error("提议已退役，停止只读采集");
 		if (!Array.isArray(names) || names.length > 64) throw new Error("扩展数量超过上限");
 		var req = window.require; if (!req) throw new Error("官方 Electron 文件能力不可用");
 		var fs = req("fs"), path = req("path"), crypto = req("crypto"), root = nnk.modules.compat.gameRoot();
@@ -162,11 +184,14 @@
 		var base = path.join(root, "extension"), extensions = [], total = 0, count = 0;
 		if (!fs.lstatSync(base).isDirectory() || fs.lstatSync(base).isSymbolicLink()) throw new Error("扩展根目录不安全");
 		for (var name of names) {
+			if (!owns()) throw new Error("提议已退役，停止只读采集");
 			if (!safePart(name) || name === "联机助手") throw new Error("扩展名无效");
 			var files = [];
 			async function walk(dir, rel) {
+				if (!owns()) throw new Error("提议已退役，停止只读采集");
 				var st = fs.lstatSync(dir); if (!st.isDirectory() || st.isSymbolicLink()) throw new Error("拒绝链接或非常规目录");
 				for (var entry of fs.readdirSync(dir)) {
+					if (!owns()) throw new Error("提议已退役，停止只读采集");
 					if (!safePart(entry)) throw new Error("文件路径无效");
 					var full = path.join(dir, entry), relative = rel ? rel + "/" + entry : entry;
 					var s = fs.lstatSync(full);
@@ -175,6 +200,7 @@
 					else if (s.isFile()) {
 						total += s.size; count++; if (total > limit() || count > MAX_FILES) throw new Error("批次超过上限");
 						var data = await fs.promises.readFile(full);
+						if (!owns()) throw new Error("提议已退役，停止只读采集");
 						if (data.length !== s.size) throw new Error("采集时文件变化");
 						files.push({ path: relative, size: data.length, sha256: crypto.createHash("sha256").update(data).digest("hex") });
 					} else throw new Error("拒绝非常规文件");
@@ -184,21 +210,32 @@
 		}
 		return normalize({ extensions: extensions });
 	}
+	async function collect(names, p, q) {
+		pendingScans++; p.pendingScans++; pending.add(p);
+		try { return await collectFiles(names, function() { return !p.closed && p.proposal === q && q.status === "preparing"; }); }
+		finally { pendingScans--; p.pendingScans--; if (!p.pendingOperations && !p.pendingScans && !p.pendingDigests) pending.delete(p); }
+	}
 	async function propose(client, names) {
 		var socket = client && (client.ws || client), p = peers.get(socket);
+		// Neither the async frame nor a retired peer record keeps the facade.
+		client = null; socket = null;
 		if (!p || p.closed || p.role !== "host" || !p.remote) { emit("batch_upgrade", { message: "对端未协商批次授权协议；请双方升级并重启。补传保持暂停。" }); return false; }
-		if (nnk.modules.batch && nnk.modules.batch.canPropose && !nnk.modules.batch.canPropose(socket)) return false;
+		if (nnk.modules.batch && nnk.modules.batch.canPropose && !nnk.modules.batch.canPropose(p.socket)) return false;
 		if (active(p.proposal) || !names.length || p.used.size >= 128) return false;
 		var key = JSON.stringify(names.slice().sort()); if (p.lastOffered === key) return false; p.lastOffered = key;
 		var q = { id: id(), digest: "", status: "preparing", source: "房主" }; p.proposal = q; p.used.add(q.id); arm(p, q);
+		operationStarted(p);
 		try {
-			q.batch = await collect(names); q.digest = await digest(q.batch);
+			q.batch = await collect(names, p, q);
+			if (p.closed || p.proposal !== q || q.status !== "preparing") return false;
+			q.digest = await digest(q.batch, p);
 			if (p.closed || p.proposal !== q || q.status !== "preparing") return false;
 			q.source = String(nnk.env.get.connectNickname() || "房主").slice(0, 80);
 			var offer = Object.assign(bound(q), { batch: q.batch, source: q.source, ttlMs: TTL });
 			if (JSON.stringify(offer).length + 256 > MAX_META) throw new Error("批次元数据超过上限");
 			q.status = "pending"; send(p, "offer", offer); changed(p); return true;
-		} catch (e) { if (p.proposal === q) finish(p, "failed", e.message, true); return false; }
+		} catch (e) { if (!p.closed && p.proposal === q) finish(p, "failed", e.message, true); return false; }
+		finally { operationFinished(p); }
 	}
 	function decide(args) {
 		var p = guest, q = p && p.proposal;
@@ -211,7 +248,7 @@
 			if (p.closed || p.proposal !== q || !["accepting", "rejecting"].includes(q.status)) return;
 			try { send(p, "decision", Object.assign(bound(q), { yes: args.yes })); }
 			catch (e) { finish(p, "disconnected", e.message, false); return; }
-			if (++attempts < 5) q.retry = setTimeout(deliver, 2000);
+			if (++attempts < 5) q.retry = setTimeout(function() { q.retry = null; deliver(); }, 2000);
 		}
 		deliver();
 		return true;
@@ -240,7 +277,17 @@
 		authorization: function(socket) { var p=peers.get(socket), q=p && p.proposal; return p && !p.closed && q && q.status === "authorized_paused" && q.choice === true && Date.now() < q.expires ? view(p, false) : null; },
 		fileCapable: function(socket) { var p=peers.get(socket); return !!(p && p.files === 2); },
 		cancelAll: function() { live.forEach(function(p) { finish(p, "cancelled", "用户取消", true); }); },
-		snapshot: function() { return Array.from(live).concat(guest && !live.has(guest) ? [guest] : []).map(function(p) { return view(p, false); }).filter(Boolean); },
-		summaries: function() { return Array.from(live).concat(guest && !live.has(guest) ? [guest] : []).map(function(p) { return view(p, true); }).filter(Boolean); },
+		snapshot: function() { return Array.from(live).map(function(p) { return view(p, false); }).filter(Boolean).concat(guestHistory ? [JSON.parse(JSON.stringify(guestHistory.full))] : []); },
+		summaries: function() { return Array.from(live).map(function(p) { return view(p, true); }).filter(Boolean).concat(guestHistory ? [JSON.parse(JSON.stringify(guestHistory.summary))] : []); },
+		resourceSnapshot: function(socket) {
+			var selected = socket ? [peers.get(socket)].filter(Boolean) : Array.from(new Set(Array.from(live).concat(Array.from(pending), guest ? [guest] : [])));
+			var result = { live: socket ? Number(!!selected[0] && live.has(selected[0])) : live.size, pendingTimers: 0, socketReferences: 0,
+				pendingScans: socket ? 0 : pendingScans, pendingDigests: socket ? 0 : pendingDigests, pendingOperations: 0, retiredPending: 0,
+				guestSocketReferences: Number(!!guest && !!guest.socket), retainedHistory: Number(!!guestHistory), batchResourcesObservable: !!(nnk.modules.batch && nnk.modules.batch.resourceSnapshot) };
+			selected.forEach(function(p) { result.socketReferences += Number(!!p.socket); result.pendingTimers += Number(p.helloTimer != null) + Number(p.proposal && p.proposal.timer != null) + Number(p.proposal && p.proposal.retry != null);
+				result.pendingOperations += p.pendingOperations; result.retiredPending += Number(p.closed && !!(p.pendingOperations || p.pendingScans || p.pendingDigests));
+				if (socket) { result.pendingScans += p.pendingScans; result.pendingDigests += p.pendingDigests; } });
+			return result;
+		},
 		normalize: normalize, digest: digest, version: VERSION };
 })();

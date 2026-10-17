@@ -1,7 +1,7 @@
 /* Existing game channel metadata is also handled while parked in the lobby.
  * Files remain subject to the separate bound consent and full transaction. */
 (function(){
-    var nnk=window.__nnk__,peers=new WeakMap(),live=new Set(),requestSeq=0,peerSeq=0;
+    var nnk=window.__nnk__,peers=new WeakMap(),live=new Set(),pending=new Set(),localScans=0,requestSeq=0,peerSeq=0;
     var peerBoot=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
     function emit(type,data){if(nnk.modules.bridge)nnk.modules.bridge.emit(type,data)}
     function check(p,status,reason){emit('manifest_check',{peerId:p.peerId,request:p.request,status:status,reason:reason||'',role:p.role,identity:p.identity||null})}
@@ -12,6 +12,10 @@
             identity:{name:nnk.env.get.connectNickname(),avatar:lib.config.connect_avatar||""},batchProtocol:2,inventoryVersion:1};
     }
     function observed(force){
+        localScans++;
+        try{return observeFiles(force)}finally{localScans--}
+    }
+    function observeFiles(force){
         var m=collect();
         if(!nnk.modules.consent||!nnk.modules.batch){m.inventoryVersion=0;return m;}
         try{
@@ -24,6 +28,32 @@
             m.contents=scan(root,m.installed,{force:!!force});
         }catch(error){m.contents={};m.inventoryError=error.message}
         return m;
+    }
+    async function observedAsync(force,signal){
+        localScans++;
+        function guard(){if(signal&&signal.aborted)throw signal.reason||Error('体检已取消');}
+        try{
+            guard();var m=collect();
+            if(!nnk.modules.consent||!nnk.modules.batch){m.inventoryVersion=0;return m;}
+            try{
+                var req=typeof window.require==='function'?window.require:typeof require==='function'?require:null;
+                if(!req)throw Error('没有本机文件接口');
+                // Each native engine already has a validated root. process.cwd
+                // belongs to the shared shell and may name the other version.
+                var root=window.__dirname||nnk.modules.compat.gameRoot(),path=req('node:path'),fs=req('node:fs');
+                var stock=(nnk.env.lib.config.all||{}).stockextension||[],names=await fs.promises.readdir(path.join(root,'extension'));guard();
+                m.installed=[];
+                for(var name of names){
+                    if(name==='联机助手'||stock.indexOf(name)>=0)continue;
+                    try{await fs.promises.access(path.join(root,'extension',name,'extension.js'));guard();m.installed.push(name);}catch(error){guard();if(error.code!=='ENOENT'&&error.code!=='ENOTDIR')throw error;}
+                }
+                m.installed.sort();
+                var scan=req(path.join(root,'extension','联机助手','lib','manifest-files.cjs')).scanAsync;
+                if(typeof scan!=='function')throw Error('异步体检文件接口不可用');
+                m.contents=await scan(root,m.installed,{force:!!force,signal:signal});guard();
+            }catch(error){guard();m.contents={};m.inventoryError=error.message;}
+            guard();return m;
+        }finally{localScans--;}
     }
     function valid(m){
         if(!m||!Array.isArray(m.exts)||m.exts.length>64)return false;
@@ -47,29 +77,35 @@
         return {exts:exts,packs:split(host.packs||[],guest.packs||[]),cards:split(host.cards||[],guest.cards||[]),guestKernel: guest.kernel || null,hostKernel: host.kernel || null,
             guestBatchProtocol:guest.batchProtocol||null,hostBatchProtocol:host.batchProtocol||null,guestIdentity:guest.identity||null,hostIdentity:host.identity||null};
     }
-    function current(p){return !!p&&peers.get(p.socket)===p&&!p.closed&&!p.socket._closed&&!p.socket._disposed&&p.socket.channel.readyState==='open'}
+    function current(p){return !!p&&!p.closed&&!!p.socket&&peers.get(p.socket)===p&&!p.socket._closed&&!p.socket._disposed&&p.socket.channel.readyState==='open'}
     function detach(socket){
         var p=peers.get(socket);if(!p||p.closed)return;
-        p.closed=true;p.legacyAmbiguous=true;p.incoming++;clearTimeout(p.timer);p.timer=null;live.delete(p);check(p,'closed','连接已结束，本次尚未核验。');
+        p.closed=true;p.legacyAmbiguous=true;p.incoming++;clearTimeout(p.timer);p.timer=null;p.scanController&&p.scanController.abort();p.scanController=null;live.delete(p);
+        try{check(p,'closed','连接已结束，本次尚未核验。')}finally{p.socket=null;p.identity=null}
     }
-    async function onGuest(p,m,request,incoming){
+    async function onGuest(p,m,request,incoming,signal){
         if(!current(p)||p.incoming!==incoming)return;
-        var socket=p.socket,result=diff(observed(false),m);
+        var local=p.asynchronous?await observedAsync(p.fresh,signal):observed(false);
+        if(!current(p)||p.incoming!==incoming)return;
+        var result=diff(local,m);
         // A new capable peer receives the completed offer before the admission check.
         // Older manifests still display name differences, but cannot prove content equality.
         if(result.exts.missing.length||result.exts.changed.length)emit('info',{message:(nnk.modules.transfer&&nnk.modules.transfer.pauseReason)||'补传已暂停；缺包或内容差异仍需核对。'});
-        if(result.exts.needsFiles.length && nnk.modules.consent)await nnk.modules.consent.propose(socket,result.exts.needsFiles);
+        if(result.exts.needsFiles.length && nnk.modules.consent)await nnk.modules.consent.propose(p.socket,result.exts.needsFiles);
         if(!current(p)||p.incoming!==incoming)return;
         // Metadata returns only on the requesting connection, including parked peers.
         // File delivery retains its separate entered-bridge route and consent checks.
-        socket.send(JSON.stringify(request===undefined?['nnk_manifest_diff',result]:['nnk_manifest_diff',result,request]));
+        p.socket.send(JSON.stringify(request===undefined?['nnk_manifest_diff',result]:['nnk_manifest_diff',result,request]));
         if(!current(p)||p.incoming!==incoming)return;
         publish(p,result);check(p,'verified');
     }
     function receiveHost(socket,m,request){
         var p=peers.get(socket);if(!current(p)||p.role!=='host'||!valid(m)||request!==undefined&&(!Number.isSafeInteger(request)||request<=0))return;
         var incoming=++p.incoming;p.request=request===undefined?incoming:request;p.identity=m.identity||null;check(p,'pending','本次尚未核验，正在体检。');
-        onGuest(p,m,request,incoming).catch(function(error){if(current(p)&&p.incoming===incoming){check(p,'unverified','体检失败，本次尚未核验。');emit('error',{message:'体检失败：'+error.message})}});
+        if(p.asynchronous){p.scanController&&p.scanController.abort();p.scanController=new AbortController();}
+        p.pendingChecks++;pending.add(p);
+        onGuest(p,m,request,incoming,p.scanController&&p.scanController.signal).catch(function(error){if(current(p)&&p.incoming===incoming){check(p,'unverified','体检失败，本次尚未核验。');emit('error',{message:'体检失败：'+error.message})}})
+            .finally(function(){p.pendingChecks--;if(!p.pendingChecks)pending.delete(p)});
     }
     function send(p,force){
         if(!current(p))return;
@@ -77,17 +113,25 @@
         // After a later send, timeout or numbered reply, arrival order cannot identify them.
         if(p.request)p.legacyAmbiguous=true;
         clearTimeout(p.timer);p.ready=false;var request=p.request=++requestSeq;check(p,'pending','本次尚未核验，正在体检。');
+        if(p.asynchronous){p.scanController&&p.scanController.abort();p.scanController=new AbortController();}
         p.timer=setTimeout(function(){
             if(!current(p)||p.request!==request||p.ready)return;p.timer=null;p.ready=true;p.legacyAmbiguous=true;check(p,'unverified','对方体检未应答，本次尚未核验。');
+            p.scanController&&p.scanController.abort();
             emit('info',{message:'对方体检未应答；内容一致性尚未验证。补传不会降级。'});nnk.modules.guest&&nnk.modules.guest.resumeEntry(p.socket);
         },15000);
+        function failed(error){if(!current(p)||p.request!==request||p.ready)return;clearTimeout(p.timer);p.timer=null;p.legacyAmbiguous=true;check(p,'unverified','体检失败，本次尚未核验。');emit('error',{message:'体检失败：'+error.message});p.ready=true;nnk.modules.guest&&nnk.modules.guest.resumeEntry(p.socket);}
+        if(p.asynchronous){
+            p.pendingChecks++;pending.add(p);
+            return observedAsync(force,p.scanController.signal).then(function(m){if(current(p)&&p.request===request&&!p.ready)p.socket.send(JSON.stringify(['nnk_manifest',m,request]));})
+                .catch(failed).finally(function(){p.pendingChecks--;if(!p.pendingChecks)pending.delete(p);});
+        }
         try{p.socket.send(JSON.stringify(['nnk_manifest',observed(force),request]))}
-        catch(error){if(!current(p)||p.request!==request)return;clearTimeout(p.timer);p.timer=null;p.legacyAmbiguous=true;check(p,'unverified','体检失败，本次尚未核验。');emit('error',{message:'体检失败：'+error.message});p.ready=true;nnk.modules.guest&&nnk.modules.guest.resumeEntry(p.socket)}
+        catch(error){failed(error);}
     }
-    function attach(socket,role){
-        if(peers.has(socket))return;var p={socket:socket,peerId:peerBoot+'-'+(++peerSeq),role:role,ready:false,closed:false,request:0,incoming:0,legacyAmbiguous:false};peers.set(socket,p);live.add(p);
+    function attach(socket,role,options){
+        if(peers.has(socket))return;var p={socket:socket,peerId:options&&typeof options.stablePeerId==='string'?options.stablePeerId:peerBoot+'-'+(++peerSeq),role:role,ready:false,closed:false,request:0,incoming:0,legacyAmbiguous:false,timer:null,pendingChecks:0,asynchronous:options&&options.asynchronousHealth===true,fresh:options&&options.freshHealth===true,scanController:null};peers.set(socket,p);live.add(p);
         socket.onDown(function(){detach(socket)});
-        if(role==='guest')socket.onUp(function(){send(p,false)});
+        if(role==='guest')socket.onUp(function(){send(p,p.fresh)});
     }
     function handle(socket,raw){
         if(typeof raw!=='string'||raw.length>1048576)return false;
@@ -108,10 +152,15 @@
         }
         return true;
     }
-    nnk.modules.manifest={collect:collect,observed:observed,diff:diff,attach:attach,detach:detach,handle:handle,
+    nnk.modules.manifest={collect:collect,observed:observed,observedAsync:observedAsync,diff:diff,attach:attach,detach:detach,handle:handle,
+        resourceSnapshot:function(socket){
+            var selected=socket?[peers.get(socket)].filter(Boolean):Array.from(new Set(Array.from(live).concat(Array.from(pending))));
+            var result={live:socket?Number(!!selected[0]&&live.has(selected[0])):live.size,pendingTimers:0,socketReferences:0,pendingScans:localScans,pendingChecks:0,retiredPending:0};
+            selected.forEach(function(p){result.pendingTimers+=Number(p.timer!=null);result.socketReferences+=Number(!!p.socket);result.pendingChecks+=p.pendingChecks;result.retiredPending+=Number(p.closed&&!!p.pendingChecks)});return result;
+        },
         beforeEnter:function(socket){var p=peers.get(socket);return !nnk.modules.batch||!nnk.modules.batch.capability||!p||p.ready},
         recheck:function(){live.forEach(function(p){if(p.role==='guest')send(p,true)})},
-        sendManifest:function(){if(!live.size){nnk.env.game.send('nnk_manifest',observed(false));return}live.forEach(function(p){if(p.role==='guest'&&!p.ready)send(p,false)})},
+        sendManifest:function(){if(!live.size){nnk.env.game.send('nnk_manifest',observed(false));return}live.forEach(function(p){if(p.role==='guest'&&!p.ready)send(p,p.fresh)})},
         install:function(){var lib=nnk.env.lib;
             if(lib.message&&lib.message.server)lib.message.server.nnk_manifest=function(m,request){receiveHost(this.ws||this,m,request)};
             // Native client dispatch has no source socket; only a request number proves ownership.

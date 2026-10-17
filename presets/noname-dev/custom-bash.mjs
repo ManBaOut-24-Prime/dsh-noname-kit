@@ -24,6 +24,9 @@
  * `str_replace_editor` (Minimal's two tools).
  */
 
+import { resolve } from 'node:path'
+import { ensureWorkingDirectory } from './working-directory.mjs'
+
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'custom-bash'
 
@@ -164,10 +167,11 @@ export function apply(ctx, config) {
       const guard = rootSearchIssue(args.command)
       if (guard) throw new Error('已拒绝执行(全盘检索闸): ' + guard)
       const shell = await ctx.subprocess.resolveExecutable(bashPath, undefined, exec?.signal)
-      const workdir = typeof args.workdir === 'string' && args.workdir.length > 0
-        ? args.workdir
-        : exec?.agent?.session?.header?.cwd
       const signal = exec?.signal
+      const cwd = await ensureWorkingDirectory(ctx, exec?.agent, signal)
+      const workdir = typeof args.workdir === 'string' && args.workdir.length > 0
+        ? resolve(cwd ?? process.cwd(), args.workdir)
+        : cwd
       const handle = ctx.subprocess.spawn({
         argv: [shell, '-c', args.command],
         ...workdir !== undefined ? { cwd: workdir } : {},

@@ -1,4 +1,4 @@
-/* B7: compatibility guard only. The filesystem namespace is the execution gate.
+/* Compatibility guard only. The filesystem namespace is the execution gate.
  * Rejected config-only prototype is retained in scripts/official/b7-config-candidate.js.
  */
 (function() {

@@ -33,6 +33,7 @@ import { bundledKernelVersion, createBridgeSession, installKernel, kernelStatus,
 import { cachedUpdate, checkForUpdate, detectInstall, installHint } from './src/update.js'
 import { bashGuardReason, powershellGuardReason, guardMessage, pathHitsProtected } from './src/guard.js'
 import { readJsonSafeSync, writeJsonAtomicSync } from './src/store.js'
+import { readWorkingDirectory } from './presets/noname-dev/working-directory.mjs'
 import pkg from './package.json' with { type: 'json' }
 import {batchPending, batchStatus, recoverBatch, revokeBatch} from './src/batch.js'
 
@@ -650,17 +651,21 @@ export function apply(ctx, config) {
     const baseDirs = []
     let sessionCwd
     try {
-      sessionCwd = exec.agent?.session?.header?.cwd
+      sessionCwd = readWorkingDirectory(ctx, exec.agent)
       if (typeof sessionCwd === 'string' && sessionCwd) baseDirs.push(sessionCwd)
-    } catch { /* 非 agent 调用没有 agent 字段 */ }
+      const originalCwd = exec.agent?.session?.header?.cwd
+      if (typeof originalCwd === 'string' && originalCwd && originalCwd !== sessionCwd) baseDirs.push(originalCwd)
+    } catch {
+      return guardMessage('无法核对当前工作目录,请恢复工作目录服务后重试')
+    }
     try {
       /* custom-bash 的 workdir 参数优先于会话 cwd——不推进来就是个现成旁路
        * (`bash{command:"cat > extension.js", workdir:"…/extension/pk"}`) */
       const workdir = exec.arguments?.workdir
       if (typeof workdir === 'string' && workdir) {
         baseDirs.unshift(workdir)
-        // 原生 pwsh 将相对 workdir 解析到 session cwd,不能仅按插件进程 cwd 检查。
-        if ((exec.name === 'pwsh' || exec.name === 'tool:pwsh') && typeof sessionCwd === 'string' && sessionCwd) {
+        // 原生 shell 与自定义 bash 都将相对 workdir 解析到当前会话目录。
+        if ((exec.name === 'pwsh' || exec.name === 'tool:pwsh' || exec.name === 'bash' || exec.name === 'tool:bash') && typeof sessionCwd === 'string' && sessionCwd) {
           baseDirs.unshift(resolve(sessionCwd, workdir))
         }
       }
@@ -1059,7 +1064,7 @@ export function apply(ctx, config) {
               if (known && (known.fileCommitted || ['activation_pending','committed','committed_activation_required','unknown','recovery_required'].includes(known.status))) return json(409, { ok: false, code: 'BATCH_COMMITTED_OR_UNCONFIRMED', error: '文件已提交或结果待确认，不能取消文件更新或重新补传。请等待启用结果或完成恢复。' })
             }
           }
-          // B0:旧 UI 或旧内核也不能经工坊命令恢复 legacy 补传。
+          // 旧 UI 或旧内核也不能经工坊命令恢复 legacy 补传。
           if (body.action === 'transfer_pack') return json(409, {
             ok: false, code: 'TRANSFER_PAUSED',
             error: '补传已暂停：旧协议缺少客人逐请求授权与整批完整性／回滚保障。正常联机及扩展体检仍可使用，缺包可能影响对局兼容性；安全补传协议完成前不允许 legacy 降级。',

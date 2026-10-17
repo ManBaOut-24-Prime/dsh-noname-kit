@@ -1,18 +1,15 @@
 #!/usr/bin/env node
 /**
- * noname-kit 行为单测:client.js 的「任务表单」NewTaskForm(真代码渲染,迷你 React)。
+ * noname-kit 行为单测:client.js 的任务表单 NewTaskForm。
  * 运行:node scripts/test-client-form.mjs
  *
- * 背景(第 1 轮循环审计实测):表单里的竞态守卫原写成组件体内的 `var entrySeq = 0`,
- * 每次重渲染都会重建 → 守卫形同虚设。行为探针真跑出两个用户可见后果:
- *   ①快速切包 A→B 后,A 的迟到响应把条目列表整个换成 A 的;
- *   ②旧包的读取结果(约 N 行/写法提示、历史注意点条数)覆盖新包。
- * 修法=把判定挪进函数式更新里比对「当前状态 vs 请求参数」;本文件把它钉死。
- * 另锁:🎲 模式类型在编辑模式下不再渲染「目标」radio(手点「创建新」会产出
- * 「创建全新扩展包,目标文件夹当前不存在」却又是从已有列表选包的自相矛盾消息)。
+ * 异步条目与元信息请求可能乱序返回。响应必须比对当前包和条目状态，
+ * 避免迟到的旧请求覆盖当前列表、读取提示或历史注意点。
+ * 组件体内的局部递增序号会在重渲染时重置，不能充当跨渲染竞态守卫。
+ * 同时验证编辑模式的新玩法分支不渲染目标选项，且提交消息与当前模式一致。
  *
- * 渲染手法与 %TEMP%\nnk-ui-harness\probe.cjs 同源:从源码精确切出组件函数,
- * 喂迷你 React + 可控时序的 fetch 桩,跑状态机直到稳定。
+ * 从真实源码提取表单及展示组件，以迷你 React 和可控时序 fetch 桩
+ * 驱动业务状态机。展示组件使用经典外观依赖；DOM、焦点与动效不在此模拟。
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -41,11 +38,17 @@ function extractFunction(source, name) {
   }
   throw new Error('括号不配平: ' + name)
 }
-const parts = ['h', 'e', 'textField', 'radioGroup', 'formGroup', 'NewTaskForm'].map((n) => extractFunction(src, n)).join('\n')
-const makeFactory = new Function('return function (React, fetch, console) {\n' + parts + '\n return NewTaskForm;\n}')
+const parts = ['h', 'e', 'fieldLabelParts', 'FormField', 'textField', 'renderRadioGroup', 'formGroup', 'NewTaskForm'].map((n) => extractFunction(src, n)).join('\n')
+const presentationDependencies = [
+  "var appearanceBus = { value: 'classic', focusTarget: null, sub: function () { return function () {} } };",
+  'var skillMotion = new Map(); var skillScopeSerial = 0;',
+  'var document = { getElementById: function () { return null } };',
+  "function useAppearance() { return 'classic' }",
+].join('\n')
+const makeFactory = new Function('return function (React, fetch, console) {\n' + presentationDependencies + '\n' + parts + '\n return NewTaskForm;\n}')
 const quiet = { error() {}, warn() {}, log() {} }
 
-// ── 迷你 React(useState/useEffect,与 UI 测试台同款) ────────
+// ── 迷你 React:业务状态与展示组件的基础 hooks ─────────────
 let cur = null, pendingEffects = []
 function useStateImpl(init) {
   const inst = cur, i = inst.cursor++
@@ -60,8 +63,21 @@ function useEffectImpl(fn, deps) {
   const ch = s.deps === undefined || !deps || deps.length !== s.deps.length || deps.some((d, k) => !Object.is(d, s.deps[k]))
   if (ch) { pendingEffects.push({ slot: s, fn }); s.deps = deps ? deps.slice() : undefined }
 }
+let presentationId = 0
 const React = {
-  createElement(t, p, ...c) { return { type: t, props: Object.assign({}, p, { children: c.flat() }) } },
+  createElement(t, p, ...c) {
+    const children = c.flat()
+    if (typeof t === 'function') {
+      const parent = cur
+      cur = { hooks: [], cursor: 0, scheduled: false }
+      try { return t(Object.assign({}, p, { children: children.length === 1 ? children[0] : children })) }
+      finally { cur = parent }
+    }
+    return { type: t, props: Object.assign({}, p, { children }) }
+  },
+  cloneElement(node, props) { return { type: node.type, props: Object.assign({}, node.props, props) } },
+  useRef(value) { return useStateImpl(() => ({ current: value }))[0] },
+  useId() { return useStateImpl(() => 'test-ui-' + (++presentationId))[0] },
   useState: useStateImpl, useEffect: useEffectImpl,
 }
 
@@ -99,7 +115,19 @@ function walk(node, out) {
   walk(node.props && node.props.children, out)
   return out
 }
-const findAll = (pred) => walk(tree, []).filter(pred)
+function findAll(pred) {
+  const nodes = walk(tree, [])
+  const names = new Map()
+  // 测试按「组标题 + 选项值」查找；原生 name 现为组件作用域内共享的组名。
+  // 只投影查找结果，不修改真实树或回调；正查找和“不存在”断言共用同一映射。
+  for (const label of nodes.filter(n => n.type === 'label' && n.props.key != null)) {
+    const input = deepKids(label).find(n => n && n.type === 'input' && n.props.type === 'radio')
+    if (!input || !String(input.props.name).includes(':')) continue
+    const group = String(input.props.name).slice(String(input.props.name).lastIndexOf(':') + 1)
+    names.set(input, group + String(label.props.key))
+  }
+  return nodes.map(n => names.has(n) ? { ...n, props: { ...n.props, name: names.get(n) } } : n).filter(pred)
+}
 function clickRadio(name) {
   const el = findAll((n) => n.type === 'input' && n.props.type === 'radio' && n.props.name === name)[0]
   if (!el) throw new Error('找不到 radio ' + name)
@@ -109,8 +137,10 @@ function clickRadio(name) {
  *  两种结构都吃:textField 的 div>{label,textarea},以及模式规则那种 label 与
  *  textarea 平级的裸数组。 */
 const textOf = (n) => {
-  const c = n.props && n.props.children
-  return Array.isArray(c) ? c.join('') : String(c == null ? '' : c)
+  if (n == null || n === false) return ''
+  if (Array.isArray(n)) return n.map(textOf).join('')
+  if (typeof n !== 'object') return String(n)
+  return textOf(n.props && n.props.children)
 }
 /** 深度展平子节点(真 React 会递归展平数组,迷你 shim 只展一层——
  *  表单里 mode 规则框那种「label 与 textarea 放同一个数组字面量」的写法要靠它)。 */
@@ -125,6 +155,11 @@ function deepKids(node) {
   return out
 }
 function fieldByLabel(prefix) {
+  const linkedLabel = findAll(n => n.type === 'label' && n.props.htmlFor && textOf(n).startsWith(prefix))[0]
+  if (linkedLabel) {
+    const control = findAll(n => ['textarea', 'input', 'select'].includes(n.type) && n.props.id === linkedLabel.props.htmlFor)[0]
+    if (control) return control
+  }
   let found = null
   const rec = (node) => {
     if (found || node == null || typeof node !== 'object') return

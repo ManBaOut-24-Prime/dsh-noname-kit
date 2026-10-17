@@ -1,5 +1,5 @@
 /*
- * 房号信令(M2):公共 MQTT broker 上的加密信令通道。
+ * 房号信令:公共 MQTT broker 上的加密信令通道。
  *
  * 主题结构(nnk2/room/<房号指纹>/…):房号本身**不进主题**(公共 broker 上
  * 任何人都能通配符订阅;房号明文曾等于把密钥一起送出去——密文+房号即可解密),
@@ -81,7 +81,20 @@
 		try { e2.nnkSignal = true; } catch (e3) { /* 极端情况(冻结对象):不强求 */ }
 		return e2;
 	}
-	async function openRoomSession(code, role, topics, onMessage, signal) {
+	async function openRoomSession(code, role, topics, onMessage, signal, traceHook) {
+		/* Optional operation-owned evidence hook. It cannot alter the protocol,
+		 * encryption, client configuration or another session's listeners. */
+		function trace(type, detail) {
+			if (typeof traceHook !== "function") return;
+			try {
+				var evidence = JSON.parse(JSON.stringify(Object.assign({ at: Date.now(), type: type, role: role }, detail || {})));
+				var returned = traceHook(evidence);
+				if (returned && typeof returned.then === "function") Promise.resolve(returned).catch(function(error) {
+					console.error("[联机助手] 信令记录回调失败:", type, error);
+				});
+			}
+			catch (error) { console.error("[联机助手] 信令记录回调失败:", type, error); }
+		}
 		function cancelled() { var error = new Error("信令会话已取消"); error.name = "AbortError"; return error; }
 		if (signal && signal.aborted) throw cancelled();
 		if (!window.mqtt) {
@@ -90,6 +103,7 @@
 		var key = await deriveKey(code);
 		if (signal && signal.aborted) throw cancelled();
 		var cfgUrl = nnk.modules.config.get("mqttUrl") || "wss://broker.emqx.io:8084/mqtt";
+		trace("key-derived", { roomHash: api.roomHash(code), algorithm: "AES-GCM", keyDerivation: "SHA-256(nnk-room|code)", mqttUrl: cfgUrl });
 		return await new Promise(function(resolve, reject) {
 			var settled = false;
 			var closed = false;
@@ -117,12 +131,15 @@
 					if (closed) throw cancelled();
 					var payload = await seal(key, obj);
 					if (closed) throw cancelled();
+					trace("publish-encrypted", { topic: topic, plaintext: obj, ciphertext: payload, retained: Boolean(retained) });
 					client.publish(topic, payload, { qos: 0, retain: Boolean(retained) });
+					trace("publish-submitted", { topic: topic, ciphertext: payload, retained: Boolean(retained), qos: 0, brokerAcknowledged: false });
 				},
 				/* 原样发布(不清空 retained 心跳时用空载荷) */
 				publishRaw: function(topic, payload, retained) {
 					if (closed) return;
 					client.publish(topic, payload, { qos: 0, retain: Boolean(retained) });
+					trace("publish-raw-submitted", { topic: topic, payload: payload, retained: Boolean(retained), qos: 0, brokerAcknowledged: false });
 				},
 				end: function() {
 					if (closed) return;
@@ -132,6 +149,7 @@
 					client.removeListener("connect", connected);
 					client.removeListener("message", message);
 					client.removeListener("error", failed);
+					trace("session-close-requested", { settled: settled, ownListenersRemoved: ["connect", "message", "error"], closeMethod: "client.end(true)", brokerFlushAcknowledged: false });
 					try { client.end(true); } catch (e) { /* 忽略 */ }
 					if (!settled) { settled = true; reject(cancelled()); }
 				}
@@ -140,26 +158,32 @@
 				if (closed || settled) return;
 				settled = true;
 				clearTimeout(timer);
+				trace("mqtt-connected", { mqttUrl: cfgUrl, topics: topics.slice() });
 				topics.forEach(function(t) { client.subscribe(t); });
 				resolve(session);
 			}
 			function message(topic, payload) {
 				if (closed) return;
+				var originalCiphertext = String(payload);
+				trace("ciphertext-received", { topic: topic, ciphertext: originalCiphertext });
 				/* unseal 是异步的:必须先等解密完成再把明文对象交给回调,
 				 * 直接把 Promise 传过去会让调用方判定 msg.guestId/msg.sdp 恒为
 				 * undefined,提议/应答被静默丢弃(与 mqttSession 作用域坑同族) */
-				unseal(key, String(payload)).then(function(msg) {
-					if (closed) return;
+				unseal(key, originalCiphertext).then(function(msg) {
+					if (closed) { trace("decryption-result-after-closed", { topic: topic }); return; }
+					trace("decrypted-received", { topic: topic, ciphertext: originalCiphertext, plaintext: msg });
 					try {
 						onMessage(topic, msg);
 					} catch (err) {
 						console.error("[联机助手] 信令消息处理失败: " + topic, err);
 					}
-				}).catch(function() {
+				}).catch(function(error) {
+					trace("decrypt-rejected", { topic: topic, ciphertext: originalCiphertext, error: String(error) });
 					/* 解不开的载荷=别的房号/别的用途,静默忽略 */
 				});
 			}
 			function failed(err) {
+				trace("mqtt-error", { error: String(err), settled: settled, closed: closed });
 				if (!settled) {
 					settled = true;
 					session.end();

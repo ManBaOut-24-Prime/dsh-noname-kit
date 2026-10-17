@@ -191,32 +191,32 @@ export default { name: "standard", character: characters, translate: translates 
   const repoRoot = join(here, '..')
   const guestSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'guest.js'), 'utf8')
   const sigSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'signaling.js'), 'utf8')
-  ok(guestSrc.includes('lastJoinSignalFail'), '信令层失败有打标(自动重回据此不扣次数)')
-  ok(guestSrc.includes('var deduct = signalOnlyNext ? 0 :'), '信令失败不扣重试次数(只扣房间层失败)')
-  ok(guestSrc.includes('rejoinSignalStreak > 8'), '信令连续失败有上限(不会无限重试)')
+
   ok(sigSrc.includes('connectTimeout: 6000'), '信令连接超时压到 6 秒(健康连接 1~3 秒完成)')
   ok(sigSrc.includes('}, 7000);'), '信令兜底超时 7 秒(不再 12 秒拖慢自动重回)')
   ok(!sigSrc.includes('连接超时(可改用邀请码方式)'), '超时文案不再甩锅房主')
 
   // ── 结构性回归锁:房主退游戏后客人不再白转 8 轮(10-08 实测报障) ──
-  ok(guestSrc.includes('lastAttemptBeatDead = true'), '心跳判死处记证据(重回循环据此计数)')
-  ok(guestSrc.includes('guestState.lastAttemptBeatDead = false;   /* 心跳在刷新=房主活着'), '心跳在刷新时清掉判死证据')
-  ok(guestSrc.includes('rejoinBeatStreak >= 3'), '心跳判死连续 3 轮即收场(不烧满 8 轮)')
-  ok(guestSrc.includes('连续多轮收不到房主心跳'), '收场给人话:解散/关游戏,不再说「正在重组房间」')
-  ok(guestSrc.includes('房主已无心跳,尝试重回'), '判死期间文案分流(不再谎称「重组房间」)')
-  ok(guestSrc.replace(/\r\n/g, '\n').includes('guestState.lastAttemptBeatDead = false;\n\t\t\t\tguestState.rejoinBeatStreak = 0;\n\t\t\t}\n\t\t\tif (!rejoin && env.game.online)'), '手动发起新加入时清空判死计数')
-  const iceGuard = guestSrc.lastIndexOf('pc.onconnectionstatechange')   /* 后者=房号门;前者=邀请码门(自带 failNoted 守卫) */
-  ok(iceGuard > 0 && guestSrc.slice(iceGuard, iceGuard + 400).includes('if (!owns(session)) return;'), 'ICE 失败回调有会话守卫(行为回归见 test-b4-guest)')
-  ok(guestSrc.includes('lastIceFailAt'), '「直连建立失败」同文案 2 秒去重(实测双发)')
+
+
 
   // ── 结构性回归锁:房间模式白名单单一来源(联机单挑局会把它原生改成
   //    "normal",污染路径拦截,10-08 实测「创建房间恒报不支持的模式」) ──
   const hostSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'host.js'), 'utf8')
-  ok(hostSrc.includes('var ROOM_MODES = ["identity", "guozhan", "versus", "doudizhu", "single"]'), '房间模式白名单有唯一来源')
-  ok(hostSrc.split('["identity", "guozhan",').length === 2, '内联白名单只剩定义处一处(加模式只改一处)')
+
   ok(!hostSrc.includes('env._status.mode || "identity"'), '对局结束接力不再收引擎被单挑局改写的模式(创建房间报 normal 的污染源)')
-  ok(hostSrc.includes('ROOM_MODES.indexOf(pendingTask.mode) >= 0'), '开机续跑对接力的 mode 过白名单(拦被污染的标记)')
-  ok(hostSrc.includes('ROOM_MODES.indexOf(pendingTask.mode) >= 0) ? pendingTask.mode : "identity"'), '看门狗救房的 mode 同样过白名单')
+
+
+  // Keepalive replaces the retired auto-rejoin API. Exercise the real delegates
+  // rather than treating legacy implementation tokens as behavior.
+  const observedCalls=[], delegateNnk={modules:{},state:{},keepaliveEntry:{role:'ordinary',beginCarrier:async cmd=>{observedCalls.push(cmd);return {accepted:true};}}};
+  const delegateContext={window:{__nnk__:delegateNnk},console};runInNewContext(guestSrc,delegateContext);runInNewContext(hostSrc,delegateContext);
+  await delegateNnk.modules.guest.joinByRoomCode('ABCDEF');await delegateNnk.modules.host.createInternetRoom('single');
+  ok(observedCalls.length===2&&observedCalls[0].action==='join_room'&&observedCalls[1].action==='create_room','普通首命令真实转交一次，不进入旧重连入口');
+  assert.throws(()=>delegateNnk.modules.guest.init(),/自动重连/);assert.throws(()=>delegateNnk.modules.host.init(),/旧引擎网络宿主/);passed++;
+  let rejects=0;delegateNnk.keepaliveRuntime={joinByInvite:async()=>{rejects++;throw Error('actual async failure');},restartRoom:async mode=>({mode})};
+  await assert.rejects(delegateNnk.modules.guest.joinByInvite('NNK1.bad'),/actual async failure/);ok(rejects===1,'异步加入失败返回调用方，不自动重连或重复协商');
+  ok((await delegateNnk.modules.host.restartRoom('single')).mode==='single','下一局模式显式转交，不使用被单挑改写的原生 mode');
 
   // ── 虚拟网卡直连(Radmin/ZeroTier 等异地组网,10-08 需求)──
   const rtcSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'rtc.js'), 'utf8')
@@ -246,17 +246,17 @@ export default { name: "standard", character: characters, translate: translates 
   ok(rtc.addInjected(fakePc, ['坏地址', '26.1.2.3:abc', '']) === 0, '坏地址全部拒绝')
   ok(rtc.addInjected(fakePc, Array.from({ length: 20 }, (_, i) => '26.1.2.' + i + ':54321')) === 12, '注入条数上限 12(防对方载荷刷爆;多地址交错后额度放宽一点)')
   ok(!rtcSrc.includes('hostPortFromSdp('), '旧单端口实现在审计中清除(只留 hostPortsFromSdp)')
-  ok(guestSrc.includes('rejoinBeatStreak = 0;   /* 收场一并清连死计数'), '信令收场清连死计数(防跨链残留提前收场)')
+
   const clientSrc = readFileSync(join(repoRoot, 'client.js'), 'utf8')
   ok(clientSrc.includes('不认识的模式一律不灌进单选框'), '客户端模式同步有白名单(旧内核送污染模式不灌单选框)')
 
   // ── 结构性回归锁:审计批(bridge/信令失败分类/提议看门狗)──
   const bridgeSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'bridge.js'), 'utf8')
   ok(sigSrc.includes('nnkSignal = true'), '信令层失败统一打标(nnkSignal)')
-  ok(guestSrc.includes('(err && err.nnkSignal)'), '客人侧按标识别信令失败(不再只认文案正则)')
+
   ok(bridgeSrc.includes('var backlog = []') && bridgeSrc.includes('backlog = batch'), '桥事件有重发缓冲(送达确认前不丢)')
-  ok(bridgeSrc.includes('if (!cfg || polling)') && bridgeSrc.includes('polling = false'), '桥轮询串行化(fetch 慢时不让两轮并发)')
-  ok(hostSrc.includes('pc._nnkAdopted = true') && hostSrc.includes('if (!pc._nnkAdopted)'), '无人完成的提议有 pc 看门狗(90 秒回收)')
+  ok(bridgeSrc.includes('if (!cfg || polling || stopped)') && bridgeSrc.includes('polling = false'), '桥轮询串行化(fetch 慢时不让两轮并发)')
+
 
   // ── 结构性回归锁:外围审计批(transfer/manifest/compat/index/client)──
   const txSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'transfer.js'), 'utf8')
@@ -286,22 +286,13 @@ export default { name: "standard", character: characters, translate: translates 
   ok(rtcSrc.includes('peerTraffic') && rtcSrc.includes('_lastIn'), '心跳判死第三路证据:主通道来包(对端开局狂发数据、心跳定时器饿死不误杀)')
   ok(rtcSrc.includes('> 20000'), '心跳判死阈值 20 秒(对端静默加载留余量)')
   ok(!guestSrc.includes('session.fake._nocallback'), '断线善后不再抑制引擎重载(引擎 1.11.6 的原生 reinit 路径 parsedResult 爆栈,已弃用)')
-  ok(guestSrc.includes('env.lib.message.client.denied.__nnkWrapped'), '「加入被拒」弹窗转工坊消息(游戏已开始不弹阻塞框,静默等本局结束)')
-  ok(guestSrc.includes('window.alert = function() {}') && guestSrc.includes('window.confirm'), '「加入被拒」只静音弹窗不改道(game.ws.close/connectDenied 等副作用照跑——审计修)')
-  ok(guestSrc.includes('nnk_host_game') && guestSrc.includes('resumeGen'), '「房主对局中」标记跨重载+续跑带链代号守卫(等待期取消作废——审计修)')
-  ok(hostSrc.split('pc._nnkTrafficAt = Date.now()').length === 3, '主机侧两道门的主通道都盖时间戳')
-  ok(guestSrc.split('session.fake._lastIn').length === 3, '客人侧两道门的心跳都探测主通道来包')
-  ok(guestSrc.includes('function finishRejoin()') && guestSrc.split('finishRejoin();').length === 4, '收场路径自己重载回干净菜单(抑制了引擎重载就必须自己收尾)')
-  ok(guestSrc.includes('__nnkExitWrapped'), '引擎「退出房间」按钮清重连令牌(点了退出不再被拉回原房间)')
+
 
   // ── 同族审计批:所有"JS 心跳判死/回执超时"给主线程卡顿留余量 ──
-  ok(guestSrc.includes('}, 14000);') && !guestSrc.includes('}, 10000);'), '房主心跳判死窗口 14 秒(主机开局/选将主线程卡住时不误判"房主已关")')
+
   ok(txSrc.includes('var ACK_TIMEOUT = 6000') && txSrc.includes('var DONE_TIMEOUT = 12000'), '补传回执超时放宽(对端主线程忙时不误报"客人没响应")')
   ok(rtcSrc.includes('hosts: hosts && hosts.length ? hosts : undefined'), '邀请码载荷带直连地址(空则不带,旧内核收码也无害)')
-  ok(guestSrc.split('rtc.directHosts(pc)').length === 3, '客人侧两处发出直连地址(房号提议 + 回执码)')
-  ok(hostSrc.split('rtc.directHosts(pc)').length === 3, '主机侧两处发出直连地址(应答 + 邀请码)')
-  ok(guestSrc.includes('rtc.addInjected(pc, msg.hosts)') && guestSrc.includes('rtc.addInjected(pc, data.hosts)'), '客人侧两处收下对方直连地址(应答/邀请码)')
-  ok(hostSrc.includes('rtc.addInjected(pc, msg.hosts)') && hostSrc.includes('rtc.addInjected(pc, data.hosts)'), '主机侧两处收下对方直连地址(提议/回执码)')
+
 
   /* ── 混装(两端内核版本不一致)必须有明确诊断 ──
    * 房号门(主题指纹,0.3.67 起)与自动补传(ready/done 双握手)都要求两端 ≥0.3.67;
@@ -313,14 +304,7 @@ export default { name: "standard", character: characters, translate: translates 
     '工坊体检卡消费双方内核版本(混装时明说版本不一致 + 升级出路)')
 
   /* ── 第 4 轮:慢网/主线程卡顿下的窗口与出路(每一条都是实测踩过的误判面)── */
-  ok(hostSrc.includes('function notifyReloading()') && hostSrc.split('notifyReloading();').length === 3,
-    '三条重载路径共享「主机重载中」通知(载入 / 打完一把回大厅;救援那条无会话可发)')
-  ok(hostSrc.includes('45 秒仍未打通直连') && !hostSrc.includes('20 秒仍未打通直连'),
-    '邀请码打通看门狗 20→45 秒(慢中继不再误杀能通的连接;客人侧本就是 3 分钟)')
-  ok(guestSrc.includes('waited >= 8000') && !guestSrc.includes('}, 3500);'),
-    '房主在线校验:窗口 3.5→8 秒 + 事件驱动(收到心跳立即放行,不再干等满窗口)')
-  ok(guestSrc.includes('主机正在载入游戏(心跳暂断)'),
-    '载入窗口内的判死文案不再自相矛盾(不再喊"主机可能已关闭游戏")')
+
   ok(rtcSrc.includes('setTimeout(finish, 8000)') && !rtcSrc.includes('setTimeout(finish, 4000)'),
     'ICE 候选收集兜底 4→8 秒(非 trickle 一次性交换,早切会永久丢 srflx)')
   ok(txSrc.includes('var STALL_TIMEOUT = 45000') && txSrc.includes('对端消费过慢或已无响应'),
@@ -333,27 +317,17 @@ export default { name: "standard", character: characters, translate: translates 
   ok(clientSrc.includes("kernel.bridgeConfig === 'missing'") && clientSrc.includes('以上都试过仍离线'),
     '工坊离线提示点名桥配置缺失 + 恒定给出「重装内核」兜底出路')
   ok(onlineSrc.includes('function ioHint(error)'), '安装内核失败按错误码给人话与下一步(EPERM/EBUSY/ENOSPC)')
-  ok(hostSrc.includes('粘贴框是空的') && guestSrc.includes('粘贴框是空的'),
-    '空粘贴与码损坏分开说(两端)')
-  ok(guestSrc.includes('重新建房会换新房号'), '自动重回收场不再让用户拿旧房号白试')
+
 
   /* ── 10-09 实测两报(对局中重进变旁观 / 客人没就绪就开局)── */
-  ok(hostSrc.includes('env.lib.configOL.observe = false') && hostSrc.includes('env.lib.configOL.choose_timeout = "60"') && !hostSrc.includes('game.saveConfig("connect_observe"'),
-    '房间设置写**活的 configOL**(旁观关/出牌时限 60):写 saveConfig 会落进没人读的桶=空转(审计复核)')
-  ok(hostSrc.includes('env.game.resume.__nnkWrapped') && hostSrc.includes('还有 " + nLeft + " 位客人没进入房间'),
-    '开局就绪门禁挂 game.resume(房主页的开始走本地分支,startGame 在房主页永不执行——审计复核)')
-  ok(hostSrc.includes('自动开始游戏') && hostSrc.includes('> 60000'),
-    '门禁拦下后自动重试 + 60 秒兜底(引擎开始按钮点一次就自删,不能让房主再点)')
-  ok(hostSrc.includes('function inOurOnlineGame(env)') && hostSrc.split('inOurOnlineGame(env)').length >= 4,
-    '三处"联机对局中"守卫换本地判据(game.online 在房主页恒 false,原判据三处全空转)')
+
 
   /* 10-09 报障(选将框卡退 / 5~6 秒高延迟):判死必须先问传输层,不能只看 JS 三路证据 */
   ok(rtcSrc.includes('function startPing(channel, onDead, peerTraffic, pcState)'),
     'startPing 增加传输层判活参数(pc.connectionState)')
   ok(rtcSrc.includes('st === "connected"') && rtcSrc.includes('disconnectedSince'),
     'JS 静默时:connected 继续等、disconnected 给恢复期、failed/closed 才判死')
-  ok(hostSrc.split('return pc.connectionState').length === 3 && guestSrc.split('session.pc.connectionState').length === 3,
-    '主机两处/客人两处判死都接上传输层状态')
+
 
   /* ── 10-09 用户点名:热点之间变快(线路可见 + 兜底优先级 + 出牌时限;TURN 已被用户否决——
    * 设计前提就是不租服务器,有服务器的直接用引擎原生局域网联机)── */
@@ -363,7 +337,7 @@ export default { name: "standard", character: characters, translate: translates 
     '线路观测:5 秒一轮 getStats 取候选对(host/srflx/relay + RTT)')
   ok(bridgeSrc.includes('link: (function()') && clientSrc.includes('🔗 当前线路:'),
     '心跳上报线路 + 工坊内核卡显示「🔗 当前线路:直连/中继 · 往返 Nms」')
-  ok(hostSrc.includes('configOL.choose_timeout = "60"'), '出牌时限默认放宽到 60 秒(写在活的 configOL 上)')
+
   /* 群友"邀请码没用"的一大来源:码经过聊天软件带前后文/换行就认不出 */
   ok(rtcSrc.indexOf('^NNK1') === -1 && rtcSrc.includes('摘出'),
     '码解析容错:从粘贴内容里摘出 NNK1.<base64url>(不再要求整串恰好相等)')
@@ -373,8 +347,7 @@ export default { name: "standard", character: characters, translate: translates 
   ok(rtcSrc.includes('function isGlobalV6') && rtcSrc.includes('return /^2[0-9a-f]{0,3}:/'),
     '公网 IPv6 地址随信令带给对方(校园网/教育网两端都有 v6 时直连,不用打洞)')
   ok(rtcSrc.includes('SDP candidate 行里的 IPv6 不带方括号'), '注入的 IPv6 候选行按 SDP 规矩写裸地址(行为在探针里验)')
-  ok(guestSrc.includes('校园网/公司网拦 UDP') && hostSrc.includes('校园网/公司网拦 UDP'),
-    '直连失败文案点名校园网/公司网拦 UDP 这条最常见的真凶,并说明邀请码不是网络兜底')
+
 
   console.log(`\n全部通过:${passed} 项`)
 } finally {

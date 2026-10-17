@@ -16,6 +16,7 @@
 	                     * 正好赶上生成邀请码/回执码,码正文事件就永久丢了(审计发现)。
 	                     * 重发的重复风险:插件端按 seq 是追加渲染,极端情况动态里
 	                     * 重复一行——比丢码轻得多 */
+	var stopped = false, epoch = 0, controller = null, commandOverride = null, ordinaryOperations = null;
 	var polling = false;   /* 串行化:0.7 秒一拍比一次请求快时,不让两轮并发 */
 	var state = { phase: "idle", ts: Date.now() };
 
@@ -38,34 +39,44 @@
 			.catch(function() { return null; });
 	}
 
-	function dispatch(cmd) {
+	async function dispatch(cmd) {
+		if (commandOverride) return await commandOverride(cmd);
+		if (nnk.keepaliveEntry && ["create_room", "join_room", "join_invite"].indexOf(cmd.action) >= 0) return await nnk.keepaliveEntry.beginCarrier(cmd);
+		if (["set_config", "set_identity", "clear_quarantine", "manifest_recheck", "transfer_pack", "batch_decision", "batch_cancel", "batch_reload", "batch_retry"].indexOf(cmd.action) >= 0 && nnk.keepaliveEntry) {
+			if (!ordinaryOperations) {
+				var operations = await import("../keepalive/engine-operation-port.js");
+				if (stopped) throw Error("旧文档操作已失效");
+				ordinaryOperations = operations.createEngineOperationPort(nnk, { isCurrent: function () { return !stopped; }, scope: nnk.keepaliveEntry.scope || null, onEvent: emit });
+			}
+			return await ordinaryOperations.execute(cmd.action, cmd.args || {});
+		}
 		var host = nnk.modules.host;
 		var guest = nnk.modules.guest;
 		var args = cmd.args || {};
 		switch (cmd.action) {
 			case "create_room":
-				host.createInternetRoom(args.mode, args.signaling);
+				return await host.createInternetRoom(args.mode, args.signaling);
 				break;
 			case "restart_room":
-				host.restartRoom(args.mode);
+				return await host.restartRoom(args.mode);
 				break;
 			case "set_mode":
-				host.setRoomMode(args.mode);
+				return await host.setRoomMode(args.mode);
 				break;
 			case "join_room":
-				guest.joinByRoomCode(args.code);
+				return await guest.joinByRoomCode(args.code);
 				break;
 			case "invite_refresh":
 				/* kind="invite"=生成一张新码(可多张);kind="cancel"=作废第 id 张;
 				 * 不带 kind=换房号 */
-				host.refreshInvite(args.kind, args.id);
+				return await host.refreshInvite(args.kind, args.id);
 				break;
 			case "accept_answer":
 				/* id=列表行号(旧客户端不带:当最新那张待用码) */
-				host.acceptAnswer(args.id, args.code);
+				return await host.acceptAnswer(args.id, args.code);
 				break;
 			case "join_invite":
-				guest.joinByInvite(args.code);
+				return await guest.joinByInvite(args.code);
 				break;
 			case "transfer_pack":
 				if (nnk.modules.transfer) {
@@ -145,9 +156,9 @@
 	}
 
 	/* 命令执行报错时把堆栈前几行带回工坊——引擎/扩展深处的错误只有堆栈能定位 */
-	function dispatchSafe(cmd) {
+	async function dispatchSafe(cmd) {
 		try {
-			dispatch(cmd);
+			return await dispatch(cmd);
 		} catch (err) {
 			console.error("[联机助手] 命令执行失败:", cmd.action, err);
 			var stack = "";
@@ -159,16 +170,19 @@
 	}
 
 	function poll() {
-		if (!cfg || polling) {
+		if (!cfg || polling || stopped) {
 			return;
 		}
 		polling = true;
+		var capturedEpoch = epoch;
+		controller = new AbortController();
 		var batch = backlog.concat(events.splice(0, events.length));
 		backlog = batch;   /* 先记账:这一批没确认送达前都算欠着 */
 		var req;
 		try {
 			req = fetch(cfg.baseUrl + "/online/bridge", {
 				method: "POST",
+				signal: controller.signal,
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({
 					token: cfg.token,
@@ -204,7 +218,7 @@
 					cfg: {
 						unlockUIExtensions: !!nnk.modules.config.get("unlockUIExtensions"),
 						autoUnlockExtensions: !!nnk.modules.config.get("autoUnlockExtensions"),
-						root: !!(nnk.modules.compat && nnk.modules.compat.gameRoot()),
+						root: !!(nnk.networkProfile ? nnk.networkProfile.root : nnk.modules.compat && nnk.modules.compat.gameRoot()),
 						/* 虚拟网卡直连(Radmin/ZeroTier 等):自动生效、无需开关,
 						 * 这里上报检测结果,工坊面板显示"已就绪"让用户看得见 */
 						virtualIps: (function() {
@@ -243,12 +257,18 @@
 				throw new Error("HTTP " + r.status);
 			}
 			failures = 0;
+			if (stopped || capturedEpoch !== epoch) throw Error("旧桥响应已失效");
 			return r.json();
-		}).then(function(body) {
+		}).then(async function(body) {
+			if (stopped || capturedEpoch !== epoch) return;
 			backlog = [];   /* 送达确认:清掉欠账(含本轮新事件与上轮重发) */
 			var cmds = body && body.commands || [];
-			cmds.forEach(dispatchSafe);
+			for (var i = 0; i < cmds.length; i++) {
+				if (stopped || capturedEpoch !== epoch) break;
+				await dispatchSafe(cmds[i]);
+			}
 		}).catch(function(err) {
+			if (stopped || capturedEpoch !== epoch) return;
 			failures++;
 			if (failures === 3 || failures === 10) {
 				console.warn("[联机助手] 桥暂时不通(" + failures + " 次):", err && err.message);
@@ -258,9 +278,14 @@
 		});
 	}
 
+	window.addEventListener("pagehide", function() { nnk.modules.bridge.stop("document retired"); }, {once: true});
 	nnk.modules.bridge = {
-		init: function() {
-			readBridgeConfig().then(function(c) {
+		init: async function(options) {
+			if (timer || cfg) throw Error("同一窗口桥已启动");
+			stopped = false; var initEpoch = ++epoch; commandOverride = options && options.dispatch || null;
+			var c = await readBridgeConfig();
+			if (stopped || epoch !== initEpoch) return;
+			(function(c) {
 				if (!c || !c.baseUrl || !c.token) {
 					console.log("[联机助手] 未找到桥配置(nnk-bridge.json),无头待机(联机操作不可用,重新安装内核可修复)");
 					return;
@@ -269,8 +294,25 @@
 				console.log("[联机助手] 心跳桥就绪: " + c.baseUrl);
 				poll();
 				timer = setInterval(poll, c.intervalMs || 700);
-			});
+			})(c);
 		},
+		beforeTransition: async function() {
+			var deadline = Date.now() + 10000, capturedEpoch = epoch;
+			while (ordinaryOperations) {
+				if (stopped || capturedEpoch !== epoch) throw Error("旧文档配置操作已失效");
+				var resources = ordinaryOperations.pendingSnapshot();
+				if (!resources.pendingExecutions && !resources.pendingNative) return;
+				if (Date.now() >= deadline) throw Error("原配置写入尚未完成，本次载入已停止");
+				await new Promise(function(resolve) { setTimeout(resolve, 25); });
+			}
+		},
+		stop: function(reason) {
+			stopped = true; epoch++; if (timer) clearInterval(timer); timer = null;
+			if (controller) controller.abort(reason); controller = null; cfg = null; commandOverride = null;
+			if (ordinaryOperations) ordinaryOperations.dispose(reason); ordinaryOperations = null;
+		},
+		dispatchSafe: dispatchSafe,
+		snapshot: function() { return { stopped: stopped, polling: polling, timer: !!timer, events: events.length, backlog: backlog.length, state: Object.assign({}, state) }; },
 		emit: emit,
 		setPhase: setPhase
 	};
