@@ -19,7 +19,7 @@ function connect(options={}){
   const pending=new Map(),subscriptions=new Set();let disposed=false;
   function unpack(message){
     if(!message||typeof message.ok!=='boolean')throw Error('Malformed native reply');
-    if(!message.ok)throw Object.assign(Error(message.error?.message||'Native request failed'),{name:message.error?.name||'Error'});
+    if(!message.ok)throw Object.assign(Error(message.error?.message||'Native request failed'),{name:message.error?.name||'Error',code:message.error?.code,outcome:message.error?.outcome});
     return message.value;
   }
   function onReply(_event,message){
@@ -33,7 +33,7 @@ function connect(options={}){
     if(pending.size>=32)return Promise.reject(Error('Native pending request bound exceeded'));
     const requestId=randomUUID();
     return new Promise((resolve,reject)=>{
-      const row={resolve,reject,timer:setTimeout(()=>{pending.delete(requestId);reject(Error('Native operation deadline exceeded: '+action));},10000)};
+      const row={resolve,reject,timer:setTimeout(()=>{pending.delete(requestId);reject(Object.assign(Error('Native operation deadline exceeded: '+action),/^file_/.test(action)?{code:'BATCH_RECOVERY_REQUIRED',outcome:{status:'unknown'}}:{}));},/^file_(?:collect|source|receiver|commit|abort|close|cancel)$/.test(action)?180000:10000)};
       pending.set(requestId,row);
       try{ipcRenderer.send(REQUEST,{requestId,action,args});}catch(error){pending.delete(requestId);clearTimeout(row.timer);reject(error);}
     });

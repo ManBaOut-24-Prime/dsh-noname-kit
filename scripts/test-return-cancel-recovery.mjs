@@ -1,4 +1,4 @@
-// Deterministic controller/native-adapter fixtures, not a real game or P4 result.
+// Deterministic controller/native-adapter fixtures; no real game or physical two-machine coverage.
 // The reviewed official over method is fingerprinted, never executed here.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

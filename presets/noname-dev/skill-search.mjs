@@ -1,29 +1,4 @@
-/**
- * skill-search — on-demand skill discovery and loading, replacing
- * `dsh-tool-skill`'s full-catalog injection.
- *
- * WHY: the available-skills reminder (`<available_skills>`, ~9KB with many
- * skills) is injected into the first step by dsh-tool-skill and again after
- * every promotion/compaction. That large injected block perturbs the
- * trajectory (issue #6: 0/9 anchored with the catalog present vs ~81%
- * without). We remove the catalog injection entirely and expose two small
- * tools instead — the Claude tool-search pattern:
- *
- *  - `skill_search` — list skills whose name/description match a query
- *    (summaries only, bounded; no bodies). The model discovers what exists
- *    without a 9KB dump.
- *  - `skill_load` — load ONE skill's full instructions by exact name and
- *    inject them for the NEXT request via `agent.inject` (the non-waking
- *    next-step inbox). The model (or the user) calls this only when the
- *    skill is actually needed.
- *
- * Discovery reads `ctx.skills` scoped to the calling agent, exactly like
- * dsh-tool-skill. If skills are unavailable the tools answer with a short
- * message instead of throwing.
- *
- * NOTE: this plugin REPLACES the `dsh-tool-skill` row in the composition —
- * the composition must NOT mount both, or the catalog injection returns.
- */
+/** Discover and load skills on demand. skill_search returns bounded name and description matches; skill_load reads one exact skill and injects it for the next request through agent.inject. Discovery is scoped to the calling agent. Do not mount dsh-tool-skill alongside this replacement, because it injects the full catalog. */
 
 import { ensureWorkingDirectory } from './working-directory.mjs'
 

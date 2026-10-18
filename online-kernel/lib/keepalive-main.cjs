@@ -2,6 +2,9 @@
 // NNK-owned service. Its only remote export installs listeners and returns true.
 const {app,BrowserWindow,ipcMain}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),{randomUUID}=require('node:crypto');
+const {TransferGate}=require('./transfer-gate.cjs');
+const {CarrierFileService}=require('./carrier-file-service.cjs');
+const {createCarrierFiles}=require('./carrier-files.cjs');
 const KEY=Symbol.for('nnk.keepalive.native.service.v1');
 const REQUEST='nnk-keepalive-native-request',REPLY='nnk-keepalive-native-reply';
 const BIND='nnk-keepalive-bind',PORT='nnk-keepalive-port',INVALID='nnk-keepalive-invalidated',REJECT='nnk-keepalive-bind-rejected';
@@ -25,6 +28,14 @@ function actualRoot(filename){
 function createService(){
   const roots=new Map(),ordinary=new Map(),actors=new Map(),engines=new Map(),history=[],events=[];
   let beforeQuitInstalled=false;
+  const transferGate=new TransferGate({getWindows:()=>BrowserWindow.getAllWindows(),getActor:wc=>actors.get(wc),getEngine:wc=>engines.get(wc),
+    onInvalidated:(actor,detail)=>{try{actor.wc?.send('nnk-transfer-invalidated',detail);}catch(_){}note('transfer-gate-invalidated',{actorId:actor.id,reason:detail.reason});}});
+  const fileService=new CarrierFileService({getDisk:actor=>{
+    if(!actor.fileDisk)actor.fileDisk=createCarrierFiles({root:actor.root.root,version:actor.profile.version,stockExtensions:[...(actor.profile.stockExtensions||[]),...(actor.profile.stockPlays||[])],
+      acquireGate:input=>transferGate.acquire(actor,input),verifyGate:value=>transferGate.verify(actor,value),releaseGate:(value,result)=>transferGate.release(actor,value,result)});
+    return actor.fileDisk;},emit:(actor,detail)=>{try{if(actor.wc&&!actor.wc.isDestroyed())actor.wc.send('nnk-transfer-file-event',detail);}catch(_){}}});
+  const newWindow=()=>transferGate.invalidateAll('新的游戏窗口正在打开，本批补传停止');
+  app.on('browser-window-created',newWindow);
   function note(type,data={}){events.push({at:Date.now(),type,...json(data)});if(events.length>160)events.shift();}
   function registerRoot(root){
     if(roots.has(root))return;
@@ -104,6 +115,7 @@ function createService(){
     return state;
   }
   function releaseClosedActor(actor){
+    if(actor.row.closed){transferGate.invalidateActor(actor,'联机载体已关闭');fileService.invalidateActor(actor);}
     if(actor.row.closed&&actor.engine){
       const engine=actor.engine;invalidate(engine,'carrier-native-owner-closed');
       try{if(!engine.win.isDestroyed())engine.win.destroy();}catch(error){note('carrier-engine-close-failed',{actorId:actor.id,windowId:engine.row.windowId,error:String(error)});}
@@ -182,7 +194,7 @@ function createService(){
     if(!profile||profile.root!==state.root.root||profile.origin!==new URL(src.url).origin)throw Error('Actual boot root/origin mismatch');
     if(!command||!['create_room','join_room','join_invite'].includes(command.action))throw Error('An initial online command is required');
     const actor={id:randomUUID(),wc:src.wc,win:src.win,root:state.root,origin:new URL(src.url).origin,
-      profile:json(profile),pendingCommands:[json(command)],transitionTicket:randomUUID(),row:row(src.win,'carrier'),
+      fileEpoch:transferGate.epoch(state.root.root),profile:json(profile),pendingCommands:[json(command)],transitionTicket:randomUUID(),row:row(src.win,'carrier'),
       starts:0,runToken:null,committed:false,revoked:false,navigationCount:0,unexpected:0,engine:null,generation:0,operationGeneration:0,owned:[],sourceState:state};
     const target=new URL('/extension/'+encodeURIComponent('联机助手')+'/keepalive/carrier.html',actor.origin);
     target.searchParams.set('nnkTransition',actor.transitionTicket);actor.carrierURL=target.href;
@@ -191,7 +203,7 @@ function createService(){
     ownListener(src.wc,'did-start-navigation',(event,url,inPlace,isMain)=>{
       const nav=navArgs(event,url,inPlace,isMain);if(!nav.main||nav.inPlace)return;
       actor.navigationCount++;
-      if(actor.navigationCount!==1||nav.url!==actor.carrierURL){actor.revoked=true;actor.unexpected++;if(actor.engine)invalidate(actor.engine,'carrier-document-replaced',nav);}
+      if(actor.navigationCount!==1||nav.url!==actor.carrierURL){actor.revoked=true;actor.unexpected++;transferGate.invalidateActor(actor,'原联机文档已退役');fileService.invalidateActor(actor);if(actor.engine)invalidate(actor.engine,'carrier-document-replaced',nav);}
       note('carrier-navigation',{actorId:actor.id,...nav,count:actor.navigationCount,unexpected:actor.unexpected});
     },actor.owned);
     ownListener(src.wc,'did-frame-navigate',(event,url,code,text,isMain)=>{
@@ -207,6 +219,7 @@ function createService(){
   }
   const sameCreation=(a,b)=>!!a&&!!b&&creationFields.every(k=>a[k]===b[k]);
   function createGame(actor,input){
+    transferGate.assertGameAllowed(actor);
     if(actor.engine)throw Error('Previous native owner must be confirmed destroyed');
     const operation=creationOperation(input);if(operation.operationGeneration<=actor.operationGeneration)throw Error('Fresh game operation required');
     const before=new Set(BrowserWindow.getAllWindows());
@@ -312,17 +325,22 @@ function createService(){
     if(name==='retireGameCreation')return retireGameCreation(actor,args[0]);
     if(name==='closeGame')return closeGame(actor,args[0],args[1]);
     if(name==='confirmClosed')return confirmClosed(actor,args[0]);
-    if(name==='snapshot')return snapshot(actor);
+    if(/^file_/.test(name)){if(args.length!==1)throw Error('One bounded file operation required');return fileService.request(actor,name,args[0]);}
+    if(name==='transferReadiness')return transferGate.readiness(actor);
+    if(name==='snapshot')return {...snapshot(actor),transfer:transferGate.readiness(actor)};
     throw Error('Unknown native operation');
   }
   function request(event,message){
-    let response;
+    const reply=response=>{try{if(message?.sync===true)event.returnValue=response;else event.reply(REPLY,response);}catch(_){}};
+    const failed=error=>{const detail={message:String(error.message||error),name:error.name||'Error'};if(['BATCH_RECOVERY_REQUIRED','BATCH_CANCELLED','BATCH_EXPIRED','BATCH_WORKER_UNAVAILABLE'].includes(error.code))detail.code=error.code;const outcome=error.outcome;if(outcome&&['committed','rolled_back','recovery_required','none','closed','unknown'].includes(outcome.status)){detail.outcome={status:outcome.status};if(/^[a-f0-9]{32}$/.test(outcome.id))detail.outcome.id=outcome.id;}return {requestId:typeof message?.requestId==='string'?message.requestId.slice(0,160):null,ok:false,error:detail};};
     try{
       if(!message||typeof message.requestId!=='string'||message.requestId.length>160||typeof message.action!=='string'||
         !Array.isArray(message.args)||message.args.length>8||Buffer.byteLength(JSON.stringify(message))>1048576)throw Error('Malformed bounded native request');
-      const src=source(event);response={requestId:message.requestId,ok:true,value:json(action(src,message.action,message.args)??null)};
-    }catch(error){response={requestId:typeof message?.requestId==='string'?message.requestId.slice(0,160):null,ok:false,error:{message:String(error.message||error),name:error.name||'Error'}};}
-    if(message?.sync===true)event.returnValue=response;else event.reply(REPLY,response);
+      if(message.sync===true&&/^file_/.test(message.action))throw Error('File operations require asynchronous IPC');
+      const src=source(event),value=action(src,message.action,message.args);
+      if(value&&typeof value.then==='function'){value.then(result=>reply({requestId:message.requestId,ok:true,value:json(result??null)}),error=>reply(failed(error)));return;}
+      reply({requestId:message.requestId,ok:true,value:json(value??null)});
+    }catch(error){reply(failed(error));}
   }
   function bind(event,message){
     const ports=Array.from(event.ports||[]);let src=null,engine=engines.get(event.sender)||null;
@@ -349,17 +367,18 @@ function createService(){
     }
   }
   function beforeQuit(){
+    app.removeListener('browser-window-created',newWindow);fileService.close();transferGate.close();
     ipcMain.removeListener(REQUEST,request);ipcMain.removeListener(BIND,bind);
     for(const engine of engines.values()){clearTimeout(engine.timer);for(const port of engine.pendingPorts)try{port.close();}catch(_){}}
     beforeQuitInstalled=false;
   }
   ipcMain.on(REQUEST,request);ipcMain.on(BIND,bind);app.once('before-quit',beforeQuit);beforeQuitInstalled=true;
-  return {version:1,registerRoot};
+  return {version:1,transferVersion:1,registerRoot};
 }
 function ensureInstalled(){
   const root=actualRoot(__filename);
   let service=globalThis[KEY];
-  if(service&&service.version!==1)throw Error('An incompatible NNK native service already exists');
+  if(service&&(service.version!==1||service.transferVersion!==1))throw Error('联机原生服务仍是旧版本，请正常退出并重启游戏后再使用新版补传');
   if(!service){service=createService();Object.defineProperty(globalThis,KEY,{value:service,configurable:false});}
   service.registerRoot(root);return true;
 }

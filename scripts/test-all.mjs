@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** 标准回归入口:自动发现 test-*.mjs(含 B0),串行执行并传播失败退出码。 */
+/** 标准回归入口:自动发现 test-*.mjs,串行执行并传播失败退出码。 */
 import { readdirSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'

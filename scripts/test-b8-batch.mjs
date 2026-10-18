@@ -99,9 +99,9 @@ await test('native transport detach retains committed truth and restart access w
 });
 await test('full commit requires fresh engine boot even after transport replacement',async()=>{const k=integrated();try{assert.equal(k.guest.nnk.modules.batch.canEnter(k.guest.s),true);await k.offer();await k.yes();assert.equal(k.guest.nnk.modules.batch.canEnter(k.guest.s),false);assert.equal(k.guest.nnk.modules.batch.canEnter({}),false)}finally{await k.close()}});
 await test('actual Guest admission guard returns before unlocking packs or replacing an existing game ws',async()=>{
-  // Coverage migration: removed legacy connectNow -> actual current endpoint
-  // prepare-guest. Keep the real completed file transaction's canEnter barrier;
-  // this is unrelated to informational manifest success or transport reconnect.
+  // Exercise prepare-guest admission with the completed file transaction's
+  // canEnter barrier. Informational manifest success and transport reconnect
+  // must not bypass the fresh engine boot requirement.
   const k=integrated(),document=endpointManifestFixture();let touch=0;
   try{
     await k.offer();await k.yes();await wait(()=>k.guest.nnk.modules.batch.snapshot()[0]?.status==='committed');

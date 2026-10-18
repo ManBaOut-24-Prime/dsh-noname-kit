@@ -153,8 +153,8 @@ try {
   })
   ok(npmHit.hasUpdate && npmHit.latest === '1.2.0' && npmHit.source === 'npm', 'npm 通道命中并判定有新版本')
   eq(calls.length, 1, 'npm 命中时只发一次请求')
-  /* 升级命令必须带精确版本号:带 @latest 的 add 遇上 pnpm 冷却期会静默留在旧版
-   * (用户执行后版本没变、也无报错)。启动日志照 result.installHint 提示,别给假命令 */
+  /* 升级命令携带精确版本号,避免 @latest 受 pnpm 冷却期影响。
+   * 启动日志与界面均使用 result.installHint 中的安装命令。 */
   eq(npmHit.installHint, 'dsh plugin --profile web add dsh-noname-kit@1.2.0', '升级命令带精确版本号(不是 @latest)')
 
   // 缓存:第二次不再联网
@@ -234,8 +234,8 @@ try {
   ok(!older.hasUpdate, '远端比本地旧 → 不提示更新')
 
   // ── 6) 模块接线:index.js 里 import 的每个名字都真的被导出 ──
-  // node --check 只查语法,查不出"导入了一个不存在的导出";而这种错会让插件
-  // import 失败、整个 DSH 起不来(实测踩过一次:忘了导出 cachedUpdate)。
+  // 动态导入校验可发现 node --check 语法检查无法识别的缺失导出,
+  // 确保更新模块及其调用方的导入契约一致。
   const indexUrl = new URL('../index.js', import.meta.url)
   const source = readFileSync(fileURLToPath(indexUrl), 'utf8')
   const importRe = /import\s*\{([^}]+)\}\s*from\s*'(\.\.?\/[^']+)'/g

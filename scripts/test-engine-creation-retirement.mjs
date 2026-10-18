@@ -1,8 +1,9 @@
 // Production manager + complete production native service with modeled Electron resources.
 // No actual game, transport, official files or security configuration is changed.
-import assert from 'node:assert/strict';import {EventEmitter} from 'node:events';
+import {createRequire} from 'node:module';import assert from 'node:assert/strict';import {EventEmitter} from 'node:events';
 import {readFileSync} from 'node:fs';import path from 'node:path';import {runInNewContext} from 'node:vm';import {randomUUID} from 'node:crypto';
 import {EngineBindingManager} from '../online-kernel/keepalive/engine-binding.js';
+const nativeRequire=createRequire(import.meta.url);
 const source=readFileSync(new URL('../online-kernel/lib/keepalive-main.cjs',import.meta.url),'utf8');
 const lease=(n=1)=>({partySessionId:'party',roundId:'round-'+n,operationId:'operation-'+n,operationGeneration:n,role:'host'});
 function fixture(){
@@ -12,7 +13,7 @@ function fixture(){
  class Win extends EventEmitter{constructor(){super();this.id=++sequence;this.dead=false;this.wc=new WC(this);windows.set(this.id,this);}get webContents(){if(this.dead)throw TypeError('Object has been destroyed');return this.wc;}isDestroyed(){return this.dead;}loadURL(url){this.wc.emit('did-start-navigation',{},url,false,true);this.wc.mainFrame.url=url;this.wc.emit('did-frame-navigate',{},url,200,'OK',true);return Promise.resolve();}destroy(){if(this.dead)return;this.dead=true;windows.delete(this.id);this.emit('closed');this.wc.emit('destroyed');}}
  Win.getAllWindows=()=>[...windows.values()];Win.fromId=id=>windows.get(id)||null;Win.fromWebContents=wc=>windows.get(wc.win.id)||null;
  app.on('second-instance',()=>new Win());
- const context={module:{exports:{}},exports:{},__filename:path.join(root,'extension/联机助手/lib/keepalive-main.cjs'),require:name=>name==='electron'?{app,BrowserWindow:Win,ipcMain}:name==='node:fs'?{lstatSync:()=>({isSymbolicLink:()=>false}),statSync:()=>({isFile:()=>true}),existsSync:()=>false}:name==='node:path'?path:name==='node:crypto'?{randomUUID}:(()=>{throw Error(name);})(),process:{cwd:()=>root,memoryUsage:()=>({})},Buffer,URL,Date,setTimeout,clearTimeout,queueMicrotask};
+ const context={module:{exports:{}},exports:{},__filename:path.join(root,'extension/联机助手/lib/keepalive-main.cjs'),require:name=>name.startsWith('./')?nativeRequire('../online-kernel/lib/'+name.slice(2)):name==='electron'?{app,BrowserWindow:Win,ipcMain}:name==='node:fs'?{lstatSync:()=>({isSymbolicLink:()=>false}),statSync:()=>({isFile:()=>true}),existsSync:()=>false}:name==='node:path'?path:name==='node:crypto'?{randomUUID}:(()=>{throw Error(name);})(),process:{cwd:()=>root,memoryUsage:()=>({})},Buffer,URL,Date,setTimeout,clearTimeout,queueMicrotask};
  runInNewContext(source,context);context.module.exports.ensureInstalled();const carrier=new Win();
  function call(action,...args){const event={sender:carrier.wc,senderFrame:carrier.wc.mainFrame,reply(_name,value){this.response=value;}};ipcMain.emit('nnk-keepalive-native-request',event,{requestId:randomUUID(),action,args});if(!event.response.ok)throw Error(event.response.error.message);return event.response.value;}
  const ordinary=call('classify'),transition=call('beginCarrier',ordinary.bootCapability,{root,origin:'http://localhost:8089'},{action:'create_room'});carrier.loadURL(transition.carrierURL);call('carrierStarted','fixture-carrier');
@@ -56,4 +57,4 @@ await test('A carrier close also destroys its pending exact engine and releases 
 await test('Retiring in-flight creation closes its pending port and cannot attach it to another generation',async()=>{
  const f=fixture(),m=manager(f);let deliver,closed=0;f.native.createGame=input=>{const value=f.call('createGame',input);return new Promise(resolve=>deliver=()=>resolve(value));};try{const pending=m.create(lease()).catch(e=>e);await m.acceptPort({ports:[{close(){closed++;}}]},{sourceWindowId:55,scope:{sessionId:'party',roundId:'round-1'}});assert.equal(m.pendingPorts.length,1);await m.retire('cancel pending');assert.equal(closed,1);assert.equal(m.pendingPorts.length,0);deliver();assert.match((await pending).message,/旧引擎/);}finally{m.dispose();f.close();}
 });
-console.log(`全部通过: ${passed} 项（生产JS/原生服务代码、模拟Electron资源；不替代真实原生或P4）`);
+console.log(`全部通过: ${passed} 项（生产JS/原生服务代码、模拟Electron资源；不替代真实原生或双机验证）`);

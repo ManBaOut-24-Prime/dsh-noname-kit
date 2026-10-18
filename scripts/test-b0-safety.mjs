@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import testPaths from './fixtures/test-paths.cjs';
-/* B0 行为回归:执行真实入口代码,所有传输/文件系统/游戏均为内存桩。
+/* 旧补传协议暂停行为回归:执行真实入口代码,所有传输/文件系统/游戏均为内存桩。
  * 不执行 shell,不安装内核,不写任何游戏目录。不是完整 DSH/Electron 集成测试。 */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -29,7 +29,7 @@ function sliceBetween(text, start, end) {
   return text.slice(a, b)
 }
 
-// 与 W1 原探针相同:捕获 index.js 实际注册的 guard,而不是只测正则 helper。
+// 捕获 index.js 实际注册的 guard，覆盖完整入口的写入保护。
 let guard
 const guardContext = {
   active: true, nonameDir: 'D:/audit-game', process, resolve, readWorkingDirectory, ...guardModule,
@@ -99,7 +99,7 @@ function kernel(preinstalled = false) {
     env: { lib, game: { send: (func, msg) => acks.push({ func, ...msg }) }, get: { connectNickname: () => '主机' } },
     modules: { bridge: { emit: (type, data) => events.push({ type, data }) },
       config: { get: () => true }, compat: { gameRoot: () => 'D:/audit-game' } } }
-  const context = { window: { __nnk__: nnk, require: () => { calls.fs++; throw Error('B0 不得获取文件能力') } },
+  const context = { window: { __nnk__: nnk, require: () => { calls.fs++; throw Error('旧版传输不得获取文件能力') } },
     console: quiet, setTimeout: () => { calls.timers++; return 1 }, clearTimeout() {},
     Uint8Array, Buffer, btoa: () => { throw Error('不得编码内容') }, atob: () => { calls.decode++; throw Error('不得解码内容') } }
   runInNewContext(txSource, context)
@@ -146,10 +146,10 @@ test('暂停 fail 被旧协议 onAck 识别,未知 code 不导致 legacy 继续�
   const k = kernel()
   k.lib.message.client.nnk_tx_begin({ id: 4, name: '包', files: [] })
   let resolved, cleared = 0
-  // B0 未改动的 legacy onAck 主体:验证附加 code 不破坏旧 fail 收尾分支。
+  // legacy onAck 处理器:验证暂停诊断不破坏旧 fail 收尾分支。
   const legacy = { ackWait: { id: 4, timer: 1, resolve: (value) => { resolved = value } },
     ackFailReason: '', clearTimeout: () => { cleared++ } }
-  runInNewContext(sliceBetween(txSource, 'function onAck(msg)', '/* 只对'), legacy)
+  runInNewContext(sliceBetween(txSource, 'function onAck(msg)', 'function enteredBridges()'), legacy)
   legacy.onAck(k.acks[0])
   assert.equal(resolved, false)
   assert.equal(legacy.ackWait, null)
@@ -185,7 +185,7 @@ test('已有 legacy 标记也被替换,ready/done/progress 不能解除暂停', 
   k.lib.message.server.nnk_tx_progress({ name: '包', pct: 100 })
   assertContained(k)
 })
-test('本次 B0 模块重复安装后已保存的处理器引用和底层本体均保持暂停', () => {
+test('重复安装暂停处理器后，已保存的处理器引用和底层本体均保持暂停', () => {
   const k = kernel()
   const saved = { ...k.lib.message.client }
   k.nnk.modules.transfer.install()
@@ -270,7 +270,7 @@ for (const action of ['create_room', 'join_room', 'cancel', 'clear_quarantine', 
 }
 
 // UI 真函数渲染:旧 transfer_done 历史不能让当前缺包消失。
-const cardCode = sliceBetween(source('client.js'), 'function renderManifestCard(', '/* 解散/退出房间')
+const cardCode = sliceBetween(source('client.js'), 'function renderManifestCard(', 'function leaveRoom(')
 const h = (tag, props, ...children) => ({ tag, props: props || {}, children: children.flat() })
 const helperCode = sliceBetween(source('client.js'), 'function onlineManifestCheck(', 'function onlineEventText(')
 const render = runInNewContext(helperCode + cardCode + '\nrenderManifestCard', {
@@ -291,24 +291,21 @@ for (const host of [true, false]) test('体检卡片 ' + (host ? '主机' : '客
   assert.doesNotMatch(text(tree), technicalNotice)
   assert.match(text(tree), /缺以下扩展/)
   assert.doesNotMatch(text(tree), /双方扩展一致|已补传|旧版成功/)
-  const buttons = nodes(tree).filter((n) => n.tag === 'button' && /补传/.test(text(n)))
-  if (host) assert.equal(buttons.length, 1)
-  else assert.equal(buttons.length, 0)
-  for (const button of buttons) {
-    assert.equal(button.props.disabled, true)
-    assert.equal(button.props.onClick, undefined)
-    assert.equal(button.props.title, '补传暂不可用')
+  for (const card of [emptyTree, tree]) {
+    const transferActions = nodes(card).filter((n) => n.tag === 'button' && /补传|同意本批|拒绝本批|取消本批|重新提议|重载/.test(text(n)))
+    assert.equal(transferActions.length, 0, '旧协议记录只能体检，不能取得补传或重载操作')
+    assert.match(text(card), /补传当前不可用|请自行安装或待补传条件就绪/)
   }
   for (const card of [emptyTree, tree]) {
     const recheck = nodes(card).filter((n) => n.tag === 'button' && text(n) === '重新体检')
-    assert.equal(recheck.length, host ? 0 : 1)
+    assert.equal(recheck.length, 1)
     for (const button of recheck) { assert.notEqual(button.props.disabled, true); assert.equal(typeof button.props.onClick, 'function') }
   }
 })
 
 const current = { online: true, kernelVersion: bundledKernelVersion(), kernelBuild: bundledKernelBuild(), transferPaused: true, bootStage: 'ready' }
-test('安装与运行版本具有独立 B0 标识', () => {
-  assert.equal(current.kernelVersion, '0.3.88')
+test('安装与运行版本具有独立暂停标识', () => {
+  assert.equal(current.kernelVersion, '0.3.90')
   assert.equal(current.kernelBuild, bundledKernelBuild())
   assert.ok(current.kernelBuild)
   assert.equal(kernelRuntimeStatus({ state: 'ok' }, current), 'b0_active')
@@ -316,12 +313,18 @@ test('安装与运行版本具有独立 B0 标识', () => {
 for (const [label, disk, bridge, expected] of [
   ['旧运行版本', 'ok', { kernelVersion: '0.3.80' }, 'restart_required'],
   ['同版本无新代码标识', 'ok', { kernelBuild: null }, 'restart_required'],
+  ['同版本旧代码标识', 'ok', { kernelBuild: 'obsolete-build', transferProtocol: 'nnk-transfer/1' }, 'restart_required'],
+  ['同版本旧补传能力', 'ok', { transferPaused: false, transferProtocol: 'nnk-transfer/1' }, 'restart_required'],
+  ['错误补传协议不能替代暂停保护', 'ok', { transferPaused: false, transferProtocol: 'nnk-transfer/0' }, 'restart_required'],
   ['暂停处理器未安装', 'ok', { transferPaused: false }, 'restart_required'],
   ['仅运行新代码但磁盘旧', 'stale', {}, 'restart_required'],
   ['启动尚未完成', 'ok', { bootStage: 'transfer-done' }, 'booting'],
   ['已离线', 'ok', { online: false }, 'offline'],
 ]) test(label + ' 不误判已部署生效', () => assert.equal(kernelRuntimeStatus({ state: disk }, { ...current, ...bridge }), expected))
-test('旧内核后续心跳撤销已缓存的 B0 标识', () => {
+test('当前代码的精确新协议标识可替代旧暂停保护', () => {
+  assert.equal(kernelRuntimeStatus({ state: 'ok' }, { ...current, transferPaused: false, transferProtocol: 'nnk-transfer/2' }), 'b0_active')
+})
+test('旧内核后续心跳撤销已缓存的暂停标识', () => {
   const bridge = createBridgeSession({ token: 'mock' })
   bridge.poll({ kernel: { version: current.kernelVersion, build: current.kernelBuild, transferPaused: true, stage: 'ready' } })
   assert.equal(kernelRuntimeStatus({ state: 'ok' }, bridge.snapshot()), 'b0_active')

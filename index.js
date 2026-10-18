@@ -22,6 +22,7 @@ import { KNOWLEDGE_TEXT } from './src/knowledge.js'
 import { validateExtensionCode } from './src/validate.js'
 import { searchReference } from './src/reference.js'
 import { detectCandidates } from './src/detect.js'
+import { listCatalog, readCatalog } from './src/catalog.js'
 import { writeExtension, readExtension, listBackups, rollbackExtension, extRootOf, migrateExtension, prunePackageBackups, listEntries, listEntrySkills, listAvatars } from './src/write.js'
 import { readHistory, archiveTask, listExtensionHistories, recordBackup, deleteNote } from './src/history.js'
 import { copyImages } from './src/images.js'
@@ -93,8 +94,7 @@ export function apply(ctx, config) {
   const homeBase = typeof ctx.dshHomePath === 'function' ? ctx.dshHomePath() : (ctx.dshHomePath || join(homedir(), '.dsh'))
   const dshHomeDir = resolve(homeBase)
   const settingsPath = join(dshHomeDir, 'noname-kit.json')
-  /* 安全读:解析失败先把原文件留档为 .corrupt-<ts> 再按空处理——以前的
-   * `catch → {}` 会让"下次保存整份覆盖"把用户设置静默抹掉(实测数据丢失面)。 */
+  /* 配置解析失败时先将原文件留档为 .corrupt-<ts>，再返回空配置，保留损坏内容供恢复。 */
   const readSettingsFile = () => readJsonSafeSync(settingsPath, {})
   const saved = readSettingsFile()
 
@@ -134,14 +134,7 @@ export function apply(ctx, config) {
   }
   console.log(`[noname-kit] 加载成功,游戏目录: ${active ? nonameDir : '(未配置或无效,仅生成模式;可在工坊向导里初始化)'}`)
 
-  // ── 0.5) 版本与一致性自检 ────────────────────────────────────
-  // preset(agent.cordis.yml 的 persona + residentTools 工具名白名单 + SKILL.md 的
-  // 参数文档)是插件行为的第二份手抄,复制到 ~/.dsh/.agent-presets/ 后与代码再无
-  // 任何关联:代码更新而 preset 没重装时,会话会拿到自相矛盾的指令(工具名对不上
-  // →工具在会话里静默消失;参数文档对不上→AI 写出的调用被校验挡下),而且不报错。
-  // 这里只负责"发现",修由用户在工坊 ⚙ 设置页点「重装 preset」。
-  // (曾想用目录链接让漂移不可能发生,实测否决:DSH 的 discovery 用
-  //  readdir().isDirectory() 判定,而 node 对 junction/symlink 一律报 isLink。)
+  // 检查插件版本及已安装 preset 的内容哈希。preset 使用独立目录副本，差异由用户在设置页重装；不使用 discovery 无法识别的目录链接。
   const presetDir = presetDirOf(dshHomeDir)
   const bundledDir = bundledPresetDir()
   // DSH 0.1.7 起 preset 声明在 bundle patch 里(@deepseek-ai/dsh-agent-preset 行,
@@ -374,6 +367,47 @@ export function apply(ctx, config) {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'noname_list_catalog',
+    description: 'List the read-only static content catalog for builtin character/card/mode packs and installed extensions. Start with pack summaries; specify pack or includeEntries to get IDs and source files. Coverage reports unresolved dynamic content; it is not a claim about enabled runtime content. Official sources are never writable through this catalog.',
+    parameters: {
+      source: { type: 'string', enum: ['all', 'builtin', 'extension'], description: 'Source group; defaults to all.' },
+      kind: { type: 'string', enum: ['all', 'character', 'card', 'mode'], description: 'Pack category; defaults to all. A pack can also contain skills and translations.' },
+      pack: { type: 'string', description: 'Exact pack ID from the catalog. When supplied, entries are included by default.' },
+      includeEntries: { type: 'boolean', description: 'Include static entry IDs and exact source-file ownership. Defaults to false for all packs and true for one pack.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true, properties: { ok: { type: 'boolean', required: true }, readOnly: { type: 'boolean', required: true }, error: { type: 'string' }, packs: { type: 'array', items: { type: 'object', additionalProperties: true } }, coverage: { type: 'object', additionalProperties: true } } },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+    },
+    isConcurrencySafe: () => true,
+    async execute(args) {
+      if (!active) return { ok: false, readOnly: true, packs: [], error: '未配置游戏目录，无法读取内容目录。' }
+      return listCatalog(nonameDir, args)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'noname_read_catalog',
+    description: 'Read one builtin or extension catalog entry/file without executing JavaScript or writing files. Use source/kind/pack and file exactly as returned by noname_list_catalog. entry selects a real static kind:id span; duplicate IDs require an unambiguous file. This does not enable writes or index migration for builtin content.',
+    parameters: {
+      source: { type: 'string', enum: ['builtin', 'extension'], required: true },
+      kind: { type: 'string', enum: ['character', 'card', 'mode'], required: true, description: 'Pack category from the catalog.' },
+      pack: { type: 'string', required: true, description: 'Exact pack ID from the catalog.' },
+      file: { type: 'string', description: 'Game-relative .js file path exactly as returned by the catalog. Must belong to the selected pack.' },
+      entry: { type: 'string', description: 'Optional static entry key: character:id, card:id, skill:id, translate:id or mode:id. Omit to read the selected file or pack entry file.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true, properties: { ok: { type: 'boolean', required: true }, readOnly: { type: 'boolean', required: true }, error: { type: 'string' }, code: { type: 'string' }, file: { type: 'string' }, entry: { type: 'object', additionalProperties: true }, coverage: { type: 'object', additionalProperties: true } } },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+    },
+    isConcurrencySafe: () => true,
+    async execute(args) {
+      if (!active) return { ok: false, readOnly: true, error: '未配置游戏目录，无法读取内容目录。' }
+      return readCatalog(nonameDir, args)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'noname_write_extension',
     description: 'Write a noname extension (validates first; the only write channel). Two modes: full-text (code) for first write or unindexed legacy files (pass editScope so untouched blocks must stay byte-identical); block-assembly (blocks/edits/deletes) for anchored files — the tool keeps everything you do not submit, so transcription errors are structurally impossible.',
     parameters: {
@@ -425,8 +459,7 @@ export function apply(ctx, config) {
         return { ok: false, wrote: false, error: '未配置 nonameDir(游戏本体目录):请在插件配置里填 nonameDir 后重启,或直接复制代码手动保存。' }
       }
       try {
-        // 写入方式是用户在工坊表单里的决定,不以 AI 传参为准:带 taskId 时用任务
-        // 登记的 writeMode 覆盖(实测 AI 曾把「自动写入」任务误按 manual 调用)。
+        // 写入方式由用户表单决定；带 taskId 时采用任务中登记的 writeMode。
         if (args.taskId) {
           const task = await getTask(dshHomeDir, args.taskId)
           if (task && task.writeMode && task.writeMode !== args.writeMode) {
@@ -484,8 +517,7 @@ export function apply(ctx, config) {
         const firstTarget = String((args.images && args.images[0] && args.images[0].target) || '').replace(/^image\//, '')
         const done = await setTaskImage(dshHomeDir, { taskId: args.taskId, image: firstTarget ? 'image/' + firstTarget : '' })
         if (!done.ok) {
-          /* 图片已复制但登记失败(任务不存在/taskId 写错)时不能静默:
-           * 此前被无视,工具照样回 ok,任务永远卡在"缺图"上。 */
+          /* 图片复制成功但任务登记失败时返回明确错误，避免将未登记的图片报告为完整交付。 */
           result.warning = `图片已复制,但任务登记失败:${done.error || '未知原因'}——请核对 taskId 是否与任务列表一致`
         }
         if (done.autoCompleted) {
@@ -624,8 +656,7 @@ export function apply(ctx, config) {
       if (!active) return { ok: false, error: '未配置 nonameDir,无法更新任务。' }
       const result = await markSkillsWritten(dshHomeDir, args)
       if (!result.ok) {
-        // markSkillsWritten 的 missing 分支不设 error 字段——这里绝不能把
-        // undefined 塞进返回对象(lossless JSON 拒收,实测「标记既有技能名」必炸)。
+        // missing 分支可能没有 error 字段；仅返回已定义的字段，满足 lossless JSON 的序列化要求。
         const detail = result.error
           || ((result.missing || []).length
             ? '这些名称不在任务技能清单里: ' + result.missing.join('、')
@@ -691,8 +722,7 @@ export function apply(ctx, config) {
     path: '/noname-kit-api',
     handler: async (req, res) => {
       const url = new URL(req.url ?? '/', 'http://x')
-      /* json 必须是函数声明(或用前定义):下面的 CSRF 分支要用它,而 `const json = …`
-       * 会让同步先执行的分支撞 TDZ → ReferenceError,403 根本发不出去(实测) */
+      /* json 使用可提升的函数声明，供前面的 CSRF 拒绝分支直接返回 403。 */
       function json(status, body) {
         const bodyText = JSON.stringify(body)
         res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
@@ -713,12 +743,7 @@ export function apply(ctx, config) {
       if (!loopback) {
         return json(403, { ok: false, error: '工坊接口仅接受本机发起的请求；远程来源不能读取提议或授权。' })
       }
-      /* 心跳桥(唯二的跨源调用方,来自游戏页 location.origin=游戏服务器,端口与插件不同)
-       * 单独一条规矩:Origin 必须为空(非浏览器)或**回环来源**,不看端口是否与 Host 一致。
-       * 必须查——桥的 token 就落在游戏静态目录里,而游戏自带
-       * Access-Control-Allow-Origin:*(懒人包 noname-server.js:55),用户浏览器里打开的任何
-       * 网页都能把 token 读走;原先这条路由在下面整段校验之外,拿到 token 的恶意页就能
-       * 伪造心跳/往工坊事件流灌内容/把命令队列掏空 */
+      /* 游戏心跳桥允许空 Origin 或回环来源，端口可以不同于插件 Host；拒绝外站来源，保护心跳、事件与命令队列。 */
       if (url.pathname === '/noname-kit-api/online/bridge') {
         const origin = String(req.headers.origin || '')
         if (origin && !isLoopbackName(originName(origin))) {
@@ -861,8 +886,7 @@ export function apply(ctx, config) {
           if (result.autoCompleted) {
             archived = await archiveTask(nonameDir, {
               folder: result.task.folder, taskId: result.task.id, kind: result.task.type,
-              /* 缺图提示只对「需要图的任务」成立:mode 任务与编辑任务(isCompletable 已豁免)
-               * 不该在历史摘要里被标「注意:缺图片」(实测:这两类全被误标) */
+              /* 仅对需要图片的任务生成缺图提示；模式任务和编辑已有条目的任务豁免图片条件。 */
               summary: '全部技能确认无误' + ((result.task.image || result.task.type === 'mode' || result.task.target) ? '' : '(注意:缺图片)'),
               notes: result.task.notes, rounds: result.task.rounds,
             }).catch(() => ({ totalTasks: 0 }))
@@ -1007,10 +1031,7 @@ export function apply(ctx, config) {
           /* baseUrl 是写进内核、由游戏回连本插件的地址:取 Host 的端口,但只认
            * 回环(伪造的 Host 头会把内核指到别处,让状态永远显示离线) */
           const hostHeader = String(req.headers.host || '')
-          /* Host 解析必须严:原先只 cut 最后一个冒号,`127.0.0.1:1@evil.com` 能同时骗过
-           * 回环白名单与端口取值——写进内核的 baseUrl 变成 user:pass@evil.com,游戏下次
-           * 启动就把 token/状态 POST 给外站,并把对方的回包当工坊命令执行(远程接管内核)。
-           * 端口只认纯数字,Host 不许含 @ 与空白 */
+          /* 严格解析回环 Host：端口必须为纯数字，拒绝 @ 与空白，避免将桥地址或令牌导向外站。 */
           if (/[@\s]/.test(hostHeader)) {
             return json(400, { ok: false, error: `Host 头非法(含 @ 或空白),拒绝安装:收到「${hostHeader}」` })
           }
@@ -1053,8 +1074,14 @@ export function apply(ctx, config) {
         }
         if (req.method === 'POST' && url.pathname === '/noname-kit-api/online/command') {
           const body = await readBody()
-          const actions = new Set(['create_room', 'join_room', 'invite_refresh', 'accept_answer', 'join_invite', 'transfer_pack', 'batch_decision', 'batch_cancel', 'batch_reload', 'batch_retry', 'manifest_recheck', 'clear_quarantine', 'set_config', 'set_identity', 'restart_room', 'set_mode', 'cancel'])
+          const actions = new Set(['create_room', 'join_room', 'invite_refresh', 'accept_answer', 'join_invite', 'transfer_pack', 'batch_decision', 'batch_cancel', 'batch_reload', 'batch_retry', 'batch_request', 'manifest_recheck', 'clear_quarantine', 'set_config', 'set_identity', 'restart_room', 'set_mode', 'cancel'])
           if (!actions.has(body.action)) return json(400, { ok: false, error: `未知命令: ${body.action}` })
+          if (body.action === 'batch_request') {
+            const a = body.args, s = a && a.scope
+            const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === keys.length && Object.keys(value).every(key => keys.includes(key))
+            const bounded = value => typeof value === 'string' && value.length > 0 && value.length <= 160
+            if (!exact(a, ['peerId', 'scope']) || !bounded(a.peerId) || !exact(s, ['carrierSessionId', 'partyEpoch']) || !bounded(s.carrierSessionId) || !Number.isSafeInteger(s.partyEpoch) || s.partyEpoch < 0) return json(400, { ok: false, error: '重新传输需要当前客机与会话标识' })
+          }
           if (['batch_decision','batch_cancel','batch_reload','batch_retry'].includes(body.action)) {
             const a = body.args
             if (!a || !['session', 'peerSession', 'proposal'].every(k => typeof a[k] === 'string' && /^[a-f0-9]{32}$/.test(a[k])) || !/^[a-f0-9]{64}$/.test(a.digest) || (body.action === 'batch_decision' && typeof a.yes !== 'boolean')) return json(400, { ok: false, error: '补传提议标识或明确授权值无效' })
@@ -1103,6 +1130,17 @@ export function apply(ctx, config) {
           try { return json(200, await readExtension(nonameDir, folder)) } catch (error) {
             return json(200, { folder, files: [], error: error.message })
           }
+        }
+        if (req.method === 'GET' && url.pathname === '/noname-kit-api/catalog') {
+          if (!active) return json(503, { ok: false, readOnly: true, error: '未配置游戏目录，无法读取内容目录。' })
+          const options = Object.fromEntries(['source', 'kind', 'pack'].filter(key => url.searchParams.has(key)).map(key => [key, url.searchParams.get(key)]))
+          if (url.searchParams.has('includeEntries')) options.includeEntries = url.searchParams.get('includeEntries') === 'true'
+          return json(200, await listCatalog(nonameDir, options))
+        }
+        if (req.method === 'GET' && url.pathname === '/noname-kit-api/catalog/read') {
+          if (!active) return json(503, { ok: false, readOnly: true, error: '未配置游戏目录，无法读取内容目录。' })
+          const options = Object.fromEntries(['source', 'kind', 'pack', 'file', 'entry'].filter(key => url.searchParams.has(key)).map(key => [key, url.searchParams.get(key)]))
+          return json(200, await readCatalog(nonameDir, options))
         }
         if (req.method === 'GET' && url.pathname === '/noname-kit-api/entries') {
           // 工坊「编辑已有武将/卡牌」下拉:列出包内条目 id(只读)

@@ -1,37 +1,7 @@
-/*
- * 以下为保留的 legacy 实现背景;自动/手动发送与内容接收入口当前全部暂停。
- * 已修正单文件计数/摘要;完整批次提交与恢复仍未实现,不能重新开启补传。
- * 自动补包:房主把客人缺少的扩展自动传过去。
- * 流程:客人进房 → 清单交换(manifest)→ 房主算差集 → 自动排队补传全部缺失
- * → 客人落盘 → 提示客人重启游戏、重新输房号加入(重启后清单复查,缺的续传)。
- * 通道复用引擎 ws 消息分发(同 manifest):房主 game.broadcast 分块发,
- * 客人在 lib.message.client 上收块落盘;进度经 game.send 回报房主。
- *
- * ⚠️ 为什么要有 ready/done 双握手(真机实证的坑):
- *   引擎的 game.broadcast 只发给 `client.inited === true` 的客户端
- *   (官方 game/index.js 的 broadcast 里有这个门禁),而客人的"进房→握手→inited"
- *   是一条异步链:内核在 connectNow 里发完清单时,客人多半还没 inited。旧实现
- *   直接广播数据块 → 被引擎静默丢弃 → **一个字节都没落盘,但房主照样播报
- *   「✅ 已补传」**(客人侧仍显示缺失)。更早的版本还踩过"一次灌满通道把客人
- *   踢出房间",所以背压按块检查的逻辑保留。
- *   现在改成:先发 nnk_tx_begin(房间层,引擎握手无关),等客人们回
- *   nnk_tx_ready;超过 3 秒没有任何人应答就明确失败(不再谎报成功)。
- *   收尾同样要等 nnk_tx_done 的客人回执,缺谁就报谁。
- *
- * 文件读写直接用 Node fs——两台测试机的游戏外壳(Electron)渲染进程都是
- * nodeIntegration:true、contextIsolation:false,内核以扩展身份运行在
- * 渲染进程里,window.require 可用。找不到 fs 或定位不到游戏根目录时,
- * 补包不可用并明确报错(体检展示不受影响)。
- *
- * 安全边界:只写 extension/<扩展名>/ 之下;路径拒绝 ..、绝对路径、盘符;
- * 拒绝传本内核(联机助手)自身;总体积上限 = config transferLimitMB(默认 300)。
- * 接收侧同样按上限卡死(不信房主报的 total),并且**边收边写**到临时文件,
- * 落盘前校验累计字节数——不再把整个文件攒在内存里(旧版峰值 ~3× 文件体积)。
- */
+/* Legacy 补传实现仅保留供消息兼容处理，自动发送、手动发送和内容接收入口均关闭。当前补传由批次事务协议处理，不允许降级到此模块。保留的实现通过 ready/done 回执、背压、逐块写入及单文件摘要校验处理旧消息；缺少逐请求授权与整批原子提交保障，不能用于接收扩展文件。 */
 (function() {
 	var nnk = window.__nnk__;
-	/* 安全止损:不可由配置、版本字段或 ready/done 回执解除。
-	 * 旧实现保留但入口全部关闭;这不是授权/事务修复,不得提前重新启用。 */
+	/* Legacy 补传入口固定关闭，配置、版本字段及 ready/done 回执均不能解除。 */
 	var TRANSFER_PAUSED = true;
 	var PAUSE_CODE = "TRANSFER_PAUSED";
 	var PAUSE_REASON = "补传已暂停：旧协议缺少客人逐请求授权与整批完整性／回滚保障。正常联机及扩展体检仍可使用，缺包可能影响对局兼容性；安全补传协议完成前不允许 legacy 降级。";
@@ -53,15 +23,10 @@
 	var BUFFER_LIMIT = 256 * 1024;   /* 通道积压超过 256KB 就等(保对局消息优先) */
 	var KERNEL_NAME = "联机助手";
 	var INTEGRITY = "sha256-v1"; /* 休眠协议拒绝无摘要的旧清单;不代表授权协议。 */
-	/* 回执上限:判的对象是"对端主线程何时跑到这条消息"——对端开局/选将
-	 * 等重载阶段主线程可能整段卡住,JS 回执跟着断供(同族教训:心跳判死
-	 * 被主线程卡顿骗)。给足余量,宁可慢判也不误报"客人没响应" */
+	/* 回执时限为游戏重载、开局及选将期间的主线程繁忙预留时间，避免将消息处理延迟判断为无响应。 */
 	var ACK_TIMEOUT = 6000;          /* 等客人 ready 回执的上限 */
 	var DONE_TIMEOUT = 12000;        /* 等客人 done 回执的上限 */
-	/* 背压等待上限:20→45 秒。原值按"对端卡死"上沿定,但慢网/对端主线程长卡顿
-	 * (会话来不急消费,缓冲一直高于阈值)同样会连续触发——把"慢"误报成"卡死",
-	 * 用户被告知"让客人重开游戏"白折腾一趟,已传的部分还不保留。放宽后只是
-	 * 真卡死时晚 25 秒报错,文案也改成"消费过慢/无响应" */
+	/* 背压等待上限为 45 秒，超时后报告消费过慢或无响应，为慢网及对端主线程繁忙预留处理时间。 */
 	var STALL_TIMEOUT = 45000;       /* 背压等待的上限(对端半死时不再永久卡住) */
 
 	function bridgeApi() {
@@ -99,7 +64,8 @@
 	}
 
 	function limitBytes() {
-		return (nnk.modules.config.get("transferLimitMB") || 300) * 1024 * 1024;
+		var configured = Number(nnk.modules.config.get("transferLimitMB"));
+		return Math.min(1024, Number.isFinite(configured) && configured > 0 ? configured : 300) * 1048576;
 	}
 
 	function currentBridges() {
@@ -187,12 +153,7 @@
 		}
 	}
 
-	/* 只对"已交给引擎"的客人等回执:停泊/排队的客人通道没被 lib.init.connection
-	 * 接管,他们的 nnk_tx_ack 根本到不了本内核——把他们算进必答名单,
-	 * 每次补传都会 3 秒后报"客人没响应"(真正缺包的人反而拿不到包)。
-	 * targets=本次会话冻结的参与名单(开始发送那一刻定);等回执时再与"现在还
-	 * 挂着的已进入通道"取交集——中途新放行的客人没收到过一个字节,不能算必答
-	 * (旧实现在收尾一刻重算名单,双客人场景必误报"没等到回执") */
+	/* 本次发送固定目标客人名单；等待回执时仅检查名单中当前已由引擎接管的通道，排除停泊、排队及发送开始后才加入的客人。 */
 	function enteredBridges() {
 		return currentBridges().filter(function(b) { return b._entered === true; });
 	}
@@ -656,8 +617,7 @@
 		try {
 			var fs = nodeRequire()("fs");
 			resetRx();   /* 关临时文件句柄 */
-			/* 字节校验对"跳过写入(盘上已有同尺寸)"同样适用:不校验的话,
-			 * 主机少发/截断时旧文件会被当新文件、还报成功(实测) */
+			/* 即使同尺寸文件跳过写入，也校验实际接收字节数，防止截断数据被当作完整文件。 */
 			if (rx.got !== rx.size) {
 				bridgeApi().emit("transfer_failed", { name: rx.name, message: "文件「" + rx.rel + "」收齐 " + rx.got + " / " + rx.size + " 字节,不完整,已丢弃" });
 				if (rx.tmp) {
@@ -687,8 +647,7 @@
 			return;
 		}
 		var pct = Math.min(100, Math.round(rx.doneBytes / rx.total * 100));
-		/* 每 20% 报一次,别刷屏;100% 由 tx_done 收尾统一补发(这里的相等判定
-		 * 若不去掉,重复送达的尾块会把 100% 刷好几遍——实测 4 连发) */
+		/* 每增加 20% 上报一次进度，100% 由 tx_done 统一发送，避免重复尾块重复触发完成通知。 */
 		if (pct >= rx.reported + 20) {
 			rx.reported = pct;
 			bridgeApi().emit("transfer_progress", { name: rx.name, pct: pct, side: "guest" });
@@ -750,9 +709,7 @@
 		/* 工坊命令:补传指定扩展(传单个名字或名字数组,自动排队)。
 		 * only=只发给这一条通道(清单自动补传按上报者定向,防误覆盖别人的本地包) */
 		start: startTransfer,
-		/* 定向直发:给一个引擎 client(或 HostBridge),把一条内核消息直接从它
-		 * 的隧道发过去(与补传同款,不经 game.broadcast——联机模式下广播开门
-		 * 就 return,差集回发因此从来没到过客人)。manifest 回发用它 */
+		/* 通过指定引擎 client 或 HostBridge 的隧道定向发送内核消息；manifest 回执使用此路径，不经过 game.broadcast。 */
 		sendDirect: function(client, func, payload) {
 			if (TRANSFER_PAUSED && typeof func === "string" && func.indexOf("nnk_tx_") === 0) {
 				reportPaused("");

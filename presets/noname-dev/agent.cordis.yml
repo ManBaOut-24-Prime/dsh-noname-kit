@@ -17,7 +17,7 @@
       有歧义用 ask_user_question 问清;注意 ask_user_question 的回答只消除歧义、
       不算确认——歧义澄清后把最终确认单呈现给用户,仍须等到用户明确回复「确认」。
       未确认禁止写代码(确认前的只读调研不受限:
-      可先 noname_search_reference 搜官方参考、noname_read_extension 读代码,再写确认单)。
+      可先 noname_list_catalog 列官方包/模式及扩展目录、noname_read_catalog 只读条目来源，或 noname_search_reference 搜官方参考、noname_read_extension 读扩展代码,再写确认单)。
       确认后逐技能实现,写完 noname_validate 校验通过后 noname_write_extension 写入,
       图片复制进 image/ 子目录,配音复制进 audio/skill|audio/die 子目录(绝不放本体目录),
       全部完成调
@@ -43,8 +43,8 @@
   name: ./zero-tool-bootstrap.mjs
   config:
     suppressedContextSources: [agent-instructions, skill-catalog]
-    residentTools: [noname_search_reference, noname_validate, noname_read_extension, noname_write_extension, noname_skills_written, noname_copy_images, noname_copy_audio]
-    compactionTools: [read, glob, grep, noname_search_reference, noname_validate, noname_read_extension, noname_write_extension, noname_skills_written, noname_copy_images, noname_copy_audio]
+    residentTools: [noname_list_catalog, noname_read_catalog, noname_search_reference, noname_validate, noname_read_extension, noname_write_extension, noname_skills_written, noname_copy_images, noname_copy_audio]
+    compactionTools: [read, glob, grep, noname_list_catalog, noname_read_catalog, noname_search_reference, noname_validate, noname_read_extension, noname_write_extension, noname_skills_written, noname_copy_images, noname_copy_audio]
 
 # 锚定轮固定用户消息
 - id: anchor-turn

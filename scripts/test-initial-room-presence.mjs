@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Deterministic unit fixture only: actual InitialConnector/TransportOwner with
-// in-memory MQTT/PC/DC and virtual time. No real WebRTC, game, network or P4 proof.
-// In W/scripts this uses ./fixtures/keepalive-lifecycle.mjs unchanged. For this
-// external draft, run with NNK_SOURCE_ROOT pointing to W. No source is rewritten.
+// in-memory MQTT/PC/DC and virtual time. No real WebRTC, game, network or physical two-machine coverage.
+// Resolve the adjacent lifecycle fixture, or locate it through NNK_SOURCE_ROOT
+// when this test runs outside the source tree.
 import assert from 'node:assert/strict';
 import {existsSync,readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -10,7 +10,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import path from 'node:path';
 
 const adjacent=new URL('./fixtures/keepalive-lifecycle.mjs',import.meta.url);
-assert.ok(existsSync(adjacent)||process.env.NNK_SOURCE_ROOT,'External draft requires NNK_SOURCE_ROOT; copied W/scripts file uses its adjacent fixture');
+assert.ok(existsSync(adjacent)||process.env.NNK_SOURCE_ROOT,'Missing adjacent fixture; set NNK_SOURCE_ROOT to locate the test source');
 const fixtureURL=existsSync(adjacent)?adjacent:pathToFileURL(path.resolve(process.env.NNK_SOURCE_ROOT,'scripts/fixtures/keepalive-lifecycle.mjs'));
 const connectorURL=new URL('../../online-kernel/keepalive/initial-connector.js',fixtureURL);
 const hashSource=()=>createHash('sha256').update(readFileSync(connectorURL)).digest('hex');
@@ -19,8 +19,8 @@ const {fixture,deferred,drain,until,runCases}=await import(fixtureURL.href);
 const EPOCH=1700000000000,CODE='ABC234',cases=[],observations=[];
 const test=(name,fn)=>cases.push([name,fn]);
 
-// Unlike the existing fixture's fire(ms), this clock advances Date.now and runs
-// due timers in chronological / registration order, including the 40ms poll.
+// This clock advances Date.now and runs due timers in chronological /
+// registration order, including the 40ms poll.
 function virtualClock(){
   const saved={setTimeout,clearTimeout,setInterval,clearInterval,now:Date.now};
   let now=EPOCH,nextId=0;

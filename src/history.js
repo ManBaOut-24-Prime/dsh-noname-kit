@@ -20,10 +20,7 @@ function folderPath(nonameDir, folder) {
 }
 
 export async function readHistory(nonameDir, folder) {
-  /* 走 store.js 的安全读:文件损坏(半截 JSON/形状异常)时先把原文件留档成
-   * <名字>.corrupt-<时间戳> 再按空处理 —— 此前自己 JSON.parse + catch 吞成空,
-   * 下一次写入(归档/记备份)整份覆盖,该扩展的归档/注意点/备份登记一次性静默消失
-   * (与 noname-kit.json 同类的数据丢失面,实测复现) */
+  /* 通过 store.js 安全读取历史；JSON 损坏时先保留 .corrupt-<时间戳> 副本，再使用空历史，避免后续保存静默覆盖损坏内容。 */
   const file = join(folderPath(nonameDir, folder), HISTORY_FILE)
   const parsed = await readJsonSafe(file, emptyHistory())
   const history = { ...emptyHistory(), ...parsed }
@@ -58,7 +55,7 @@ export async function archiveTask(nonameDir, { folder, taskId, kind, summary, no
       id: 'task-' + Date.now(),
       taskId: taskId || null,
       folder,
-      /* 三值映射:此前 mode 任务一律归档成 character,历史页分类/徽标与实际不符 */
+      /* 将任务类型明确映射为 character、card 或 mode，供历史分类与徽标使用。 */
       kind: kind === 'card' || kind === 'mode' ? kind : 'character',
       summary: '',
       notes: [],
@@ -118,8 +115,7 @@ export async function pruneBackupRecords(nonameDir, folder, removedFiles) {
 export async function deleteNote(nonameDir, folder, index) {
   const full = folderPath(nonameDir, folder)
   const history = await readHistory(nonameDir, folder)
-  /* NaN/小数会穿过 range 检查:Number(undefined)=NaN,splice(NaN,1) 等价于删第 0 条
-   * ——实测"删注意点"传 undefined 会把第一条悄悄删掉。必须整数校验 */
+  /* 删除位置必须是范围内整数；拒绝 NaN 与小数，防止 splice 的索引转换误删其他注意点。 */
   if (!Number.isInteger(index) || !Array.isArray(history.notes) || index < 0 || index >= history.notes.length) {
     return { ok: false, error: '注意点不存在' }
   }

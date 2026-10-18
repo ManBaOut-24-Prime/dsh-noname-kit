@@ -1,7 +1,8 @@
 'use strict';
 // File transactions. No transport, GUI, engine patch or implicit authorization.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{spawnSync,spawn}=require('node:child_process');
-const BASE='nnk-batches',SLOT=8192,MAX=300*1048576,MAX_LOCAL_FILES=32768;
+const {MAX_BYTES:MAX}=require('./transfer-policy.cjs');
+const BASE='nnk-batches',SLOT=8192,MAX_LOCAL_FILES=32768;
 // Recovery remains usable while the installed kernel directory is withdrawn.
 const ACL_SCRIPT=fs.readFileSync(path.join(__dirname,'batch-acl.ps1'),'utf8'),LOCK_SCRIPT=fs.readFileSync(path.join(__dirname,'batch-lock.ps1'),'utf8'),PUBLISH_SCRIPT=fs.readFileSync(path.join(__dirname,'batch-publish.ps1'),'utf8');
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
@@ -85,6 +86,13 @@ function acl(root,request,mode,rows,options={}){
   return mode==='capture'?JSON.parse(r.stdout.trim()):null;
 }
 function capture(root,dir,rows,request){const entries=acl(root,request,'capture',rowsAt(dir,rows));return rows.map((row,i)=>({...row,sddl:entries[i].sddl}))}
+// Both generations and the outer namespace must support the unchanged ACL
+// isolation/restore protocol. Reject unsupported tokens before withdrawing paths.
+function preflight(root,folder,d,stage){
+  const formal=path.join(root,'extension'),rows=[{path:formal,isDirectory:true,isRoot:true,ino:d.extensionRootId}];
+  for(const e of d.entries){const p=positions(root,folder,e);if(e.oldRows.length)rows.push(...rowsAt(p.target,e.oldRows));rows.push(...rowsAt(p.next,e.nextRows))}
+  acl(root,path.join(folder,'preflight-'+stage+'.json'),'preflight',rows);
+}
 function stateRead(folder){
   const bytes=fs.readFileSync(path.join(folder,'state.bin'));const valid=[];
   for(let i=0;i<2;i++){const slot=bytes.subarray(i*SLOT,(i+1)*SLOT);if(slot.length!==SLOT)continue;const signature=slot.subarray(0,64).toString();if(signature!==slot.subarray(SLOT-64).toString())continue;
@@ -134,12 +142,15 @@ function detachActive(root,a){const now=active(root);if(!now||now.owner.id!==a.o
 function sealedRead(file){const value=readJSON(file,65536);if(typeof value.body!=='string'||sha(Buffer.from(value.body))!==value.sha256)fail('Publication record integrity failed');return JSON.parse(value.body)}
 function sealedWrite(file,value){const body=JSON.stringify(value);durable(file,Buffer.from(JSON.stringify({body,sha256:sha(Buffer.from(body))})));}
 function generation(root){const file=path.join(root,BASE,'generation.json');if(!fs.existsSync(file))return '';const g=sealedRead(file);if(g.v!==1||!/^[a-f0-9]{32}$/.test(g.id)||!/^[a-f0-9]{64}$/.test(g.descriptorHash))fail('Invalid generation record');return g.id}
+function verifyAuthorizedRows(rows,files){
+  for(const f of files){const row=rows.find(r=>r.relative===f.path);if(!row||row.isDirectory||row.size!==f.size||row.sha256!==f.sha256)fail('Staged generation differs from authorized manifest; check file path casing and content')}
+}
 function publishGeneration(root,a,d,which,base,formal,options){
   const entries=[],roots=[];
   for(const e of d.entries){const rows=which==='new'?e.nextRows:e.oldRows;
     if(!rows.length){if(identity(path.join(base,e.name))!==null)fail('Unexpected old extension');continue}
     const expected=rows.map(({relative,isDirectory,ino})=>({relative,isDirectory,ino}));if(JSON.stringify(structure(path.join(base,e.name)))!==JSON.stringify(expected))fail('Recovery inventory changed');
-    if(which==='new')for(const f of d.batch.extensions.find(x=>x.name===e.name).files){const row=rows.find(r=>r.relative===f.path);if(!row||row.isDirectory||row.size!==f.size||row.sha256!==f.sha256)fail('Published generation differs from authorized manifest')}
+    if(which==='new')verifyAuthorizedRows(rows,d.batch.extensions.find(x=>x.name===e.name).files);
     roots.push(path.join(base,e.name));entries.push(...rowsAt(path.join(base,e.name),rows).map(r=>({...r,isRoot:false})));
   }
   // A sealed original outer-root ACL also survives an abruptly killed validator.
@@ -301,7 +312,11 @@ class Transaction{
         const stamp=Math.max(Date.now(),(old?.mtimeMs||0)+2000)/1000;fs.utimesSync(dest,stamp,stamp);const fd=fs.openSync(dest,'r+');try{fs.fsyncSync(fd)}finally{fs.closeSync(fd)}
         if(hashFile(dest)!==f.sha256||fs.statSync(dest).size!==f.size)fail('Staged content changed');
       }
-      const nextRows=tree(next),nextACL=capture(this.root,next,nextRows,path.join(this.folder,'capture-new-'+ext.name+'.json'));
+      const nextRows=tree(next);
+      // NTFS may preserve a pre-existing spelling when an incoming path differs only by case.
+      // Verify before any formal directory withdrawal or durable commit, while abort is safe.
+      verifyAuthorizedRows(nextRows,ext.files);
+      const nextACL=capture(this.root,next,nextRows,path.join(this.folder,'capture-new-'+ext.name+'.json'));
       const permissions=new Map(oldACL.map(r=>[r.relative.toLowerCase(),r.sddl]));for(const row of nextACL)if(permissions.has(row.relative.toLowerCase()))row.sddl=permissions.get(row.relative.toLowerCase());
       // Preserve original local ownership, group, protected DACLs and extra files.
       acl(this.root,path.join(this.folder,'metadata-new-'+ext.name+'.json'),'restore',rowsAt(next,nextACL));
@@ -309,6 +324,7 @@ class Transaction{
       entries.push({name:ext.name,oldId,nextId:identity(next),oldRows:oldACL,nextRows:nextACL,freezeNext:actualNext});
     }
     const d={v:1,id:this.id,extensionRootId:identity(path.join(this.root,'extension')),binding:this.binding,batch:this.batch,entries},bytes=Buffer.from(JSON.stringify(d));if(bytes.length>32*1048576)fail('Transaction descriptor too large');
+    preflight(this.root,this.folder,d,'prepare');
     durable(path.join(this.folder,'descriptor.json'),bytes);this.descriptor=d;this.hash=sha(bytes);this.state=stateWrite(this.folder,this.state,'prepared',this.hash,this.hook);return copy(this.batch);
   }
   commit(stillAuthorized){
@@ -318,6 +334,9 @@ class Transaction{
     try{
       const d=this.descriptor,freeze=[];
       for(const e of d.entries){const p=positions(this.root,this.folder,e);if(identity(p.target)!==e.oldId||identity(p.next)!==e.nextId)fail('Directory changed before commit')}
+      // Repeat after preparation so a changed token/DACL is rejected while the
+      // original namespace is still visible and recovery needs no ACL writes.
+      preflight(this.root,this.folder,d,'commit');
       this.state=stateWrite(this.folder,this.state,'armed',this.hash,this.hook);
       if(!stillAuthorized())fail('Authorization ended before withdrawing the namespace');
       // Withdraw first: even a crash partway through freezing/restoring ACLs has

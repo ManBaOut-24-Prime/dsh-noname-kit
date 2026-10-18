@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /*
- * test-ui-calls.mjs —— 静态扫描 client.js 的 e()/h() 调用形态(零依赖,七套件同款风格)。
+ * test-ui-calls.mjs —— 静态扫描 client.js 的 e()/h() 调用形态(零依赖)。
  *
- * 背景(实测白屏事故):内联样式写成 e('div','cls',{style:…},文本) 时,e 只吃
- * (tag, className, ...子节点),那个对象会被当子节点渲染 → React #31 → 整个浮窗
- * 被槽位吞成空白且无红字。同族变体:e(tag, {props}, kids) 会把 props 当 className
- * 字符串丢掉(样式/事件静默失效)。本测试把这两类形态钉死在源码层。
+ * e() 接收 (tag, className, ...子节点),props 对象应传给 h()。
+ * 扫描将 props 当子节点或 className 的调用,防止 React 渲染错误,
+ * 以及样式、事件参数被忽略。
  *
  * 运行: node scripts/test-ui-calls.mjs
  */

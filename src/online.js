@@ -24,9 +24,7 @@ export const KERNEL_MANIFEST = '.nnk-kernel.json'
 const COMMAND_TTL_MS = 60_000
 /** bridge.snapshot() 里 online 的判定窗口(内核 0.7s 一轮,3 秒没消息即视为离线)。 */
 const ONLINE_WINDOW_MS = 3000
-/* 房间状态宽限:游戏关掉后,最后一拍心跳的状态(房号/成员/阶段)不能永远挂
- * 在工坊上(实测:关游戏后房间还在)。30 秒=覆盖「载入到游戏」重载期间的心跳
- * 空窗(游戏页重载→内核重启),超时即视为房间已散,快照不再下发 state/role */
+/* 为游戏页面重载保留 30 秒房间状态宽限；超时后快照不再下发 state 与 role，避免显示已结束的房间。 */
 const ROOM_STATE_GRACE_MS = 30_000
 
 /** 插件包内自带的内核源目录(唯一真源)。 */
@@ -53,17 +51,17 @@ export function bundledKernelVersion() {
   return cachedKernelVersion
 }
 
-/** 补传暂停运行标识:与磁盘内容哈希分开,心跳必须来自已重启的新内核。 */
+/** 运行标识与磁盘内容哈希分开，心跳必须来自已重启的新内核。 */
 export function bundledKernelBuild() {
   const code = readFileSync(join(bundledKernelDir(), 'extension.js'), 'utf8')
   return /window\.__nnk__ = \{ version: "[^"]+", build: "([^"]+)"/.exec(code)?.[1] ?? null
 }
 
-/** 已安装文件不代表运行代码更新。只在新内核已就绪并报告暂停处理器安装后标记补传暂停生效。 */
+/** 已安装文件不代表运行代码更新；核对当前运行标识及实际协议能力。 */
 export function kernelRuntimeStatus(kernel, bridge) {
   if (!bridge?.online) return 'offline'
   if (kernel?.state !== 'ok' || bridge.kernelVersion !== bundledKernelVersion()
-    || bridge.kernelBuild !== bundledKernelBuild() || bridge.transferPaused !== true) return 'restart_required'
+    || bridge.kernelBuild !== bundledKernelBuild() || (bridge.transferPaused !== true && bridge.transferProtocol !== 'nnk-transfer/2')) return 'restart_required'
   return bridge.bootStage === 'ready' ? 'b0_active' : 'booting'
 }
 /** 目录内容哈希:相对路径与原始字节，读取失败显式抛出，不接受部分目录。 */
@@ -105,9 +103,7 @@ export function kernelStatus({ nonameDir, token }) {
   /* 内核心跳绑定在哪个 dsh(装它时写入的 baseUrl)——双 dsh 共管一个游戏目录时,
    * 心跳只发绑定方,另一方会显示离线,这个字段让绑定关系可见 */
   let boundApi = null
-  /* token 是否还是本实例的那把:noname-kit.json 损坏被留档重建后会重生成 token,
-   * 内核手里仍是老的 → 每一拍心跳都 403、lastSeen 永不刷新,工坊只显示「内核离线」,
-   * 用户被引去查"扩展启没启用"(实测关注点)。tokenMatches 让界面能直接给出出路 */
+  /* 比较内核持有的 token 与当前插件 token，向界面提供 tokenMatches，以区分令牌失配与普通离线。 */
   let tokenMatches = null
   /* 桥配置在不在:内容哈希刻意跳过 nnk-bridge.json(安装时写入、不属于内核内容),
    * 所以它丢了/坏了 state 照样报 ok——而心跳全靠它,表现只有「内核永久离线」,
@@ -132,8 +128,7 @@ export function kernelStatus({ nonameDir, token }) {
   }
 }
 
-/** 文件系统错误 → 人话 + 下一步。安装/重装内核是用户唯一能自救的动作,
- *  只回 EPERM/EBUSY 这种天书等于把用户晾在原地(实测反馈面)。 */
+/** 将文件系统错误转为可读说明，并给出安装、重装内核或处理目录占用的下一步操作。 */
 function ioHint(error) {
   const code = error && error.code
   if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') {
@@ -185,6 +180,7 @@ export function createBridgeSession({ token, syncSource }) {
       // 不粘滞:换成旧内核/缺字段时立即撤销补传暂停已生效判定。
       session.kernelBuild = typeof payload?.kernel?.build === 'string' ? payload.kernel.build : null
       session.transferPaused = payload?.kernel?.transferPaused === true
+      session.transferProtocol = payload?.kernel?.transferProtocol === 'nnk-transfer/2' ? 'nnk-transfer/2' : null
       session.bootStage = payload?.kernel?.stage ?? session.bootStage
       /* 按字段更新而非粘滞:新内核每拍都上报 role(空串=当前既非主机也非客人,
        * 是真实状态,取消房间后要能落回空);旧内核(≤0.3.42)不发该字段,保持
@@ -213,10 +209,7 @@ export function createBridgeSession({ token, syncSource }) {
         }
       }
       for (const ev of payload?.events || []) {
-        /* 内核拒收人物标识(头像武将本机没有):解除"同一值只补一次"锁——
-         * 此前一旦被拒(武将未加载/扩展未启用)就永不重发,工坊却仍显示
-         * "已保存"。带 60 秒冷却防拒绝-重发死循环,等武将随
-         * 扩展加载后自然重试成功 */
+        /* 人物标识被内核拒收时解除单次补送锁；以 60 秒冷却重试，等待对应武将或扩展加载。 */
         if (ev && ev.type === 'error' && typeof ev.message === 'string' && ev.message.indexOf('头像武将') >= 0) {
           if (!lastPushed.identityRetryAt || Date.now() - lastPushed.identityRetryAt > 60_000) {
             lastPushed.identityRetryAt = Date.now()
@@ -251,6 +244,7 @@ export function createBridgeSession({ token, syncSource }) {
         kernelVersion: session.kernelVersion,
         kernelBuild: session.kernelBuild,
         transferPaused: session.transferPaused,
+        transferProtocol: session.transferProtocol,
         bootStage: session.bootStage,
         /* 角色/房间状态只在心跳还热时下发:游戏关掉后房间随即从工坊消失,
          * 不会永远挂着最后一拍的房号;cfg 保留(身份回填/离线保存仍可用) */

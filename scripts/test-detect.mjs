@@ -3,8 +3,8 @@
  * noname-kit 单测:游戏目录自动探测(detectCandidates)。
  * 运行:node scripts/test-detect.mjs
  * 全程隔离在系统临时目录(假目录树),跑完即删。
- * 回归背景:B 站用户 decade 整合包在 D:\games\noname\decade\resources\app\src
- * (第 6 层),旧扫描 depth>4 剪枝永远扫不到,只能手填。
+ * 覆盖整合包 resources/app/src 位于第 6 层的目录结构,
+ * 并验证常规浅层结构、壳目录链及遍历剪枝。
  */
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -28,7 +28,7 @@ function makeGameRoot(dir) {
 try {
   const { detectCandidates } = await import('../src/detect.js')
 
-  // ── 1) decade 整合包结构:目标在第 6 层(用户实测漏扫的形态) ──
+  // ── 1) decade 整合包结构:目标在第 6 层 ──
   const deep = join(home, 'games', 'noname', 'decade', 'resources', 'app', 'src')
   makeGameRoot(deep)
   const r1 = await detectCandidates([home])

@@ -309,9 +309,9 @@ try {
   const mMiss2 = await tasks.markSkillsWritten(home, { taskId: '测试包-15', skills: ['不存在的技能'] })
   ok(!mMiss2.ok && mMiss2.missing.length === 1 && mMiss2.task.skills.length === 1, '非 mode 任务:回传未知技能仍报 missing(不动态登记,无回归)')
   // ── 备份往返(多文件包):写模块 → listBackups → 用列表输出回滚 ──
-  // 两个函数各自都测过,却没有"往返"用例——结果是新写的子目录支持互相不认
-  // (列表缺 backup/ 段 → 回滚报"非法的备份路径";按文档形态调又把旧内容写成
-  // 时间戳垃圾文件、真源文件没动,还返回"回滚成功")。
+  // 以 listBackups 输出直接调用回滚,验证多文件包的往返路径契约。
+  // 验证备份列表包含 backup/ 段,并将旧内容恢复到真实源文件,
+  // 不在源码目录生成时间戳文件。
   {
     const w = await import('../src/write.js')
     const fsSync = await import('node:fs')
@@ -332,9 +332,9 @@ try {
   }
 
   // ── 备份往返(单文件包 / 包根备份 / 中文模块路径 / 回滚最旧一份)──
-  // 上一段只覆盖了 ASCII 子目录模块;单文件包(包根 extension.js,最常见形态)的列表
-  // 输出是 "backup/extension.<ts>.js",回滚侧原先要求 backup 段序号 > 0 → 100% 报
-  // "非法的备份路径"(恢复通道整体不可用);中文目录/文件名又被 \w 白名单拒。
+  // 单文件包的列表返回 backup/extension.<ts>.js,
+  // 回滚应接受包根备份,并保持中文目录及文件名可用。
+  // 验证列表返回的路径可直接用于恢复。
   {
     const w = await import('../src/write.js')
     const fsSync = await import('node:fs')
@@ -356,7 +356,7 @@ try {
     const r2 = await w.rollbackExtension(home, '单文件包', oldest)
     ok(r2.ok !== false && fsSync.readFileSync(join(pkgDir, 'extension.js'), 'utf8').includes('v: 1'),
       '回滚到最旧一份成功且回滚源没被 prune 销毁')
-    // 中文子目录 + 中文模块名(写入侧放行,回滚侧原先用 \w 白名单拒绝)
+    // 中文子目录 + 中文模块名:验证写入与回滚的路径兼容性。
     fsSync.mkdirSync(join(pkgDir, '武将'), { recursive: true })
     fsSync.writeFileSync(join(pkgDir, '武将', '武将.js'), 'const character = { v: 1 };\nexport { character };')
     await w.writeExtension(home, { folder: '单文件包', file: '武将/武将.js', edits: [{ find: 'v: 1', replace: 'v: 2' }] })

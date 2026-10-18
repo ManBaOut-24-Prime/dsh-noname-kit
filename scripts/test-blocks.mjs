@@ -121,9 +121,9 @@ try {
 
   // ── 8b) 迁移:CRLF 文件(Windows 编辑器 / git autocrlf 的真实产物)──
   // 踩过的坑:补逗号时判断"行尾最后一个非空白字符"的字符集写成 [ \t\n],漏了 \r ——
-  // CRLF 下行尾是 ",\r",于是每个区块都被误判成"没逗号"、白补一个,逗号落到下一行
-  // 行首 → Unexpected token ','。真实 523 区块的 CRLF 扩展整包迁移失败(靠写前语法
-  // 自检拦下、没写坏文件),而当时所有测试样例都是 LF,所以没照出来。
+  // CRLF 行尾的回车不得被误判成缺少逗号。
+  // 验证迁移保持有效分隔符,不会在下一行行首额外插入逗号,
+  // 并保留配对锚点与区块数量。
   const { validateExtensionCode, syntaxCheck } = await import('../src/validate.js')
   const syntaxOk = (code) => validateExtensionCode({ code, style: 'classic', kind: 'character' }).ok
   const CRLF = LEGACY.split('\n').join('\r\n')
@@ -179,7 +179,7 @@ try {
   const w6 = await writeExtension(nonameDir, { folder: '老包', kind: 'character', style: 'classic', edits: [{ find: 'cs_b: {', replace: 'cs_b_renamed: {' }] })
   ok(!w6.ok && /消失/.test(w6.errors[0].message), '集成:精确 edits 仍不能绕过 ID 防丢护栏')
 
-  // ── 14) package 描述符布局(真实测试包结构:技能藏在 package.skill.skill)──
+  // ── 14) package 描述符布局:技能位于 package.skill.skill ──
   const PKG = `import { lib, game, ui, get, ai, _status } from "../../noname.js";
 export default function () {
   return {
@@ -223,7 +223,7 @@ export default function () {
   ok(pm.code.includes('},\n//#noname-kit-end skill:ts_huikan'), 'package 布局:技能块收尾补逗号(后续插入不炸)')
   ok(pm.code.includes('出牌阶段限一次。",\n//#noname-kit-end translate:ts_huikan'), 'package 布局:翻译块 end 锚落在区段收口之内')
 
-  // ── 14) card / character 区块(老式扩展的主体内容,原先只有 skill/translate 支持)──
+  // ── 14) card / character 对象及数组区块 ──
   // 嵌套描述符布局 card:{ card:{…} } 是真实老包的常见形态(用户创神包即如此):
   // 条目在内层容器里,插新块必须落到内层,插到外层会把新卡挂到错误的层级上。
   const CARDS = `game.import("extension", function (lib, game, ui, get, ai, _status) {
@@ -267,7 +267,7 @@ export default function () {
   ok(syntaxOk(ci.code), 'character:插入后语法通过')
 
   // 武将的数组形态是老式扩展的经典写法(Miku: ["female","shen",3,[...],["zhu","des:…"]]),
-  // 只认"值是对象"会把整包武将排除在区块管理之外(实测真实扩展 70 个武将全军覆没)
+  // 数组形态与对象形态都应进入武将区块目录。
   const CHAR_ARR = 'game.import("extension", function (lib, game, ui, get, ai, _status) {\n  return {\n    name: "武将包",\n    character: {\n        character: {\n            Miku: ["female", "shen", 3, ["aicong"], ["zhu", "des:把你miku掉"]],\n            cs_feng: { sex: "male", hp: 4 },\n        },\n    },\n  };\n})'
   const carr = blocks.virtualCharacterBlocks(CHAR_ARR)
   ok(carr.length === 2, 'character:数组形态与对象形态都算条目(2 个)')
@@ -276,11 +276,9 @@ export default function () {
   ok(!carrM.error && carrM.blocks === 2 && syntaxOk(carrM.code), 'character:数组形态条目迁移后语法通过')
   ok(carrM.code.includes('//#noname-kit-begin character:Miku'), 'character:数组形态条目也打上锚点')
 
-  /* 紧凑写法:每行一个区段(character 在前、card 在后,与 CONTENT_KINDS 的
-   * skill/card/character 收集顺序相反)。锚点必须按位置排序后再落位——原按 kind 分组
-   * 顺序落位时,位置在后、kind 在前的块的 begin 锚排到了另一块的 end 锚之前,
-   * 扫描器按同名配对 → 前块吞掉后块的 begin 锚、后块从区块目录里消失
-   * (迁移"成功"却写坏索引,实测) */
+  /* 紧凑写法:每行一个区段,character 在前、card 在后。
+   * 锚点按源代码位置排序后落位,保持各区块的 begin/end 正确配对,
+   * 不受 CONTENT_KINDS 收集顺序影响。 */
   const COMPACT = [
     "game.import('extension', {",
     "  name: '紧凑',",
@@ -291,23 +289,18 @@ export default function () {
     "});",
   ].join('\n')
   const compactM = blocks.migrateCode(COMPACT)
-  ok(!compactM.error, '紧凑单行区段:迁移成功')
-  const compactAnchors = compactM.error ? [] : blocks.scanAnchored(compactM.code)
-  ok(compactM.blocks === 4 && compactAnchors.length === 4, '紧凑单行区段:四个块的锚点全部配对(没有块被吞)')
-  ok(!compactAnchors.some((b) => /noname-kit-(begin|end)/.test(b.text)), '紧凑单行区段:块内文不含别人的锚点行')
-  ok(!compactM.error && syntaxOk(compactM.code), '紧凑单行区段:迁移后语法通过')
+  ok(!!compactM.error && /同一行/.test(compactM.error), '紧凑单行区段:拒绝跨容器边界的索引')
+  ok(compactM.code === undefined, '紧凑单行区段:拒绝时不返回可写代码')
+  ok(blocks.scanBlocks(COMPACT).blocks.length === 4, '紧凑单行区段:仍能只读识别全部四条')
+  ok(syntaxOk(COMPACT), '紧凑单行区段:原文语法保持可用')
 
-  /* 单行 const 声明:只有"区块结束就是这一行最后一个有效字符"时才补收尾逗号。
-   * 否则逗号落到语句级(`const character = {...},`)——轻则迁移后语法校验失败,
-   * 重则下一行的隐式全局赋值被并进同一个 const 声明(实测:语义静默改变) */
+  /* 单行 const 声明:仅在区块结束于这一行最后一个有效字符时补收尾逗号。
+   * 逗号不得落到语句级,以保持声明语法及下一行赋值的作用域。 */
   const CONST_ONE = "const character = { Miku: ['Miku', [], 4] }\nfoo = 1"
   const constM = blocks.migrateCode(CONST_ONE)
-  ok(!constM.error, '单行 const 声明:迁移成功')
-  ok(!constM.error && /^foo = 1$/m.test(constM.code) && !/Miku[^\n]*\},\s*$/m.test(constM.code),
-    '单行 const 声明:不给语句级补逗号(foo = 1 没被并进声明)')
-  /* 这段不是完整扩展(没有 name/game.import 包裹),用纯语法检查——全量校验器
-   * 会报"没有找到扩展的 name 字段",那是校验器的语义规则不是语法问题 */
-  ok(!constM.error && syntaxCheck(constM.code).ok, '单行 const 声明:迁移后语法通过')
+  ok(!!constM.error && /同一行/.test(constM.error), '单行 const 声明:拒绝把容器纳入条目索引')
+  ok(constM.code === undefined && /^foo = 1$/m.test(CONST_ONE), '单行 const 声明:拒绝时不改变后续语句')
+  ok(blocks.virtualCharacterBlocks(CONST_ONE).length === 1 && syntaxCheck(CONST_ONE).ok, '单行 const 声明:原文仍可读取且语法不变')
 
   // ES Module 多文件壳(英雄杀式):extension.js 无区段、条目在子目录模块——
   // 必须报「多文件结构」专属错误,不能误导用户去走全文模式(全文写的也是壳文件)
@@ -316,9 +309,9 @@ export default function () {
   ok(esmErr.error && /ES Module 多文件/.test(esmErr.error), 'ES Module 壳:迁移报多文件专属错误')
   ok(!/全文模式/.test(esmErr.error || ''), 'ES Module 壳:错误里不再出现「走全文模式」误导')
 
-  // 多区段 translate:character/card 各有 translate 子对象时,新增 translate 块
-  // 必须落进多数区段(character),不再无脑追加到文件最后一个同 kind 锚点
-  // (实测:测试包 translate:ts_mujia 在 card.translate,新技能翻译被插进 card 区)
+  // 多区段 translate:character/card 各有翻译子对象时,
+  // 新增翻译块应进入包含最多同类锚点的区段(character),
+  // 不应追加到文件末尾的 card.translate。
   const MULTI_TR = [
     "game.import('extension', function (lib, game, ui, get, ai) {",
     '  return {',

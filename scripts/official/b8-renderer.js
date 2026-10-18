@@ -15,7 +15,7 @@
   await lib.init.promises.js('game','update');lib.version=window.noname_update.version;
   for(const role of ['host','guest']){
     const dir=fixture+'/'+role+'/extension/联机助手/lib';fs.mkdirSync(dir,{recursive:true});
-    for(const f of ['batch-runtime.cjs','batch-wire.cjs','batch-files.cjs','batch-acl.ps1','batch-lock.ps1','batch-publish.ps1'])fs.copyFileSync(source+'/online-kernel/lib/'+f,dir+'/'+f);
+    for(const f of ['batch-runtime.cjs','batch-wire.cjs','batch-files.cjs','transfer-policy.cjs','batch-acl.ps1','batch-lock.ps1','batch-publish.ps1'])fs.copyFileSync(source+'/online-kernel/lib/'+f,dir+'/'+f);
   }
   window.__nnk__={env:{lib,game,ui,get,_status,ai},state:{},modules:{compat:{gameRoot:()=>fixture+'/guest'}}};
   (0,eval)(fs.readFileSync(source+'/online-kernel/src/batch.js','utf8'));
@@ -25,7 +25,7 @@
   await game.putDB('config','extensions',[]);await game.putDB('config','unrelated_probe','preserve');
   lib.node={clients:[],observing:[]};ui.create.roomInfo=ui.create.chat=()=>{};game.roomId='b8-probe';game.online=false;game.phaseNumber=0;
   function side(role){const events=[],nnk={env:{lib,game,ui,get,_status,ai},state:{},modules:{bridge:{emit:(type,data)=>events.push({type,data})},config:{get:()=>300},compat:{gameRoot:()=>fixture+'/'+role}}};window.__nnk__=nnk;for(const file of ['consent','rtc','transfer'])(0,eval)(fs.readFileSync(source+'/online-kernel/src/'+file+'.js','utf8'));
-    // Explicit isolated candidate activation; the shipped src/batch.js stays paused.
+    // Enable the batch runtime only for the isolated fixture, leaving the ordinary module configuration unchanged.
     nnk.modules.batch=runtime.createRuntime(nnk,{enabled:true,storage:localStorage});return {nnk,events};}
   const host=side('host'),guest=side('guest'),a=new RTCPeerConnection({iceServers:[]}),b=new RTCPeerConnection({iceServers:[]});a.onicecandidate=e=>{if(e.candidate)b.addIceCandidate(e.candidate)};b.onicecandidate=e=>{if(e.candidate)a.addIceCandidate(e.candidate)};
   const channel=a.createDataChannel('nnk-link');let remote;b.ondatachannel=e=>{remote=e.channel;guest.s=new guest.nnk.modules.rtc.FakeWebSocket(remote)};

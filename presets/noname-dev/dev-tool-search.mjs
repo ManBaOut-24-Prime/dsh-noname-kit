@@ -97,11 +97,7 @@ export function apply(ctx) {
       }
 
       try {
-        // The executing agent IS the viewing scope: preset tools register into
-        // the agent-scope layer of the tools registry, and schemas() with no
-        // scope only sees the global layer — every preset-provided tool would
-        // be invisible to keyword search (issue #24). Same pattern as the
-        // harness's own code mode (`registry.schemas(exec.agent)`).
+        // Use the executing agent as the registry viewing scope so keyword discovery includes both global and preset-provided tools.
         const schemas = ctx.tools.schemas(exec?.agent)
         const wanted = query.toLowerCase().split(/[^a-z0-9_]+/).filter(Boolean)
         const matches = schemas

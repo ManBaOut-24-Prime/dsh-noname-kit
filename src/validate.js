@@ -1,13 +1,14 @@
 /**
  * noname-kit 校验器:纯静态检查,不执行任何用户代码。
  *
- * 语法检查的原理:剥掉 import/export 后用 new Function 编译
- * (new Function 只编译不执行函数体),能抓住全角引号、漏括号、
- * await 用在非 async 里等语法级错误。
+ * 模块语法使用静态语法树解析;经典脚本使用 new Function 编译
+ * (只编译不执行函数体),能抓住漏括号等语法级错误。
  * 结构规则来自官方教程与实战:全角标点、name 一致性、translate
  * 补齐、enable 技的 ai 字段、新旧写法混用。
  */
 import { STRUCTURAL_NAMES, findAllSections, sectionProperties } from './blocks.js'
+import { isEntryId } from './entry-id.js'
+import { sourceStructure } from './module-parser.js'
 
 /** 代码区(字符串/注释之外)不允许出现的全角标点。 */
 const FULLWIDTH = /[，。；：？！“”‘’【】（）〈〉《》、※]/
@@ -38,9 +39,7 @@ function buildCodeMask(code) {
       while (i < code.length && !(code[i] === '*' && code[i + 1] === '/')) mask[i++] = 1
       if (i < code.length) { mask[i++] = 1; mask[i++] = 1 }
     } else if (c === '/' && isRegexStart(code, i)) {
-      /* 正则字面量也要遮罩:正则里的全角标点(如 s.replace(/，/g, ',') )此前会
-       * 被当作"代码里的全角标点"硬拦写;反过来正则里的引号会让掩码错位、
-       * 漏报后面真正的全角错误。 */
+      /* 遮罩正则字面量中的引号与标点，避免它们影响代码掩码及全角标点校验。 */
       mask[i++] = 1
       let cls = false
       while (i < code.length) {
@@ -88,14 +87,16 @@ function scanFullwidth(code) {
 }
 
 function detectStyle(code) {
-  const classic = /game\s*\.\s*import\s*\(\s*['"]extension['"]/.test(code)
-  const module = /export\s+default/.test(code)
+  const mask = buildCodeMask(code)
+  const hasCodeMatch = (pattern) => [...code.matchAll(pattern)].some(m => !mask[m.index + m[0].search(/\S/)])
+  const classic = hasCodeMatch(/\bgame\s*\.\s*import\s*\(\s*['"]extension['"]/g)
+  const module = hasCodeMatch(/(?:^|\n)[ \t]*(?:import(?=\s|['"{*])|export(?=\s|[{*]))/g)
   return { classic, module }
 }
 
 /**
- * 纯语法检查:剥掉 ES Module 语法(保留行号,被剥的行换成等量换行)后用 new
- * Function 编译(不执行任何代码)。用于迁移自检与多文件包模块文件的写入门禁——
+ * 纯语法检查:模块使用静态解析,经典脚本仅编译而不执行。
+ * 用于迁移自检与多文件包模块文件的写入门禁——
  * 这两类场景只有语法在变化/需要验证,扩展语义规则(name 必有等)不适用。
  */
 export function syntaxCheck(code, style) {
@@ -103,22 +104,15 @@ export function syntaxCheck(code, style) {
 }
 
 function compileCheck(code, style) {
+  if (typeof code !== 'string') return { ok: false, message: '代码必须是字符串' }
   if (style === 'classic') {
     try { new Function(code); return { ok: true } } catch (error) {
       return { ok: false, message: `语法错误: ${error.message}` }
     }
   }
-  const stripped = code
-    .replace(/^import\s*\{[^}]*\}\s*from\s*(['"])[^'"]*\1\s*;?[ \t]*$/gm, (m) => '\n'.repeat(m.split('\n').length - 1))
-    .replace(/^import\s+\*\s+as\s+\w+\s+from\s*(['"])[^'"]*\1\s*;?[ \t]*$/gm, (m) => '\n'.repeat(m.split('\n').length - 1))
-    .replace(/^import\s+\w+\s+from\s*(['"])[^'"]*\1\s*;?[ \t]*$/gm, (m) => '\n'.repeat(m.split('\n').length - 1))
-    .replace(/^import\s*(['"])[^'"]*\1\s*;?[ \t]*$/gm, (m) => '\n'.repeat(m.split('\n').length - 1))
-    .replace(/^export\s+default\s+/gm, 'var __nonameDefault = ')
-    .replace(/^export\s*\{[^}]*\}\s*;?[ \t]*$/gm, (m) => '\n'.repeat(m.split('\n').length - 1))
-    .replace(/^export\s+(?=(async\s+)?(const|let|var|function|class)\b)/gm, '')
-  try { new Function(stripped); return { ok: true } } catch (error) {
-    return { ok: false, message: `语法错误: ${error.message}` }
-  }
+  const parsed = sourceStructure(code)
+  if (parsed.syntaxOk && (style !== 'module' || parsed.parseSourceType === 'module')) return { ok: true }
+  return { ok: false, message: '语法错误: ' + (parsed.parseError || parsed.error || '无法静态解析模块源码') }
 }
 
 /** 从代码里猜扩展 name 字段的值。 */
@@ -129,23 +123,21 @@ function extractName(code) {
 
 /**
  * 启发式收集代码里定义的内部 ID(技能/武将/卡牌键名)。
- * 主路径=字符串感知的区段枚举(skill/character/card 各区段的 depth-1 属性,
- * 兼容裸键/引号键/任意嵌套布局;与区块扫描器共用实现)。
- * 附带老式运行时赋值:pack.skill.xxx = / lib.character.xxx =。
+ * 主路径=静态语法树区段枚举(skill/character/card 各区段的直接属性,
+ * 兼容裸键/引号键及受信任描述符的结构嵌套;与区块扫描器共用实现)。
+ * 附带静态可定位的 pack/lib 属性赋值,兼容 Unicode 与字符串键。
  * 不用逐键正则的原因:嵌套容器会让 lastIndex 争抢漏收真实 ID,裸键则完全
  * 不识别——区段枚举对两种布局都可靠。
  * 注意:**不收 translate 条目**——防丢护栏关心的是「定义」;若并入翻译键,
  * 改技能键而残留旧翻译时护栏会失明。
  */
-export function collectDefinedIds(code) {
+export function collectDefinedIds(code, options = {}) {
   const ids = new Set()
-  const reAssign = /(?:pack|lib)\s*\.\s*(?:skill|character|card)\s*\.\s*([A-Za-z][\w]*)\s*=/g
-  let m
-  while ((m = reAssign.exec(code)) !== null) ids.add(m[1])
+  for (const id of sourceStructure(code, options).assignedIds || []) if (isEntryId(id)) ids.add(id)
   for (const section of ['skill', 'character', 'card']) {
-    for (const sec of findAllSections(code, section)) {
-      for (const p of sectionProperties(code, sec.open, sec.close)) {
-        if (STRUCTURAL_NAMES.has(p.name)) continue
+    for (const sec of findAllSections(code, section, options)) {
+      for (const p of sectionProperties(code, sec.open, sec.close, options)) {
+        if (!isEntryId(p.name) || STRUCTURAL_NAMES.has(p.name)) continue
         ids.add(p.name)
       }
     }
@@ -186,7 +178,7 @@ export function validateExtensionCode({ code, style, kind, folder, idPrefix }) {
   errors.push(...scanFullwidth(code))
 
   // 2.5) ID 前缀约定:收集到的内部 ID 若提供了前缀,未以之开头的报 warning
-  if (idPrefix && /^[A-Za-z][\w-]*$/.test(idPrefix)) {
+  if (idPrefix && isEntryId(idPrefix)) {
     const ids = collectDefinedIds(code)
     const offenders = ids.filter((id) => !id.startsWith(idPrefix))
     if (offenders.length > 0) {

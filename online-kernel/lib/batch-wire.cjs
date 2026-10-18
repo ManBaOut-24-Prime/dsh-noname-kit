@@ -33,7 +33,7 @@ class Channel {
     this.state(ctx,this.role==='host'&&ctx.finishSent?'unknown':status,reason);this.clear(ctx);
     try{await ctx.source?.close?.()}catch(error){/* Sender read handles are best effort after termination. */}
     try{const result=await ctx.receiver?.abort?.();if(result?.status==='committed'){ctx.fileCommitted=true;ctx.transactionId=result.id;this.state(ctx,'committed_activation_required','文件已经整批提交，启用状态须确认；请检查所列扩展并启用、重启，无需重新下载。')}}
-    catch(error){this.state(ctx,'recovery_required',error.message)}
+    catch(error){ctx.cleanupError=String(error.message).slice(0,200);if(ctx.status!=='recovery_required'||!ctx.reason)this.state(ctx,'recovery_required',ctx.cleanupError)}
     try{this.frame(ctx,this.role==='host'?'cancel':'result',{status:ctx.status,reason:ctx.reason})}catch(error){/* Peer expiry closes its own attempt. */}
   }
   close(){const done=this.stop('disconnected','连接结束，旧授权不复用');this.closed=true;if(this.current)this.clear(this.current);return done}
@@ -116,7 +116,7 @@ class Channel {
       }
       // The receiver rechecks duplicate bytes rather than trusting a sequence ID.
       await ctx.receiver.chunk(m.index,m.offset,bytes,m.end);
-      if(!ctx.seen.has(m.seq)){ctx.seen.set(m.seq,fingerprint);ctx.rxNext++;ctx.received+=bytes.length;if(m.end){ctx.rxFile++;ctx.rxOffset=0}else ctx.rxOffset+=bytes.length;if(ctx.seen.size>ctx.grant.batch.count+Math.ceil(ctx.grant.batch.total/CHUNK)+WINDOW)throw Error('Too many chunks')}
+      if(!ctx.seen.has(m.seq)){ctx.seen.set(m.seq,fingerprint);ctx.rxNext++;ctx.received+=bytes.length;if(m.end){ctx.rxFile++;ctx.rxOffset=0}else ctx.rxOffset+=bytes.length;if(ctx.seen.size>ctx.grant.batch.count+Math.ceil(ctx.grant.batch.total/CHUNK)+WINDOW)throw Error('Too many chunks');const at=this.now();if(ctx.received===ctx.grant.batch.total||ctx.lastProgressAt===undefined||at-ctx.lastProgressAt>=250){ctx.lastProgressAt=at;this.state(ctx,'receiving')}}
       this.frame(ctx,'ack',{seq:m.seq});return;
     }
     if(m.kind==='finish'){

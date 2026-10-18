@@ -14,7 +14,7 @@
 	}
 	window.__nnkLoaded = true;
 	if (!window.__nnk__) {
-		window.__nnk__ = { version: "0.3.88", build: "keepalive-p2.2", modules: {}, env: null, state: {} };
+		window.__nnk__ = { version: "0.3.90", build: "keepalive-transfer-2-1g15m-r4", modules: {}, env: null, state: {} };
 	}
 
 	game.import("extension", function(lib, game, ui, get, ai, _status) {
@@ -36,9 +36,7 @@
 	window.__nnk__.boot = async function(lib, game, ui, get, ai, _status) {
 		var nnk = window.__nnk__;
 		nnk.env = { lib: lib, game: game, ui: ui, get: get, ai: ai, _status: _status };
-		/* 启动面包屑:每完成一步记一次,随心跳上报。偶发"进游戏就离线"
-		 * (双机实测)死因不明,游戏死了心跳停了,但工坊里最后一条面包屑
-		 * 能说明它死在了哪一步 */
+		/* 每完成一个启动步骤就记录启动位置，并随心跳上报，供工坊显示内核启动进度。 */
 		nnk.state.bootStage = "env-ready";
 		/* Synchronous capture precedes the first await and all legacy installs. */
 		var bootstrap = require(lib.node.path.join(window.__dirname, "extension", "联机助手", "lib", "keepalive-bootstrap.cjs"));

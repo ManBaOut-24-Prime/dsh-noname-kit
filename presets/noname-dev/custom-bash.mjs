@@ -1,28 +1,4 @@
-/**
- * custom-bash — a Windows-capable `bash` tool that registers under the SAME
- * name (`bash`) as the official persistent bash, with a Minimal-compatible
- * description, but executes through `ctx.subprocess.spawn` instead of a PTY.
- *
- * WHY: DeepSeek's first-request trajectory anchor keys on the tool SCHEMA
- * matching the RL training distribution (issue #11: persistent
- * bash + str_replace_editor anchored 5/5 at maxTokens=256000, pwsh/read
- * 8/8 standard-like). The official persistent bash uses a PTY, and DSH's PTY
- * backend is linux/darwin-only — `subprocess-local` throws "terminal
- * inspection is unsupported on platform win32". A custom tool that presents
- * the same name and a Minimal-like description but spawns Git Bash through
- * the ordinary (cross-platform) subprocess seam keeps the schema anchor
- * without the PTY dependency.
- *
- * Executable resolution (config `bashPath`):
- *  - explicit absolute path (e.g. `C:\Program Files\Git\bin\bash.exe`), or
- *  - `bash` resolved through `ctx.subprocess.resolveExecutable` (PATH lookup).
- *
- * Semantics mirror the official bash tool: `bash -c <command>` in a fresh
- * process, bounded output, non-zero exit reported not thrown. No sandbox
- * confinement on Windows (the sandbox backend is linux-only); the tool
- * description says so. The bootstrap catalog pairs this with
- * `str_replace_editor` (Minimal's two tools).
- */
+/** Register a Windows-capable bash tool through ctx.subprocess.spawn without requiring a PTY. Resolve bashPath explicitly or locate bash through PATH. Each command uses a fresh bash -c process with bounded output and reported exit status. Windows execution does not provide sandbox confinement. */
 
 import { resolve } from 'node:path'
 import { ensureWorkingDirectory } from './working-directory.mjs'
@@ -93,17 +69,7 @@ function detectGitBash() {
   return 'bash'
 }
 
-/**
- * 全盘检索闸(纯函数,便于单测):递归检索命令的起点是文件系统根(/、/c /d 这类
- * 盘符根、C:\ 这类盘符写法、~)时,返回拒绝理由;否则返回 null。
- *
- * 为什么要有:有用户实测模型在找不到扩展目录时跑了
- * `find / -maxdepth 6 -type d -name "xxx"` —— 从盘符根翻起,几分钟都出不来结果
- * (issue #1)。09-15 又见变种:模型用 `ls /c/ /d/ /e/` 找游戏目录(同根,
- * 非递归但照样把用户无关目录倒满上下文)——故 ls/dir 列盘根一并拦。只拦"起点是根"
- * 这一种形态:带具体子路径的检索/列目录照常放行;引号里的内容先摘掉再判,避免
- * `grep "see / this"` 这类误伤。误拦的代价可控:模型看到拒绝理由后写明确路径即可恢复。
- */
+/** 拒绝从文件系统根、盘符根或 ~ 发起递归检索，以及直接列出这些根目录；带具体子路径的操作照常检查。判断前排除引号中的内容，避免将普通字符串误当作检索起点。 */
 export function rootSearchIssue(command) {
   // 引号内整体恰好是根形态的,摘引号前先单独拦(find "/" / grep -r x '~' ——
   // 引号摘除防误伤的副作用是这类命令会漏,它们正是要拦的盘根检索)
@@ -114,9 +80,7 @@ export function rootSearchIssue(command) {
   const text = String(command || '')
     .replace(/"(?:[^"\\]|\\.)*"/g, '""')
     .replace(/'(?:[^'\\]|\\.)*'/g, "''")
-  // ls/dir 也在列:非递归地列盘根(issue #1 的变种,09-15 实测)同样会把用户
-  // 无关目录整屏倒进上下文(实测模型用 `ls /c/ /d/ /e/` 找游戏目录,D/E 盘
-  // 根目录全泄进模型上下文)。
+  // 同时拦截 ls 与 dir 对盘符根的非递归列举，避免将无关目录加入上下文。
   const RE = /(?:^|[\s;&(])(find|grep|rg|du|fd|locate|ls|dir)\b([^;|&>]*)/g
   let m
   while ((m = RE.exec(text))) {

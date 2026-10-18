@@ -146,8 +146,8 @@ await test('unrelated game messages remain available to native dispatch',()=>{
     peer.channel.onmessage({data:JSON.stringify(['game_message',{}])});assert.equal(received,1);
 });
 await test('actual Guest cancellation disposes the check and cannot resume from a late result',async()=>{
-    // Coverage migration: old guest.cancelJoin/auto-rejoin fixture -> current
-    // endpoint retirement; actual unchanged manifest and FakeWebSocket remain.
+    // Exercise endpoint retirement with the actual manifest module and
+    // FakeWebSocket; late callbacks must not restore the cancelled check.
     const k=endpointManifestFixture(),socket=await k.prepare(),staleMessage=socket.channel.onmessage,
         staleOpen=socket.channel.onopen,stalePortMessage=k.port.onmessage,checkTimer=[...k.timers.values()].find(t=>t.ms===15000).fn;
     const request=k.sent().find(value=>value.payload[0]==='nnk_manifest');assert.ok(request);

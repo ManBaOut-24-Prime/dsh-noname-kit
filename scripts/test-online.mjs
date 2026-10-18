@@ -52,9 +52,8 @@ try {
   status = online.kernelStatus({ nonameDir: gameDir })
   ok(status.state === 'ok', '安装后 state=ok(桥配置与盖章文件不参与哈希)')
   ok(status.installedAt > 0, '盖章带安装时间')
-  /* 凭据配对:noname-kit.json 损坏被留档重建后会重生成 token,内核手里那把就成了旧的
-   * ——每一拍心跳都 403、lastSeen 永不刷新,界面上只表现为「内核离线」(用户被引去查
-   * "扩展启没启用")。tokenMatches 让状态接口能给出准确出路:重装内核 */
+  /* 凭据配对:插件配置重建可能生成新 token,状态接口通过 tokenMatches
+   * 识别内核与插件凭据不一致,并提示重新安装内核以恢复心跳。 */
   ok(online.kernelStatus({ nonameDir: gameDir, token: 'tok-abc' }).tokenMatches === true, 'token 相符时 tokenMatches=true')
   ok(online.kernelStatus({ nonameDir: gameDir, token: 'tok-old' }).tokenMatches === false, 'token 不符(设置文件被重建过)时 tokenMatches=false')
   ok(online.kernelStatus({ nonameDir: gameDir }).tokenMatches === null, '不传 token 时 tokenMatches=null(不误报)')
@@ -196,12 +195,12 @@ export default { name: "standard", character: characters, translate: translates 
   ok(sigSrc.includes('}, 7000);'), '信令兜底超时 7 秒(不再 12 秒拖慢自动重回)')
   ok(!sigSrc.includes('连接超时(可改用邀请码方式)'), '超时文案不再甩锅房主')
 
-  // ── 结构性回归锁:房主退游戏后客人不再白转 8 轮(10-08 实测报障) ──
+  // ── 房主关闭游戏时停止客机的自动重试 ──
 
 
 
-  // ── 结构性回归锁:房间模式白名单单一来源(联机单挑局会把它原生改成
-  //    "normal",污染路径拦截,10-08 实测「创建房间恒报不支持的模式」) ──
+  // ── 房间模式白名单使用单一来源,避免原生单挑模式的 normal 值影响校验 ──
+  // 白名单保持对工坊支持的实际房间模式进行校验。
   const hostSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'host.js'), 'utf8')
 
   ok(!hostSrc.includes('env._status.mode || "identity"'), '对局结束接力不再收引擎被单挑局改写的模式(创建房间报 normal 的污染源)')
@@ -218,7 +217,7 @@ export default { name: "standard", character: characters, translate: translates 
   await assert.rejects(delegateNnk.modules.guest.joinByInvite('NNK1.bad'),/actual async failure/);ok(rejects===1,'异步加入失败返回调用方，不自动重连或重复协商');
   ok((await delegateNnk.modules.host.restartRoom('single')).mode==='single','下一局模式显式转交，不使用被单挑改写的原生 mode');
 
-  // ── 虚拟网卡直连(Radmin/ZeroTier 等异地组网,10-08 需求)──
+  // ── 虚拟网卡直连(Radmin/ZeroTier 等异地组网)──
   const rtcSrc = readFileSync(join(repoRoot, 'online-kernel', 'src', 'rtc.js'), 'utf8')
   const rtcSandbox = { window: { __nnk__: { modules: { config: { get: () => [] } } } } }
   runInNewContext(rtcSrc, rtcSandbox)
@@ -245,7 +244,7 @@ export default { name: "standard", character: characters, translate: translates 
   ok(rtc.addInjected(fakePc, ['26.1.2.3:54321']) === 1 && addCalls[0].includes('26.1.2.3 54321 typ host'), '注入候选格式正确(host 优先级)')
   ok(rtc.addInjected(fakePc, ['坏地址', '26.1.2.3:abc', '']) === 0, '坏地址全部拒绝')
   ok(rtc.addInjected(fakePc, Array.from({ length: 20 }, (_, i) => '26.1.2.' + i + ':54321')) === 12, '注入条数上限 12(防对方载荷刷爆;多地址交错后额度放宽一点)')
-  ok(!rtcSrc.includes('hostPortFromSdp('), '旧单端口实现在审计中清除(只留 hostPortsFromSdp)')
+  ok(!rtcSrc.includes('hostPortFromSdp('), '仅保留多端口候选解析接口 hostPortsFromSdp')
 
   const clientSrc = readFileSync(join(repoRoot, 'client.js'), 'utf8')
   ok(clientSrc.includes('不认识的模式一律不灌进单选框'), '客户端模式同步有白名单(旧内核送污染模式不灌单选框)')
@@ -266,7 +265,7 @@ export default { name: "standard", character: characters, translate: translates 
   const indexSrc = readFileSync(join(repoRoot, 'index.js'), 'utf8')
   ok(!mfSrc.includes('game.broadcast('), '差集回发不再走 game.broadcast(联机模式下开门即 return,永远到不了客人)')
   ok(mfSrc.includes("socket.send(JSON.stringify(request===undefined?['nnk_manifest_diff'") && !mfSrc.includes('transfer.sendDirect('), '体检定向回请求连接,不受补传入局路由过滤')
-  ok(!mfSrc.includes('transfer.start(') && mfSrc.includes('pauseReason'), 'B0 缺包仅提示暂停,不再自动入队(行为另见 test-b0-safety)')
+  ok(!mfSrc.includes('transfer.start(') && mfSrc.includes('pauseReason'), '旧版补传缺包仅提示暂停，不自动入队')
   ok(txSrc.includes('expectCount') && txSrc.includes('rejectedFiles'), '客人侧完整性收口(文件数对不上不回 done)')
   ok(txSrc.includes('sendAck(msg.id, "fail"') || txSrc.includes('sendAck(id, "fail"'), '明确 fail 回执(不再只靠超时)')
   ok(txSrc.includes('ackFailReason'), '房主侧收下 fail 原因')
@@ -281,7 +280,7 @@ export default { name: "standard", character: characters, translate: translates 
   ok(bridgeSrc.includes('virtualIps: (function()'), '内核心跳 cfg 带虚拟网卡检测结果')
   ok(clientSrc.includes('直连地址已就绪:') && clientSrc.includes('virtualIps.join'), '面板显示直连地址就绪状态(虚拟网卡 IPv4 + 公网 IPv6;用户看得见,不再是隐形功能)')
 
-  // ── 结构性回归锁:开局瞬间误杀与「退出房间被拉回」(10-08 实测报障)──
+  // ── 载入时保留连接,退出房间时停止自动重回 ──
   ok(rtcSrc.includes('lastBuffered'), '心跳判死识别传输层 ACK 推进(对端主线程忙时不再误杀)')
   ok(rtcSrc.includes('peerTraffic') && rtcSrc.includes('_lastIn'), '心跳判死第三路证据:主通道来包(对端开局狂发数据、心跳定时器饿死不误杀)')
   ok(rtcSrc.includes('> 20000'), '心跳判死阈值 20 秒(对端静默加载留余量)')
@@ -294,10 +293,8 @@ export default { name: "standard", character: characters, translate: translates 
   ok(rtcSrc.includes('hosts: hosts && hosts.length ? hosts : undefined'), '邀请码载荷带直连地址(空则不带,旧内核收码也无害)')
 
 
-  /* ── 混装(两端内核版本不一致)必须有明确诊断 ──
-   * 房号门(主题指纹,0.3.67 起)与自动补传(ready/done 双握手)都要求两端 ≥0.3.67;
-   * guestKernel 曾经算了却没人消费(死字段),用户只能看到"房主可能已关闭游戏"这类
-   * 错误诊断。锁住:差集两侧都报版本,工坊两处都消费。 */
+  /* ── 两端内核版本不一致时提供明确诊断 ──
+   * 包体检差集同时携带 guestKernel 和 hostKernel,工坊体检卡消费双方版本。 */
   ok(mfSrc.includes('guestKernel: guest.kernel || null') && mfSrc.includes('hostKernel: host.kernel || null'),
     '包体检差集同时带双方内核版本(guestKernel/hostKernel)')
   ok(clientSrc.includes('d.guestKernel') && clientSrc.includes('d.hostKernel'),
@@ -319,18 +316,18 @@ export default { name: "standard", character: characters, translate: translates 
   ok(onlineSrc.includes('function ioHint(error)'), '安装内核失败按错误码给人话与下一步(EPERM/EBUSY/ENOSPC)')
 
 
-  /* ── 10-09 实测两报(对局中重进变旁观 / 客人没就绪就开局)── */
+  /* ── 对局中重进与客机就绪状态 ──*/
 
 
-  /* 10-09 报障(选将框卡退 / 5~6 秒高延迟):判死必须先问传输层,不能只看 JS 三路证据 */
+  /* 连接失效判定查询传输层状态,避免主线程忙时只凭 JS 心跳误判。*/
   ok(rtcSrc.includes('function startPing(channel, onDead, peerTraffic, pcState)'),
     'startPing 增加传输层判活参数(pc.connectionState)')
   ok(rtcSrc.includes('st === "connected"') && rtcSrc.includes('disconnectedSince'),
     'JS 静默时:connected 继续等、disconnected 给恢复期、failed/closed 才判死')
 
 
-  /* ── 10-09 用户点名:热点之间变快(线路可见 + 兜底优先级 + 出牌时限;TURN 已被用户否决——
-   * 设计前提就是不租服务器,有服务器的直接用引擎原生局域网联机)── */
+  /* ── 直连线路状态、连接兜底优先级与出牌时限 ──
+   * 覆盖线路可见性及无需 TURN 中继服务器的连接策略。 */
   ok(rtcSrc.includes('candidate:1 1 udp 1 " + ip.replace('),
     '注入候选优先级降到 1(排最后):同网/公网直连优先,虚拟网卡只当兜底')
   ok(rtcSrc.includes('function trackPc(pc)') && rtcSrc.includes('"candidate-pair"') && rtcSrc.includes('currentRoundTripTime'),
@@ -338,12 +335,17 @@ export default { name: "standard", character: characters, translate: translates 
   ok(bridgeSrc.includes('link: (function()') && clientSrc.includes('🔗 当前线路:'),
     '心跳上报线路 + 工坊内核卡显示「🔗 当前线路:直连/中继 · 往返 Nms」')
 
-  /* 群友"邀请码没用"的一大来源:码经过聊天软件带前后文/换行就认不出 */
-  ok(rtcSrc.indexOf('^NNK1') === -1 && rtcSrc.includes('摘出'),
-    '码解析容错:从粘贴内容里摘出 NNK1.<base64url>(不再要求整串恰好相等)')
+  /* 邀请码解析接受聊天附文、引号和换行。 */
+  const invitePayload = { v: 1, k: 'offer', sdp: { type: 'offer', sdp: 'v=0\r\n无名杀' } }
+  const inviteCode = 'NNK1.' + Buffer.from(JSON.stringify(invitePayload)).toString('base64url')
+  rtcSandbox.TextDecoder = TextDecoder
+  rtcSandbox.atob = atob
+  const pastedInvite = rtc.decodeCode('前言「' + inviteCode.slice(0, 16) + '\n' + inviteCode.slice(16) + '」')
+  ok(pastedInvite.k === invitePayload.k && pastedInvite.sdp.sdp === invitePayload.sdp.sdp && rtc.decodeCode(inviteCode).sdp.type === 'offer',
+    '码解析容错:实际解码带聊天附文、引号和换行的邀请码，保留 Unicode SDP')
   ok(rtcSrc.includes('这看起来是 6 位房号') && rtcSrc.includes('可能被聊天软件截断'),
     '码解析失败的文案分情况给出路(粘成房号/半截码/不像码)')
-  /* 校园网群友场景:两端都有公网 IPv6 时无需打洞直连(不依赖任何服务器) */
+  /* 双方均有公网 IPv6 时，候选地址支持直接连接。 */
   ok(rtcSrc.includes('function isGlobalV6') && rtcSrc.includes('return /^2[0-9a-f]{0,3}:/'),
     '公网 IPv6 地址随信令带给对方(校园网/教育网两端都有 v6 时直连,不用打洞)')
   ok(rtcSrc.includes('SDP candidate 行里的 IPv6 不带方括号'), '注入的 IPv6 候选行按 SDP 规矩写裸地址(行为在探针里验)')

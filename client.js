@@ -254,7 +254,7 @@ window.__ModuleLoader__.load({
       });
     }
 
-    // 入场只跟随栏目操作；切换外观不再重复触发“整页闪暗”。
+    // 入场动效仅跟随栏目操作，切换外观时保持页面内容连续显示。
     function WorkshopPage(props) {
       var root = React.useRef(null), previous = React.useRef(props.active);
       React.useLayoutEffect(function () {
@@ -480,11 +480,7 @@ window.__ModuleLoader__.load({
     }
     // e(tag, className, ...children):className 为字符串(可为空串);子元素数量不限。
     function e(tag, className) {
-      /* 已知坑(实测白屏事故):e 只吃 (tag, className, ...子节点),把内联样式写成
-       * e('div','cls',{style:…},文本) 时,那个纯对象会被当**子节点**渲染 → React
-       * 报「object with keys {style}」→ 整个浮窗被槽位吞成空白,且没有红字。
-       * 这里把"看起来像 props 的纯对象"当手滑拦下(改用 h),顺带把错误喊出来——
-       * 只有真手滑才走这个分支,正常调用零成本 */
+      /* e 仅接受 tag、className 和子节点；检测误传的 props 对象并提示改用 h，避免把样式对象作为 React 子节点。 */
       var kids = Array.prototype.slice.call(arguments, 2);
       if (kids.length && kids[0] && typeof kids[0] === 'object' && !Array.isArray(kids[0]) && !kids[0].$$typeof) {
         console.error('[联机助手] e() 手滑:第 3 个参数是对象,已按 props 处理(该用 h)——', tag, className, Object.keys(kids[0]), new Error('e').stack);
@@ -792,8 +788,7 @@ window.__ModuleLoader__.load({
         patch({ folder: folder, currentInfo: '', usedIds: [], entryId: '', entryList: [], entrySkills: [], pickedSkills: [], editNotes: '', addSkills: false });
         if (!folder) return;
         if (form.goal === 'edit') loadEntries(folder, form.type);
-        // 下面两条链都按「响应回来时选中的还是不是这个包」守卫 —— 快速切包时旧包的
-        // 迟到响应曾把 currentInfo/style/usedIds/notes 整个换成旧包的(行为探针实测)
+        // 仅在响应所属扩展仍被选中时更新信息、风格、已用 ID 和注意点，防止切包后的迟到响应覆盖当前表单。
         fetch('/noname-kit-api/extension?folder=' + encodeURIComponent(folder)).then(function (r) { return r.json() }).then(function (body) {
           setForm(function (prev) {
             if (prev.folder !== folder) return prev;
@@ -887,9 +882,7 @@ window.__ModuleLoader__.load({
         } else {
           if (!filledSkills.length) { errSet('请至少填写一个技能(技能名和效果至少填一处)'); return }
           if (!form.folder.trim()) { errSet('目标扩展文件夹不能为空'); return }
-          /* 用 form.type 而不是下面 var 提升的 type:此前 var 提升让这里恒读 undefined,
-           * 整条校验是死代码——选了「加入牌堆」却不填点数照样提交,任务消息还被写成
-           * 「不加入牌堆」,两个模块语义相反(实测) */
+          /* 按当前 form.type 校验卡牌牌堆条目，避免读取尚未赋值的局部 type。 */
           if (form.type === 'card' && form.pileJoin && !form.pileRows.some(function (r) { return r.point !== '' })) { errSet('选了「加入牌堆」但没填任何牌的花色点数——至少填一行,或改选「不加入牌堆」'); return }
         }
         var dupUsed = isEdit && form.taskId.trim() && (form.usedIds || []).some(function (u) { return u.id === form.taskId.trim() });
@@ -1143,9 +1136,7 @@ window.__ModuleLoader__.load({
                : (form.folder ? e('div', 'nnk-hint', '此包暂无任务记录') : null)]
           : [textField('新扩展包名称(游戏 extension/ 下的文件夹名)', form.folder, set('folder'))],
         radioGroup('类型', form.type, [{ value: 'character', text: '⚔️ 武将' }, { value: 'card', text: '🃏 卡牌' }, { value: 'mode', text: '🎲 新玩法(自定义模式)' }], switchType),
-        // 🎲 模式类型的「目标」恒为「编辑已有」(switchMode/switchType 两处都已强制),
-        // 不再给这个 radio —— 手点「✨ 创建新」会让提交的消息自称「创建全新扩展包,
-        // 目标文件夹当前不存在」,而包其实是从已有列表里选的(消息自相矛盾,行为探针实测)
+        // 模式任务固定编辑选中的现有扩展包，目标选择由 switchMode 与 switchType 统一设置。
         isEdit && form.type !== 'mode' ? radioGroup('目标', form.goal, [{ value: 'create', text: '✨ 创建新' }, { value: 'edit', text: '✏️ 编辑已有' }], switchGoal) : null,
         isModeCreate ? [
           e('div', 'nnk-hint', '🎲 以全新扩展包交付,生成后可随时在「📂 编辑已有扩展包」里继续调整。'),
@@ -1578,12 +1569,7 @@ window.__ModuleLoader__.load({
       { id: 'doudizhu', name: '斗地主' },
       { id: 'single', name: '单挑' }
     ];
-    /* 模式人数上限兜底(实战口径:身份/国战 8/对决 8/斗地主 3/单挑 2——
-     * 引擎选项列表虽到 10/12,但实机可用上限是 8,用户校准;内核随
-     * room_members 的 caps 字段上报同值,这里只作旧内核兜底)。
-     * 必须放模块层:面板组件里这条赋值曾写在 `return renderOnlinePanel()`
-     * 之后,组件体永远执行不到——刚建房、还没有成员事件时弹窗一开就
-     * TypeError(实测事故,已修) */
+    /* 模式人数上限的模块级后备值：身份、国战、对决为 8，斗地主为 3，单挑为 2；优先采用内核 room_members.caps。 */
     var MODE_MAX = { identity: 8, guozhan: 8, versus: 8, doudizhu: 3, single: 2 };
     /* 座位头像色板(名字首字色块):中饱和色,明暗主题下都清楚 */
     var SEAT_COLORS = ['#5b8def', '#e2725b', '#67a37c', '#c9a227', '#9b6bd3', '#4aa3a3', '#d2659b', '#7a8b99'];
@@ -1591,9 +1577,7 @@ window.__ModuleLoader__.load({
      * mqtt_waiting=大厅里等朋友加入(主机侧,创建/加入按钮都要锁住,别让房主
      * 又去点「加入房间」把自己的房号当别人的房进) */
     var HOST_PHASES = ['host_booting', 'hosting', 'mqtt_waiting', 'invite_ready', 'connecting', 'room_open'];
-    /* waiting_host(发完加入请求、等房主应答,最长 30 秒)必须在内:漏了它,这段窗口里
-     * 「创建房间 / 加入房间 / 生成回执码」三个按钮都不禁用,用户一多手就会把在途会话
-     * 顶掉(resetSession)——实测表现为「点了一下房间就乱套」 */
+    /* waiting_host 等待房主应答期间保持会话占用，禁用会重置在途连接的创建、加入和回执操作。 */
     var GUEST_PHASES = ['guest_booting', 'joining', 'waiting_host', 'answer_ready', 'entering', 'connected', 'queued', 'lobby_waiting'];
     var ONLINE_PHASE_TEXT = {
       idle: '待机',
@@ -1603,28 +1587,26 @@ window.__ModuleLoader__.load({
       mqtt_waiting: '房号就绪!把 6 位房号发给朋友,等朋友加入…',
       invite_ready: '邀请码已生成,等待客人回执码…',
       connecting: '正在建立点对点直连…(最长约 20 秒,打不通会自动换新码)',
-      room_open: '客人已连接!等待房间在游戏里,点「开始游戏」即可开局',
+      room_open: '插件房间已建立，可在房间里体检并载入游戏',
       joining: '正在连接信令服务器并发出加入请求…',
       waiting_host: '加入请求已发出,等待房主应答…(最长约 30 秒)',
       answer_ready: '回执码已生成,发给房主等他粘贴…',
       entering: '直连已建立,正在进入房间…',
       connected: '✅ 已进入房间!',
-      queued: '⏳ 房间人数已满,排队等待空位(有人退出会自动进入)',
+      queued: '⏳ 已连接，等待加入本次入座名单',
       lobby_waiting: '✅ 已进入房间大厅,等待房主点「载入到游戏」…'
     };
     function onlinePickEvent(evs, type) {
       if (!Array.isArray(evs)) return null;
       for (var i = evs.length - 1; i >= 0; i--) {
-        /* 判 null:插件事件窗口是透传数组(内核→插件→前端),任何一环混进空项,
-         * 这里读 .type 就会炸整页(实测路径:const renderErr 兜底会显示红字,
-         * 但旧版本没有兜底=整页空白) */
+        /* 忽略事件窗口中的空项，再按 type 匹配事件，防止异常事件中断渲染。 */
         if (evs[i] && evs[i].type === type) return evs[i];
       }
       return null;
     }
     function onlineManifestCheck(evs, currentScope) {
       var start = -1, check = null, diff = null, reference = onlinePickEvent(evs, 'manifest_diff');
-      function scoped(data) { return !currentScope || data && data.scope && ['sessionId','roundId','documentGeneration','bindingId','bindingNonce'].every(function(key) { return currentScope[key] === undefined || data.scope[key] === currentScope[key]; }); }
+      function scoped(data) { return !currentScope || data && data.scope && ['sessionId','roundId','documentGeneration','bindingId','bindingNonce','carrierSessionId','partyEpoch'].every(function(key) { return currentScope[key] === undefined || data.scope[key] === currentScope[key]; }); }
       if (!Array.isArray(evs)) return { check: null, diff: null, reference: null, verified: false };
       for (var i = evs.length - 1; i >= 0; i--) {
         var d = evs[i] && evs[i].data;
@@ -1661,11 +1643,12 @@ window.__ModuleLoader__.load({
           var current = onlineManifestCheck(evs);
           if (!current.verified || current.diff !== ev) return '📦 包体检历史或参考记录（不代表本次检查）';
           var exts = d.exts || {}, count = function (v) { return Array.isArray(v) ? v.length : 0 };
-          var miss = count(exts.missing), missPack = count(d.packs && d.packs.missing);
+          var miss = count(exts.missing), missPack = count(d.packs && d.packs.missing), missCard = count(d.cards && d.cards.missing);
+          if (d.inventoryVerified === false && !count(exts.unverified)) return '📦 包体检：本次尚未核验，文件摘要采集未完成';
           if (count(exts.unverified)) return '📦 包体检：本次尚未核验，' + count(exts.unverified) + ' 个扩展内容未核验';
           if (count(exts.changed)) return '📦 包体检：' + count(exts.changed) + ' 个同名扩展内容不同';
           if (count(exts.disabled)) return '📦 包体检：' + count(exts.disabled) + ' 个扩展尚未启用';
-          if (miss || missPack) return '📦 包体检：缺 ' + miss + ' 个扩展、' + missPack + ' 个武将包';
+          if (miss || missPack || missCard) return '📦 包体检：缺 ' + miss + ' 个扩展、' + missPack + ' 个武将包、' + missCard + ' 个卡牌包';
           return Array.isArray(exts.matching) ? '📦 包体检：本次已核验的启用扩展内容一致' : '📦 包体检：本次尚未核验';
         }
         case 'manifest_check': {
@@ -1676,9 +1659,7 @@ window.__ModuleLoader__.load({
         case 'ext_error': return '🧩 扩展报错(已拦截' + ((ev.data && ev.data.ext) ? ':' + ev.data.ext : '') + ')';
         case 'ext_quarantined': return '🚫 扩展「' + ((ev.data && ev.data.ext) || '?') + '」联机下爆栈,已自动隔离';
         case 'ext_dump': {
-          /* 包池字段一律按数组取值:这份数据是内核上报的透传 JSON,任何一环给出
-           * 非数组(旧事件 + 新代码、手工改坏的数据)时,`.join/.length` 会炸整页
-           * ——实测过 pk.connect.join is not a function */
+          /* 将内核上报的包池字段归一为数组，保证 join 与 length 操作可用。 */
           var dd = ev.data || {};
           var asArr = function (v) { return Array.isArray(v) ? v : [] };
           var loaded = asArr(dd.loaded);
@@ -1747,14 +1728,14 @@ window.__ModuleLoader__.load({
       var rmSyncKey = rmSyncState[0], setRmSyncKey = rmSyncState[1];
       var sigUrlState = React.useState('');
       var sigUrl = sigUrlState[0], setSigUrl = sigUrlState[1];
-      /* 本次会话见过的房号(前端兜底):内核 setPhase 是整体替换 state,0.3.66 之前
-       * 的版本在 answer_ready 那一拍不带房号,工坊的「房间大厅 / 退出房间」会跟着
-       * 房号一起闪没(客人刚拿到回执码,反而找不到自己的房间)。房号一旦见过就不再
-       * 丢,直到阶段落回 idle(散场)才清 */
+      var transferLimitState = React.useState(null);
+      var transferLimitDraft = transferLimitState[0], setTransferLimitDraft = transferLimitState[1];
+      var transferLimitCfgState = React.useState(null);
+      var transferLimitCfg = transferLimitCfgState[0], setTransferLimitCfg = transferLimitCfgState[1];
+      /* 保留本次会话最近的房号，补足未携带房号的状态快照；大厅关闭或会话回到 idle 时清除。 */
       var lastCodeState = React.useState(null);
       var lastRoomCode = lastCodeState[0], setLastRoomCode = lastCodeState[1];
-      /* 码交接弹窗的关闭标记:同一张码关了不再弹,换新码(重试/重生成)才再弹。
-       * 邀请码改成"列表"后按行号记:popped=上次弹过的行,dismissed=被收起的那行 */
+      /* 按邀请码行记录弹出与关闭状态：同一张码关闭后不再自动弹出，新码可重新提示。 */
       var invPopState = React.useState({ popped: null, dismissed: null });
       var invPop = invPopState[0], setInvPop = invPopState[1];
       /* 每行的「回执码」输入:各记各的,粘错不会串行;openAns=展开了粘贴框的那行 */
@@ -1808,6 +1789,15 @@ window.__ModuleLoader__.load({
           setIdName(cfg.onlineName || '');
           setIdAvatar(cfg.onlineAvatar || '');
           setSigUrl(cfg.mqttUrl || '');
+        }
+      });
+      React.useEffect(function () {
+        var cfg = status && status.bridge && status.bridge.cfg;
+        if (!cfg || !Number.isSafeInteger(cfg.transferLimitMB)) return;
+        var value = String(cfg.transferLimitMB);
+        if (value !== transferLimitCfg) {
+          setTransferLimitCfg(value);
+          if (transferLimitDraft === null || transferLimitDraft === transferLimitCfg) setTransferLimitDraft(value);
         }
       });
       /* 主机模式单选跟随内核(刷新页面后本机状态重置为「身份」,若不回同步,
@@ -1866,6 +1856,11 @@ window.__ModuleLoader__.load({
       var returnedRoomSeen = returnedRoomState[0], setReturnedRoomSeen = returnedRoomState[1];
       React.useEffect(function () {
         var state = status && status.bridge && status.bridge.state;
+        if (state && state.phase === 'idle' && !status.bridge.role) {
+          setRoomPopupOpen(false);
+          if (note.indexOf('正在退出') === 0) setNote('当前联机会话已结束，可重新选择主客身份。');
+          return;
+        }
         var room = state && state.continuation && state.continuation.room;
         if (room && room.complete && room.returnId && room.returnId !== returnedRoomSeen) {
           setReturnedRoomSeen(room.returnId);
@@ -1905,10 +1900,7 @@ window.__ModuleLoader__.load({
       };
       if (!status) return e('div', 'nnk-hint', '正在获取联机状态…');
       if (status.fetchFailed) return e('div', 'nnk-err', '❌ 联机状态获取失败(插件服务不可达)——确认 dsh 正在运行,恢复后本页几秒内自动重试。');
-      /* 渲染保护罩住整段派生计算 + 渲染:早先只在 renderOnlinePanel() 外面包了一层,
-       * 底下这段(vars 与钩子之外的一切)抛错会冒到 DSH 槽位边界,表现是整块空白
-       * ——连错误文字都看不到(实测:客户机粘贴邀请码后工坊整页空白)。
-       * 注:var 在 try 里声明仍提升到组件作用域,下面那些渲染函数照样看得见 */
+      /* 同时保护派生数据计算与页面渲染，将异常交给可见错误提示；try 内的 var 保持组件作用域可见。 */
       try {
       var kernel = status.kernel;
       var bridge = status.bridge || {};
@@ -1921,16 +1913,12 @@ window.__ModuleLoader__.load({
       var bridgeOnline = Boolean(bridge.online);
       var hostFlow = bridge.role !== 'guest' && HOST_PHASES.indexOf(phase) >= 0;
       var guestFlow = bridge.role !== 'host' && (GUEST_PHASES.indexOf(phase) >= 0 || bridge.role === 'guest' && HOST_PHASES.indexOf(phase) >= 0);
-      /* 房间角色:内核自己上报(最准),阶段启发式只作旧内核后备
-       * (注意先后:先算 hostFlow/guestFlow,旧内核没有 role 时才有后备可用) */
+      /* 优先使用内核上报的房间角色；缺少 role 时根据已计算的 hostFlow 与 guestFlow 推断。 */
       var isRoomHost = bridge.role === 'host' || !bridge.role && hostFlow;
       var kernelBad = !kernel || kernel.state === 'unknown';
-      /* 回执码只在客人侧的对应阶段展示:事件会长期留存,无条件展示会让人对着
-       * 已作废的码继续操作(邀请码那侧已改成"列表常驻 + 按行取用") */
+      /* 回执码仅在客人侧的有效连接状态展示，防止继续使用已失效的事件内容。 */
       var answerEv = (phase === 'joining' || phase === 'answer_ready' || phase === 'entering') ? onlinePickEvent(evs, 'answer_ready') : null;
-      /* bridge.state 在内核首次心跳前是 null——房号一律走安全局部变量。
-       * 内核这一拍没报房号(老内核 answer_ready 不带 code)时用「本次会话见过的
-       * 最后一个房号」兜住;当前内核显式关闭大厅或阶段落回 idle 时清掉记忆 */
+      /* 安全读取可能为空的 bridge.state；快照缺少房号时采用本次会话缓存，大厅关闭或 idle 时清除。 */
       var roomClosed = Boolean(bridge.state && (bridge.state.lobbyOpen === false || Object.prototype.hasOwnProperty.call(bridge.state, 'roomCode') && bridge.state.roomCode === null));
       var roomCode = phase === 'idle' || roomClosed ? null : (bridge.state && (bridge.state.roomCode || bridge.state.code)) || null;
       if (phase === 'idle' || roomClosed) {
@@ -1942,18 +1930,13 @@ window.__ModuleLoader__.load({
       }
       return renderOnlinePanel();
       } catch (renderErr) {
-        /* 渲染层任何异常都会被 slot 系统吞成空白(记忆坑):一律把错误亮出来,
-         * 不许再出现"整块空白查不出原因"。堆栈同步进控制台,方便 F12 取证 */
+        /* 将渲染异常显示在页面中，并将堆栈写入控制台，便于定位问题。 */
         console.error('[联机助手] 联机页渲染出错:', renderErr);
         return e('div', 'nnk-err', '❌ 联机页渲染出错: ' + ((renderErr && renderErr.message) || renderErr) + ' —— 请截图本行文字与当时的操作发给开发者');
       }
 
-      /* 码交接弹窗:邀请码/回执码生成是最容易错过的时刻,光靠一行阶段文案
-       * 不够(实测反馈),直接弹到屏幕中间。关了不重复弹,换新码才再弹;
-       * 阶段推进(连接中/进房中)自动消失,卡片里的同款操作仍可用 */
-      /* 码龄:邀请码里的 ICE 候选跟着 NAT 端口映射活,几十秒到几分钟就过期
-       * (实测放 14 分钟必失败),超 3 分钟就亮牌催换。这段文案只出现在客人侧
-       * (回执码),催"换码"要说清楚是房主那边换 */
+      /* 新邀请码或回执码生成时自动弹窗；关闭后不重复提示，进入连接状态后自动收起，卡片操作继续可用。 */
+      /* ICE 候选受 NAT 映射时限影响；码龄超过 3 分钟时提醒客人请房主重新生成邀请码。 */
       function codeAgeText(ts) {
         if (!ts) return '';
         var sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
@@ -1971,8 +1954,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'nnk-modal-actions' },
             h('button', { className: 'nnk-copy', onClick: opts.onClose }, '收起(下方卡片里仍可操作)')));
       }
-      /* 码交接弹窗(按行号):生成后自动弹一次,也可从列表那行的「🔎 再看」重开——
-       * 误触关掉不再等于丢码(列表里随时能复制)。回执码就贴这一行的 */
+      /* 按行展示邀请码弹窗，生成时自动弹出一次，也可从对应行重新打开；回执码归属当前行。 */
       function renderInviteModal(row) {
         return renderCodeModal({
           title: '📨 邀请码 #' + row.id + ' 已生成——发给朋友',
@@ -1980,9 +1962,7 @@ window.__ModuleLoader__.load({
           body: h('div', {},
             e('div', 'nnk-hint', '1. 点「复制」把整段邀请码发给朋友;2. 朋友在「我要加入 → 📨 收到邀请码?从这里加入」粘贴,把生成的「回执码」发回给你;3. 回执码贴到下面(或列表里第 #' + row.id + ' 行),点「连接」。他进的是同一个房间,一样在大厅等载入。'),
             row.status === 'pending' && Date.now() - (row.at || 0) >= 180000
-              /* 带内联样式必须走 h(tag, {props}, 子节点):e 只吃 (tag, className, ...子节点),
-               * 写成 e(tag, className, {style}, 文本) 会把样式对象当子节点渲染 → React #31
-               * 「object with keys {style}」→ 整个工坊浮窗被槽位吞成空白(实测事故) */
+              /* 需要内联样式时使用 h(tag, props, children)；e 的参数为 tag、className 与子节点。 */
               ? h('div', { className: 'nnk-hint', style: { color: 'var(--dsw-alias-state-warning-primary, #b8860b)' } }, '⚠️ 这张码已生成 ' + Math.floor((Date.now() - row.at) / 60000) + ' 分钟——里面的候选地址基本过期了,直连大概率失败;作废它再生成一张新码,新码马上发马上用')
               : null,
             e('div', 'nnk-label', '邀请码(整段复制)'),
@@ -2073,59 +2053,161 @@ window.__ModuleLoader__.load({
             } }, '💾 保存人物标识')));
       }
 
+      function renderTransferLimit() {
+        var state = bridge.state || {};
+        var configured = bridge.cfg && bridge.cfg.transferLimitMB;
+        var known = Number.isSafeInteger(configured) && configured >= 1 && configured <= 1024;
+        var draft = transferLimitDraft === null ? '' : transferLimitDraft;
+        var value = /^\d+$/.test(draft) ? Number(draft) : NaN;
+        var valid = Number.isSafeInteger(value) && value >= 1 && value <= 1024;
+        var pending = Array.isArray(state.batchProposals) && state.batchProposals.some(function (q) { return q && ['preparing', 'pending', 'accepting', 'rejecting', 'authorized_paused'].indexOf(q.status) >= 0; });
+        var busy = state.transferBusy || state.transferRequestPending || state.transferRequestBusy || state.transferLimitSaving || pending;
+        var recovery = status.batchRecovery && status.batchRecovery.status !== 'none';
+        var reason = !bridgeOnline ? '内核上线后可保存。' : !known ? '请升级本机内核并重启无名杀后设置。' : recovery ? '请先恢复完整补传批次。' : busy ? '请先完成或终止当前补传请求。' : '';
+        var disabled = !!reason || !valid || value === configured;
+        return h('div', { 'data-nnk-transfer-limit': true, style: { marginTop: '12px' } },
+          h('label', { className: 'nnk-label', htmlFor: onlineScope + '-transfer-limit' }, '本机单批补传上限（MiB）'),
+          h('div', { className: 'nnk-row' },
+            h('input', { id: onlineScope + '-transfer-limit', className: 'nnk-input', type: 'number', min: 1, max: 1024, step: 1, value: draft, style: { width: '140px', maxWidth: '100%' }, onChange: function (ev) { setTransferLimitDraft(ev.target.value); } }),
+            h('button', { className: 'nnk-copy', disabled: disabled, onClick: function () {
+              if (disabled) return;
+              setNote('已发送补传上限，等待内核保存确认。');
+              sendCmd('set_config', { key: 'transferLimitMB', value: value });
+            } }, '保存补传上限')),
+          e('div', 'nnk-hint', '1024 MiB = 1 GiB；修改仅用于新提议，不延长当前授权。'),
+          known ? e('div', 'nnk-hint', '当前已保存：' + configured + ' MiB。') : null,
+          reason ? e('div', 'nnk-hint', reason) : draft && !valid ? e('div', 'nnk-hint', '请输入 1–1024 的整数（MiB）。') : null);
+      }
+
       function renderBatchProposals() {
-        var proposals = (bridge.state && bridge.state.batchProposals) || [];
-        var labels = { preparing: '正在核验提议', pending: '等待客人选择', accepting: '等待房主确认授权', rejecting: '等待房主确认拒绝', authorized_paused: '本批已授权；等待文件协议', declined: '已拒绝', cancelled: '已取消', expired: '已超时', disconnected: '连接结束，授权失效', failed: '提议失败' };
-        var fileBatches=(bridge.state && bridge.state.fileBatches)||[];
-        var fileLabels={starting:'准备完整事务',waiting_receiver:'等待客人准备接收',receiving:'接收至独立暂存区',sending:'发送已授权文件',committing:'核验并提交整批文件',activation_pending:'文件已同步，正在保存扩展启用配置',committed:'整批文件已提交并启用',committed_activation_required:'文件已同步，启用尚未完成',unknown:'最终回执未收到，客人提交结果待确认',recovery_required:'必须先完成离线恢复',failed:'文件事务失败',cancelled:'文件事务已取消',expired:'文件授权已超时',disconnected:'文件连接已断开'};
-        function sameBatch(a,b){return ['session','peerSession','proposal','digest'].every(function(k){return a[k]===b[k]})}
-        var rows=proposals.slice();
-        fileBatches.forEach(function(f){if((f.fileCommitted||['activation_pending','committed','committed_activation_required'].indexOf(f.status)>=0)&&!rows.some(function(q){return sameBatch(q,f)}))rows.push(f)});
+        var state = bridge.state || {};
+        var scope = state.transferScope || state.manifestScope;
+        var available = state.transferAvailable === true;
+        var proposals = Array.isArray(state.batchProposals) ? state.batchProposals.filter(Boolean).slice(-64) : [];
+        var fileBatches = Array.isArray(state.fileBatches) ? state.fileBatches.filter(Boolean).slice(-64) : [];
+        var labels = { preparing: '正在核验本批文件', pending: '等待客机确认本批', accepting: '已发送同意，等待房主确认', rejecting: '已发送拒绝，等待房主确认', authorized_paused: available ? '本批已授权，准备自动传输' : '本批已授权，等待传输条件就绪', declined: '客机已拒绝本批', cancelled: '本批已取消', expired: '本批已超时，授权失效', disconnected: '连接结束，授权失效', failed: '本批提议失败' };
+        var fileLabels = { starting: '准备接收本批文件', waiting_receiver: '等待客机准备接收', receiving: '接收至独立暂存区', sending: '发送已授权文件', committing: '整批校验并提交', activation_pending: '文件已提交，正在保存启用设置', committed: '本批扩展已自动启用，重启后生效', committed_activation_required: '文件已提交，自动启用未能确认', unknown: '最终回执未收到，提交结果待确认', recovery_required: '必须先完成离线恢复', failed: '文件事务失败', cancelled: '文件事务已取消', expired: '文件授权已超时', disconnected: '文件连接已断开' };
+        function sameScope(a, b) { return !!a && !!b && typeof a.carrierSessionId === 'string' && Number.isSafeInteger(a.partyEpoch) && a.carrierSessionId === b.carrierSessionId && a.partyEpoch === b.partyEpoch; }
+        function sameBatch(a, b) { return ['session', 'peerSession', 'proposal', 'digest'].every(function (k) { return a[k] === b[k]; }) && a.peerId === b.peerId && ((!a.scope && !b.scope) || sameScope(a.scope, b.scope)); }
+        var rows = proposals.slice();
+        fileBatches.forEach(function (f) { if (!rows.some(function (q) { return sameBatch(q, f); })) rows.push(f); });
         return rows.map(function (q) {
-          var binding = { session: q.session, peerSession: q.peerSession, proposal: q.proposal, digest: q.digest };
-          var batch = q.batch || { extensions: [], total: 0, count: 0 };
-          var file=fileBatches.find(function(f){return sameBatch(q,f)});
-          var key=q.session+q.peerSession+q.digest+q.proposal,collapsed=typeof batchUi!=='undefined'&&batchUi[key];
-          var finalFile=file&&(file.fileCommitted||['activation_pending','committed','committed_activation_required','unknown','recovery_required'].indexOf(file.status)>=0);
-          var choice = bridgeOnline && !finalFile && q.role === 'guest' && q.status === 'pending';
-          var cancellable = bridgeOnline && !finalFile && ['pending', 'accepting', 'rejecting', 'authorized_paused'].indexOf(q.status) >= 0;
-          var retryable=bridgeOnline&&!finalFile&&q.role==='host'&&(['cancelled','expired','failed'].indexOf(q.status)>=0 || file&&['failed','cancelled','expired'].indexOf(file.status)>=0);
-          if(collapsed)return h('div',{className:'nnk-card',key:key},e('div','nnk-hint','补传提示已收起；提议和文件事务仍按原状态运行。'),h('button',{className:'nnk-copy',onClick:function(){setBatchUi(Object.assign({},batchUi,{[key]:false}))}},'展开补传提示'));
-          return h('div', { className: 'nnk-card', key: q.session + q.proposal },
-            e('div', null, h('b', { className: 'nnk-ui-text' }, '📦 完整批次补传提议')),
-            e('div', 'nnk-hint', '来源：' + q.source + ' · ' + batch.extensions.length + ' 个扩展 · ' + batch.count + ' 个文件 · ' + batch.total + ' 字节'),
-            batch.extensions.map(function (ext) { return e('div', 'nnk-break', ext.name + '（' + (ext.files ? ext.files.length : ext.fileCount) + ' 个文件）'); }),
-            e('div', 'nnk-err', '扩展可执行代码。是否信任房主并授权这一完整批次？点击“是”仅授权当前提议，不授权后续批次。文件事务安全验证完成前不会发送文件，也不会写入游戏目录。'),
-            choice ? e('div', 'nnk-hint', '选择‘是’将接收或更新所列扩展，并自动启用它们；部分扩展需要重启无名杀后生效。') : null,
-            e('div', 'nnk-hint', file ? (fileLabels[file.status]||file.status)+' · '+file.received+'/'+file.total+' 字节' : labels[q.status] || '未知状态'),
-            bridge.state && bridge.state.batchFilesPaused ? e('div','nnk-hint','新文件通路仍待独立审查与最终回归，当前保持暂停。') : null,
-            file && file.reason ? e('div','nnk-hint',file.reason) : null,
-            file && file.role==='guest' && file.status==='committed_activation_required' ? e('div','nnk-hint','请在无名杀扩展设置中检查并启用所列扩展，随后重启并重新体检；无需再次下载。') : null,
-            file && file.role==='guest' && file.status==='committed' ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('batch_reload',binding)}},'重启游戏并重新体检') : null,
-            retryable ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('batch_retry',binding)}},'重新申请补传') : null,
+          var current = ['session', 'peerSession', 'proposal', 'digest'].every(function (key) { return typeof q[key] === 'string' && q[key].length > 0 && q[key].length <= 160; }) && /^[a-f0-9]{64}$/.test(q.digest) && typeof q.peerId === 'string' && !!q.peerId && sameScope(q.scope, scope);
+          var binding = { session: q.session, peerSession: q.peerSession, proposal: q.proposal, digest: q.digest, peerId: q.peerId, scope: q.scope };
+          var batch = q.batch || {};
+          var extensions = Array.isArray(batch.extensions) ? batch.extensions.filter(function (ext) { return ext && typeof ext.name === 'string'; }) : [];
+          var file = fileBatches.find(function (f) { return sameBatch(q, f); });
+          var key = JSON.stringify([q.session, q.peerSession, q.proposal, q.digest, q.peerId, q.scope]);
+          var collapsed = typeof batchUi !== 'undefined' && batchUi[key];
+          var finalFile = file && (file.fileCommitted || ['activation_pending', 'committed', 'committed_activation_required', 'unknown', 'recovery_required'].indexOf(file.status) >= 0);
+          var choice = bridgeOnline && current && !file && q.role === 'guest' && q.status === 'pending' && (!Number.isFinite(q.expires) || Date.now() < q.expires);
+          var cancellable = bridgeOnline && current && !finalFile && (['preparing', 'pending', 'accepting', 'rejecting', 'authorized_paused'].indexOf(q.status) >= 0 || file && ['starting', 'waiting_receiver', 'sending', 'receiving', 'committing'].indexOf(file.status) >= 0);
+          var retryable = bridgeOnline && available && !state.transferBusy && !state.transferRequestPending && current && !finalFile && q.role === 'host' && (['cancelled', 'expired', 'failed'].indexOf(q.status) >= 0 || file && ['failed', 'cancelled', 'expired'].indexOf(file.status) >= 0);
+          var count = Number.isSafeInteger(batch.count) && batch.count >= 0 ? batch.count : 0;
+          var total = Number.isSafeInteger(file && file.total) && file.total >= 0 ? file.total : Number.isSafeInteger(batch.total) && batch.total >= 0 ? batch.total : 0;
+          var received = file && (file.role === 'host' ? file.acknowledged : file.received);
+          var progress = Number.isSafeInteger(received) && received >= 0 ? Math.min(received, total) : null;
+          var peerName = q.peerIdentity && q.peerIdentity.name || '';
+          var ttlSeconds = Number.isSafeInteger(q.ttlMs) && q.ttlMs > 0 && q.ttlMs <= 900000 ? Math.ceil(q.ttlMs / 1000) : null;
+          var duration = ttlSeconds === null ? '' : (Math.floor(ttlSeconds / 60) ? Math.floor(ttlSeconds / 60) + ' 分钟' : '') + (ttlSeconds % 60 ? (ttlSeconds >= 60 ? ' ' : '') + ttlSeconds % 60 + ' 秒' : '');
+          var deadline = Number.isSafeInteger(q.expires) && q.expires > 0 && q.expires <= 8640000000000000 ? new Date(q.expires).toLocaleTimeString() : '';
+          if (collapsed) return h('div', { className: 'nnk-card', key: key }, e('div', 'nnk-hint', '补传提示已收起，本批处理状态保持。'), h('button', { className: 'nnk-copy', onClick: function () { setBatchUi(Object.assign({}, batchUi, { [key]: false })); } }, '展开补传提示'));
+          return h('div', { className: 'nnk-card', key: key, 'data-nnk-transfer': true },
+            e('div', null, h('b', { className: 'nnk-ui-text' }, '📦 本批扩展补传')),
+            e('div', 'nnk-hint', (q.role === 'host' ? '接收客机：' + (peerName || '当前客机') : '来源房主：' + (peerName || q.source || '当前房主')) + ' · ' + extensions.length + ' 个扩展 · ' + count + ' 个文件 · ' + total + ' 字节'),
+            extensions.map(function (ext) { return e('div', 'nnk-break', ext.name + '（' + (Array.isArray(ext.files) ? ext.files.length : Number.isSafeInteger(ext.fileCount) ? ext.fileCount : 0) + ' 个文件）'); }),
+            !current ? e('div', 'nnk-hint', '历史或旧协议记录，不能授权或恢复到当前会话。') : null,
+            choice ? e('div', 'nnk-hint', '扩展包含可执行代码。请确认信任房主后再同意；仅授权所列完整批次，不授权后续请求。') : null,
+            current && !finalFile && duration ? e('div', 'nnk-hint', '本批时限：' + duration + '（含确认等待）' + (deadline ? '；截止 ' + deadline : '') + '。到期停止，不自动续期。') : null,
+            choice ? e('div', 'nnk-hint', '同意后自动接收、整批校验并更新所列扩展，成功后自动启用；完成后需要完全退出并重启无名杀。') : null,
+            e('div', 'nnk-hint', file ? fileLabels[file.status] || file.status : labels[q.status] || '未知状态'),
+            file && total > 0 && progress !== null ? h('div', {}, h('progress', { max: total, value: progress, 'aria-label': q.role === 'host' ? '本批已确认发送进度' : '本批接收进度', style: { width: '100%' } }), e('div', 'nnk-hint', progress + '/' + total + ' 字节')) : null,
+            file && file.role === 'host' && progress === null && ['waiting_receiver', 'sending'].indexOf(file.status) >= 0 ? e('div', 'nnk-hint', '等待客机确认接收状态。') : null,
+            current && !available && !finalFile ? e('div', 'nnk-hint', state.transferUnavailableReason || '补传当前不可用；请在插件房间中核对双方内核与连接。') : null,
+            file && file.reason ? e('div', 'nnk-hint', file.reason) : null,
+            file && file.role === 'host' && file.status === 'committed' ? e('div', 'nnk-hint', '客机本批扩展已自动启用。请提醒客机完全退出并重启无名杀后重新体检；房主无需因此重启。') : null,
+            file && file.role === 'guest' && file.status === 'committed' ? e('div', 'nnk-hint', '本批扩展已自动启用。请完全退出并重启无名杀后重新体检；Ctrl+R 不能代替重启，无需重新下载。') : null,
+            file && file.role === 'guest' && file.status === 'committed_activation_required' ? e('div', 'nnk-hint', '文件已整批提交，自动启用未能确认。请在无名杀扩展设置中检查并手动启用所列扩展，再完全退出并重启无名杀后重新体检；无需重新下载。') : null,
+            file && file.status === 'unknown' ? e('div', 'nnk-hint', '请先核对客机的提交结果，结果明确前不要重新传输。') : null,
+            retryable ? h('button', { className: 'nnk-copy', onClick: function () { setNote('正在重新体检并申请补传，等待客机重新确认'); sendCmd('batch_request', { peerId: q.peerId, scope: { carrierSessionId: q.scope.carrierSessionId, partyEpoch: q.scope.partyEpoch } }); } }, '重新传输（需客机再次同意）') : null,
             !finalFile && q.reason ? e('div', 'nnk-hint', q.reason) : null,
-            choice ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: true })); } }, '是') : null,
-            choice ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: false })); } }, '否') : null,
-            h('button',{className:'nnk-copy',onClick:function(){setBatchUi(Object.assign({},batchUi,{[key]:true}))}},'收起提示'),
+            choice ? h('button', { className: 'nnk-copy', disabled: !available, onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: true })); } }, '同意本批并接收') : null,
+            choice ? h('button', { className: 'nnk-copy', onClick: function () { sendCmd('batch_decision', Object.assign({}, binding, { yes: false })); } }, '拒绝本批') : null,
+            h('button', { className: 'nnk-copy', onClick: function () { setBatchUi(Object.assign({}, batchUi, { [key]: true })); } }, '收起提示'),
             cancellable ? h('button', { className: 'nnk-copy', onClick: function () {
-              var consequence=!file?'将终止当前提议。再次申请会生成新提议，仍需客人重新点击“是”。':'未提交的文件将停止并恢复整批旧文件；若已到达持久提交点，将保留完整新版并要求重启，取消不能恢复旧版本。';
-              if(window.confirm(consequence+'\n确认终止本次补传吗？'))sendCmd('batch_cancel', binding);
+              var consequence = !file ? '将终止当前提议。再次申请会生成新请求，仍需客机重新同意。' : '将停止未提交的文件并恢复整批旧文件；已经持久提交的完整新版不能由取消恢复。';
+              if (window.confirm(consequence + '\n确认终止本次补传吗？')) sendCmd('batch_cancel', binding);
             } }, '终止本次补传') : null);
         });
       }
 
-      function renderManifestCard(evs, hostFlow) {
+      function renderManifestCard(evs, hostFlow, inRoom) {
         var roundState = bridge.state && bridge.state.round;
         var engineState = bridge.state && bridge.state.keepaliveDiagnostics && bridge.state.keepaliveDiagnostics.engine;
-        var currentScope = engineState && engineState.current && engineState.current.scope || roundState && { sessionId: roundState.partySessionId, roundId: roundState.roundId };
+        var currentScope = bridge.state && bridge.state.manifestScope || engineState && engineState.current && engineState.current.scope || roundState && { sessionId: roundState.partySessionId, roundId: roundState.roundId };
         var current = onlineManifestCheck(evs, currentScope);
         var verified = current.verified && bridge.online !== false;
         var diffEv = verified ? current.diff : current.check ? null : current.reference;
         var reason = current.check && current.check.reason;
-        var uncheckedText = currentScope ? '本局尚未核验' : '本次尚未核验';
+        var uncheckedText = currentScope && !currentScope.carrierSessionId ? '本局尚未核验' : '本次尚未核验';
         var checkHint = !verified ? e('div', 'nnk-hint', reason && reason.indexOf('本次尚未核验') >= 0 ? reason.replace('本次尚未核验', uncheckedText) : uncheckedText + (reason ? '：' + reason : '')) : null;
+        var unavailable = bridge.state && bridge.state.manifestAvailable === false;
+        var unavailableReason = bridge.state && bridge.state.manifestUnavailableReason;
+        var checking = current.check && current.check.status === 'pending';
+        var recheckBtn = h('button', { className: 'nnk-copy', disabled: bridge.online === false || unavailable || !!checking, title: unavailableReason || (bridge.online === false ? '内核离线' : ''), onClick: function () { sendCmd('manifest_recheck', {}); } }, checking ? '正在体检…' : '重新体检');
+        var availabilityHint = unavailable && unavailableReason ? e('div', 'nnk-hint', unavailableReason) : null;
+        var inventorySource = bridge.state && bridge.state.manifestInventorySource;
+        var inventoryHint = typeof inventorySource === 'string' && inventorySource ? e('div', 'nnk-hint', inventorySource) : null;
+        var transferReady = bridge.state && bridge.state.transferAvailable === true;
+        var transferReason = !transferReady && bridge.state && typeof bridge.state.transferUnavailableReason === 'string' ? bridge.state.transferUnavailableReason : '';
+        if (transferReason && /双方.*升级/.test(transferReason)) transferReason += '；正常联机和包体检仍可使用。';
+        var transferHint = transferReady ? '缺包或同名文件差异会自动生成补传请求，客机逐批同意后开始接收。' : '补传当前不可用，双方仍可自行安装相同版本的扩展。';
+        var manualTransfer = hostFlow && bridge.role !== 'guest' ? (function () {
+          var state = bridge.state || {}, scope = state.transferScope || state.manifestScope;
+          var validScope = scope && !Array.isArray(scope) && Object.keys(scope).length === 2 && typeof scope.carrierSessionId === 'string' && scope.carrierSessionId.length > 0 && scope.carrierSessionId.length <= 160 && !/[\x00-\x1f\x7f]/.test(scope.carrierSessionId) && Number.isSafeInteger(scope.partyEpoch) && scope.partyEpoch >= 0 && scope.partyEpoch <= 1000000000;
+          var peers = Array.isArray(state.transferPeers) ? state.transferPeers.filter(function (peer, index, list) {
+            return peer && typeof peer.peerId === 'string' && peer.peerId.length > 0 && peer.peerId.length <= 160 && !/[\x00-\x1f\x7f]/.test(peer.peerId) && list.findIndex(function (other) { return other && other.peerId === peer.peerId; }) === index;
+          }).slice(0, 32) : [];
+          var rows = (Array.isArray(state.batchProposals) ? state.batchProposals : []).concat(Array.isArray(state.fileBatches) ? state.fileBatches : []).filter(function (row) {
+            return row && validScope && row.scope && row.scope.carrierSessionId === scope.carrierSessionId && row.scope.partyEpoch === scope.partyEpoch;
+          });
+          var completed = rows.filter(function (row) { return row.role === 'host' && row.fileCommitted === true && ['committed', 'committed_activation_required'].indexOf(row.status) >= 0; });
+          var roundPhase = state.roundPhase || state.round && state.round.phase;
+          var playing = state.playing === true || ['playing', 'settling', 'settled', 'loading', 'preparing', 'returning', 'seating', 'awaiting-bind', 'waiting'].indexOf(roundPhase) >= 0;
+          function requestReason(peer) {
+          var relevant = rows.filter(function (row) { return peer && row.peerId === peer.peerId || !completed.some(function (done) { return done.peerId === row.peerId && done.proposal === row.proposal && done.digest === row.digest; }); });
+          var finalRow = relevant.find(function (row) { return row.fileCommitted || ['activation_pending', 'committed', 'committed_activation_required', 'unknown', 'recovery_required'].indexOf(row.status) >= 0; });
+          var active = relevant.some(function (row) { return ['preparing', 'pending', 'accepting', 'rejecting', 'authorized_paused', 'starting', 'waiting_receiver', 'sending', 'receiving', 'committing'].indexOf(row.status) >= 0; });
+          var reason = '';
+          if (bridge.online !== true) reason = '内核离线，请先连接当前插件房间。';
+          else if (bridge.role !== 'host' || !validScope) reason = '需要房主在当前插件房间中操作。';
+          else if (playing) reason = '请先返回插件房间并关闭游戏窗口，再重新传输。';
+          else if (finalRow) reason = finalRow.status === 'unknown' ? '提交结果待确认，请先核对客机结果，暂不能重新传输。' : finalRow.status === 'recovery_required' ? '文件事务需要先完成恢复，暂不能重新传输。' : '文件已提交，请按客机提示完全退出并重启无名杀，再重新体检；无需再次下载。';
+          else if (state.transferRequestPending) reason = '正在重新体检并申请补传，请等待本次结果。';
+          else if ((typeof state.transferRequestBusy === 'boolean' ? state.transferRequestBusy : state.transferBusy) || active) reason = '已有补传请求或文件正在处理，请先完成或终止当前批次。';
+          else if (checking) reason = '包体检正在进行，请等待本次结果。';
+          else if (!transferReady) reason = state.transferUnavailableReason || '当前补传不可用，请核对双方内核和连接。';
+          else if (!peers.length) reason = state.transferUnavailableReason || '请先连接支持新版补传的客机。';
+          return reason;
+          }
+          var reason = requestReason(peers.length === 1 ? peers[0] : null);
+          return h('div', { 'data-nnk-manual-transfer': true, style: { marginTop: '8px' } },
+            (peers.length ? peers : [null]).map(function (peer, index) {
+              var name = peer && typeof peer.name === 'string' && peer.name.trim() ? peer.name.slice(0, 80) : peers.length > 1 ? '未命名' : '当前客机';
+              var peerReason = requestReason(peer), disabled = !!peerReason || !peer;
+              return h('div', { className: 'nnk-row', key: peer ? peer.peerId : 'unavailable', 'data-nnk-transfer-peer': peer ? peer.peerId : '', style: { marginTop: '6px', flexWrap: 'wrap' } },
+                peer ? h('span', { className: 'nnk-break', style: { flex: '1 1 160px', minWidth: 0 } }, (peers.length > 1 ? '客机 ' + (index + 1) + '：' : '接收客机：') + name) : null,
+                h('button', { className: 'nnk-copy', disabled: disabled, title: peerReason || '重新体检后申请新批次，仍需客机再次同意', 'aria-label': peers.length > 1 ? '重新传输给客机 ' + (index + 1) + '：' + name : '重新传输', onClick: function () {
+                  if (disabled) return;
+                  setNote('正在重新体检并申请补传，等待客机重新确认');
+                  sendCmd('batch_request', { peerId: peer.peerId, scope: { carrierSessionId: scope.carrierSessionId, partyEpoch: scope.partyEpoch } });
+                } }, '重新传输'),
+                peerReason && peerReason !== reason ? e('div', 'nnk-hint', peerReason) : null);
+            }),
+            e('div', 'nnk-hint', reason || '重新体检后发起新批次；客机需再次同意，才会开始传输。'));
+        })() : null;
         /* 重置按钮常驻:隔离名单持久化在游戏配置里,清它不能依赖会话内的事件记录 */
-        var resetBtn = (function () {
+        var resetBtn = inRoom ? null : (function () {
           var qEv = onlinePickEvent(evs, 'ext_quarantined');
           return h('div', { style: { marginTop: '6px' } },
             qEv ? e('div', 'nnk-hint', '本页记录到自动隔离:' + ((qEv.data && qEv.data.ext) || '?') + '(0.3.5 起已不再自动隔离)。') : null,
@@ -2136,8 +2218,11 @@ window.__ModuleLoader__.load({
             e('div', null, h('b', { className: 'nnk-ui-text' }, '📦 包体检')),
             checkHint,
             current.check && current.check.identity && current.check.identity.name ? e('div', 'nnk-hint', '👤 对方(' + (hostFlow ? '客人' : '房主') + '):「' + current.check.identity.name + '」') : null,
-            e('div', 'nnk-hint', '客人进房后自动对比双方扩展清单,缺什么这里会列出来。'),
-            !hostFlow ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('manifest_recheck',{})}},'重新体检') : null,
+            e('div', 'nnk-hint', '双方连接后在这里核对扩展清单与文件内容。' + transferHint),
+            availabilityHint,
+            inventoryHint,
+            recheckBtn,
+            manualTransfer,
             resetBtn);
         }
         var d = diffEv.data;
@@ -2145,10 +2230,22 @@ window.__ModuleLoader__.load({
         var extra = Array.isArray(d.exts && d.exts.extra) ? d.exts.extra : [];
         var disabled = (d.exts && d.exts.disabled) || [], changed = (d.exts && d.exts.changed) || [], unverified = (d.exts && d.exts.unverified) || [];
         var missPacks = Array.isArray(d.packs && d.packs.missing) ? d.packs.missing : [];
+        var missCards = Array.isArray(d.cards && d.cards.missing) ? d.cards.missing : [];
         /* P2P 连接识别 v1:身份随清单交换,主机看客人、客人看房主 */
         var peer = verified ? (hostFlow ? (d.guestIdentity || null) : (d.hostIdentity || null)) : (current.check && current.check.identity);
         /* 旧版成功事件不证明当前内容完整,不能据此隐藏体检中的缺包。 */
         var stillMissing = missing;
+        var submittedNames = [];
+        var checkScope = d.scope || d.manifestScope;
+        if (verified && checkScope && currentScope && typeof checkScope.carrierSessionId === 'string' && Number.isSafeInteger(checkScope.partyEpoch) && checkScope.carrierSessionId === currentScope.carrierSessionId && checkScope.partyEpoch === currentScope.partyEpoch && typeof d.peerId === 'string') {
+          (Array.isArray(bridge.state && bridge.state.fileBatches) ? bridge.state.fileBatches : []).forEach(function (file) {
+            if (!file || file.fileCommitted !== true || ['activation_pending', 'committed', 'committed_activation_required'].indexOf(file.status) < 0 || file.role !== (hostFlow ? 'host' : 'guest') || file.peerId !== d.peerId || !file.scope || file.scope.carrierSessionId !== checkScope.carrierSessionId || file.scope.partyEpoch !== checkScope.partyEpoch) return;
+            (Array.isArray(file.batch && file.batch.extensions) ? file.batch.extensions : []).forEach(function (ext) { if (ext && typeof ext.name === 'string' && submittedNames.indexOf(ext.name) < 0) submittedNames.push(ext.name); });
+          });
+        }
+        var submittedMissing = missing.some(function (name) { return submittedNames.indexOf(name) >= 0; });
+        var submittedChanged = changed.some(function (name) { return submittedNames.indexOf(name) >= 0; });
+        var submittedHint = '文件已提交，请按补传结果核对启用状态，完全退出并重启无名杀后重新体检；本条仍为补传前的体检记录。';
         var txEv = null;
         for (var i = evs.length - 1; i >= 0; i--) {
           if (evs[i] && evs[i].type === 'transfer_failed') {
@@ -2156,7 +2253,7 @@ window.__ModuleLoader__.load({
             break;
           }
         }
-        /* 保留联机混装提示,但版本相同也不能恢复已暂停的补传。 */
+        /* 版本差异作提示，补传以当前会话实际协商的能力为准。 */
         var peerKernel = verified ? (hostFlow ? (d.guestKernel || null) : (d.hostKernel || null)) : null;
         var mineKernel = (bridge && bridge.kernelVersion) || null;
         return h('div', { className: 'nnk-card' },
@@ -2167,54 +2264,56 @@ window.__ModuleLoader__.load({
             ? '⚠️ 本机无法定位游戏目录,扩展分类已跳过(全部扩展会参与联机加载)。'
             : '联机只加载带武将/卡牌的扩展。'),
           (peerKernel && mineKernel && peerKernel !== mineKernel)
-            ? e('div', 'nnk-err', '⚠️ 对方内核 v' + peerKernel + ',与本机 v' + mineKernel + ' 不一致——房号门要求两端内核同为 0.3.67+;升级并重启后再核对。补传仍保持暂停。')
+            ? e('div', 'nnk-err', '⚠️ 对方内核 v' + peerKernel + ',与本机 v' + mineKernel + ' 不一致，请优先使用相同版本；补传能力以当前会话实际协商为准。')
             : null,
           peer && peer.name ? e('div', 'nnk-ok', '👤 对方(' + (hostFlow ? '客人' : '房主') + '):「' + peer.name + '」' + (peer.avatar ? '(头像:' + peer.avatar + ')' : '')) : null,
           stillMissing.length
             ? h('div', {},
-              e('div', 'nnk-hint', !verified ? '参考记录中缺以下扩展，需重新核对:' : hostFlow
-                ? '客人缺以下扩展，补传暂停，缺包可能影响对局兼容性:'
-                : '你缺以下扩展，补传暂停，缺包可能影响对局兼容性:'),
+              e('div', 'nnk-hint', !verified ? '参考记录中缺以下扩展，需重新核对:' : submittedMissing ? '补传前记录中缺少以下扩展；已提交的项目请按下方提示处理：' : hostFlow
+                ? '客机缺以下扩展：' + (transferReady ? '请查看本批补传请求。' : '补传当前不可用，请双方自行安装相同版本。')
+                : '你缺以下扩展：' + (transferReady ? '请查看本批补传请求。' : '补传当前不可用，请双方自行安装相同版本。')),
               stillMissing.map(function (name) {
                 return h('div', { key: name, style: { marginTop: '6px' } },
                   h('span', null, name + ' '),
-                  hostFlow ? h('button', { className: 'nnk-copy', disabled: true, title: '补传暂不可用' }, '📦 补传已暂停') : null);
+                  submittedNames.indexOf(name) >= 0 ? e('span', 'nnk-hint', submittedHint) : !transferReady ? e('span', 'nnk-hint', '请自行安装或待补传条件就绪') : null);
               }))
-            : verified&&!missPacks.length&&!disabled.length&&!changed.length&&!unverified.length&&d.exts&&Array.isArray(d.exts.matching) ? e('div', 'nnk-ok', '✅ 已体检的启用扩展内容一致。') : null,
+            : verified&&!missPacks.length&&!missCards.length&&!disabled.length&&!changed.length&&!unverified.length&&d.inventoryVerified!==false&&d.exts&&Array.isArray(d.exts.matching) ? e('div', 'nnk-ok', '✅ 已体检的启用扩展内容一致。') : null,
           disabled.length ? e('div','nnk-hint',verified ? '已安装但未启用，文件内容一致：'+disabled.join('、')+'。请客人在游戏扩展设置中自行启用并重启，再重新体检；无需下载。' : '参考记录中的未启用扩展：'+disabled.join('、')+'。请重新核对。') : null,
-          changed.length ? e('div','nnk-err',(verified?'同名扩展文件内容不同：':'参考记录中的同名扩展内容差异：')+changed.join('、')+'。补传新批次仍须客人明确点击“是”。') : null,
-          verified&&unverified.length ? e('div','nnk-hint','本次尚未核验') : null,
+          changed.length ? h('div', { className: 'nnk-err' }, e('div', null, (verified ? submittedChanged ? '补传前记录中的同名扩展内容差异：' : '同名扩展文件内容不同：' : '参考记录中的同名扩展内容差异：')+changed.join('、')), changed.map(function (name) { return e('div', 'nnk-hint', name+'：'+(submittedNames.indexOf(name) >= 0 ? submittedHint : transferHint)); })) : null,
+          verified&&(unverified.length || d.inventoryVerified === false) ? e('div','nnk-hint','本次尚未核验：扩展文件摘要未完整读取。') : null,
           unverified.length ? e('div','nnk-hint','内容尚未核验：'+unverified.join('、')+'。名称一致不能证明文件一致，请双方升级后重新体检。') : null,
-          !hostFlow ? h('button',{className:'nnk-copy',onClick:function(){sendCmd('manifest_recheck',{})}},'重新体检') : null,
+          availabilityHint,
+          transferReason ? e('div', 'nnk-hint', transferReason) : null,
+          inventoryHint,
+          recheckBtn,
+          manualTransfer,
+          missCards.length ? e('div', 'nnk-hint', '缺少的卡牌包(当前不会补传):' + missCards.join('、')) : null,
           missPacks.length ? e('div', 'nnk-hint', '缺少的武将包(当前不会补传):' + missPacks.join('、')) : null,
           extra.length ? e('div', 'nnk-hint', '对方多出的扩展(不影响联机):' + extra.join('、')) : null,
-          h('label', { style: { display: 'block', marginTop: '8px' } },
+          !inRoom ? h('label', { style: { display: 'block', marginTop: '8px' } },
             h('input', { type: 'checkbox', checked: !!(bridge.cfg && bridge.cfg.unlockUIExtensions), onChange: function (ev2) { setNote('开关已发送,下次建房重载后生效'); sendCmd('set_config', { key: 'unlockUIExtensions', value: ev2.target.checked }); } }),
-            ' 联机时也加载美化类扩展(皮肤/动效,可能不稳,默认只加载武将/卡牌扩展)'),
+            ' 联机时也加载美化类扩展(皮肤/动效,可能不稳,默认只加载武将/卡牌扩展)') : null,
           resetBtn,
           txEv ? h('div', { className: 'nnk-break', style: { marginTop: '6px' } }, onlineEventText(txEv)) : null);
       }
 
-      /* 解散/退出房间(内核 cancel:主机=停信令+通知停泊客人散场,客人=中止
-       * 加入与自动重回)。主机有别的成员在房时先确认一句,防手滑把朋友请出去 */
+      /* 解散或退出结束当前联机会话；界面等待内核状态确认后再关闭。 */
       function leaveRoom(asHost) {
-        if (asHost) {
-          var b = roomBrief();
-          if (b.list.length > 1 && !window.confirm('解散房间:在房等待的成员会被请出去,继续吗?')) {
-            return;
-          }
+        var b = roomBrief();
+        if (b.list.length > 1 && !window.confirm(asHost
+          ? '将结束当前联机会话，并关闭与所有客人的原连接。再次联机需要重新加入；进行中的对局不会强制关闭。继续吗？'
+          : '将结束当前联机会话，并关闭与房主的原连接。再次联机需要重新加入；进行中的对局不会强制关闭。继续吗？')) {
+          return;
         }
         sendCmd('cancel');
-        setNote(asHost ? '🗑 房间已解散' : '🚪 已退出房间');
-        setRoomPopupOpen(false);
+        setNote('正在退出，等待内核确认…');
       }
 
       /* 邀请码列表(一客一张):状态元数据走心跳(bridge.state.invites,随房间一起
        * 过期),码正文走事件流(invite_ready 带 id+code,不塞进 0.7 秒一轮的心跳)。
        * 注意:这是函数声明——组件体在 return 之后不再执行,var 赋值会变死语句 */
       function inviteRows() {
-        /* 类型防护:invites 来自内核心跳,理论上恒为数组;一旦不是(混装版本/
-         * 数据被改坏),直接 .map 会炸整页(实测过:list.map is not a function) */
+        /* 将心跳中的 invites 校验为数组后再 map，避免异常数据中断页面渲染。 */
         var raw = bridge.state && bridge.state.invites;
         var list = Array.isArray(raw) ? raw : [];
         var codes = {};
@@ -2313,10 +2412,7 @@ window.__ModuleLoader__.load({
         return { data: d, list: list, caps: caps, cap: cap, has: !!ev0 };
       }
 
-      /* P2P 房间大厅弹窗:房号牌 → 座位网格 → 操作区。客人=只读视角。
-       * 头像=名字首字色块(按名字哈希取色,同一个人两边颜色一致,零依赖)。
-       * 注意:这两个必须是函数声明——组件体在 return 之后不再执行,var 赋值
-       * 会静默变成 undefined(MODE_MAX 同款坑,已踩过) */
+      /* 房间大厅按房号、座位和操作区排列，客人只读；头像按名字哈希取色。辅助方法使用函数声明，供前面的渲染调用。 */
       function seatColor(name) {
         var s = String(name || '?');
         var h2 = 0;
@@ -2388,7 +2484,11 @@ window.__ModuleLoader__.load({
                   e('div', 'nnk-hint', '结算后点击“返回插件房间”。在这里调整模式，再点“载入到游戏”；客人自动跟随，原连接保持。'),
                   /* 邀请码列表常驻这里:码随时可复制、回执码随时可粘,不依赖弹窗 */
                   roomCode ? renderInviteCard() : null)
-                : e('div', 'nnk-hint', '模式与载入由房主操作——他点「载入到游戏」后,你会自动跟着进房。')),
+                : e('div', 'nnk-hint', '这里是客机的插件房间。先核对包体检；模式与载入由房主操作，他点「载入到游戏」后，你会自动跟着进房。')),
+            renderManifestCard(evs, isRoomHost, true),
+            renderBatchProposals(),
+            e('div', 'nnk-hint', '解散或退出会结束当前联机会话并关闭原连接；下次联机需重新加入。'),
+            note && (note.indexOf('正在退出') === 0 || note.indexOf('正在重新体检') === 0 || note.indexOf('❌') === 0) ? e('div', note.indexOf('❌') === 0 ? 'nnk-err' : 'nnk-hint', note) : null,
             h('div', { className: 'nnk-modal-actions' },
               h('button', { className: 'nnk-copy nnk-danger', onClick: function () { leaveRoom(isRoomHost) } }, isRoomHost ? '🗑 解散房间' : '🚪 退出房间'),
               h('button', { className: 'nnk-copy', onClick: function () { setRoomPopupOpen(false) } }, '收起(连接继续保持,可随时再打开)')));
@@ -2418,10 +2518,12 @@ window.__ModuleLoader__.load({
                 kernel.state === 'missing' ? e('div', 'nnk-hint', '内核未安装,点下面按钮安装。')
                   : kernel.state === 'stale' ? e('div', 'nnk-hint', kernel.error || '插件更新过,内核也该升级了。')
                     : e('div', 'nnk-ok', '✅ 内核已安装' + (bridge.kernelVersion ? '(v' + bridge.kernelVersion + ')' : '')),
-                status.runtimeStatus === 'restart_required'
-                  ? e('div', 'nnk-err', '⚠️ B0 暂停尚未确认生效：运行内核或磁盘内容不是当前版本，或暂停处理器未就绪。请升级内核并完全重启游戏。')
+                bridge.state && bridge.state.transferAvailable === true
+                  ? e('div', 'nnk-ok', '自动补传已就绪；客机逐批确认后接收并更新扩展，成功后自动启用，完整重启无名杀后生效。')
+                  : status.runtimeStatus === 'restart_required'
+                  ? e('div', 'nnk-err', '⚠️ 内核状态尚未确认：运行内核或磁盘内容不是当前版本，或旧版补传停用处理尚未就绪。请升级内核并完全重启游戏。')
                   : status.runtimeStatus === 'b0_active'
-                    ? e('div', 'nnk-ok', '🛡 B0 补传暂停已生效(运行标识:' + bridge.kernelBuild + ')')
+                    ? e('div', 'nnk-ok', '🛡 旧版补传已停用(运行标识:' + bridge.kernelBuild + ')')
                     : null,
                 h('div', { className: 'nnk-row' },
                   kernel.state !== 'ok'
@@ -2455,8 +2557,7 @@ window.__ModuleLoader__.load({
                 (bridge.cfg && Array.isArray(bridge.cfg.virtualIps) && bridge.cfg.virtualIps.length)
                   ? e('div', 'nnk-ok', '🛰 直连地址已就绪:' + bridge.cfg.virtualIps.join('、') + '(虚拟网卡/公网 IPv6;自动随房号与邀请码带给对方,无需操作。IPv6 直的连不需要打洞——校园网两端都有公网 v6 时最有用)')
                   : null,
-                /* 当前线路:分清"走错路了(中继)"还是"路本身慢"——用户实测延迟几秒时
-                 * 第一眼要看的就是这一行。relay=中继;host=局域网直连;srflx/prflx=公网打洞 */
+                /* 显示当前线路类型：relay 为中继，host 为局域网直连，srflx 与 prflx 为公网打洞。 */
                 (function () {
                   var link = bridge.cfg && bridge.cfg.link;
                   if (!link || !link.kind) return null;
@@ -2473,12 +2574,11 @@ window.__ModuleLoader__.load({
                 })(),
                 phase !== 'idle'
                   ? e('div', 'nnk-hint', '当前状态:' + phaseText + (roomCode ? '(房号 ' + roomCode + ')' : ''))
-                  : null)),
+                  : null,
+                renderTransferLimit())),
         status.active && kernel && kernel.state === 'ok'
           ? [
-            /* 左右各包一层列容器:网格的行高取整行最高项,主机卡展开邀请码区
-             * 很高时,右栏的动态/体检会跟它裂开大空隙——列内 flex 纵排让每栏
-             * 自己紧密堆叠(实测反馈的空隙病根) */
+            /* 两栏分别使用纵向 flex 容器，使各自卡片独立紧密排列，不受另一栏展开高度影响。 */
             h('div', { key: 'col-host', className: 'nnk-col nnk-online-actions' },
             h('div', { className: 'nnk-card nnk-online-primary' },
               e('div', 'nnk-online-title', h('b', { className: 'nnk-ui-text' }, '🏠 我要当主机')),
@@ -2518,7 +2618,7 @@ window.__ModuleLoader__.load({
               })()),
             h('div', { className: 'nnk-card nnk-online-primary' },
               e('div', 'nnk-online-title', h('b', { className: 'nnk-ui-text' }, '🔗 我要加入')),
-              e('div', 'nnk-hint', '输入 6 位房号,点「加入」,直连打通后自动进房;房间坐满会排队,有空位自动进。'),
+              e('div', 'nnk-hint', '客机入口就在 DSH 的本页：先启动无名杀并启用联机助手，再在下方输入房主的 6 位房号。连接后进入插件房间，先核对包体检，再等房主载入；无需到游戏里另找加入按钮。'),
               h('input', { className: 'nnk-input', value: roomText, maxLength: 6, onChange: function (ev) { setRoomText(ev.target.value.toUpperCase()) }, placeholder: '输入 6 位房号,如 AB2C9X', style: { textTransform: 'uppercase', letterSpacing: '4px', fontSize: '16px' } }),
               h('button', { className: 'nnk-copy', disabled: !bridgeOnline || hostFlow || guestFlow, onClick: function () { sendCmd('join_room', { code: roomText }) } }, '🚪 加入房间'),
               guestFlow && !isRoomHost && (roomCode || onlineRoom && onlineRoom.complete)
@@ -2562,8 +2662,7 @@ window.__ModuleLoader__.load({
                         h('button', { className: 'nnk-copy', onClick: function () { setAnswerPopupDismissed('') } }, '🔎 再看一次')))
                     : null)
                 : h('button', { className: 'nnk-copy', onClick: function () { setShowInviteFallback(true) } }, '📨 收到邀请码?从这里加入…')),
-            /* 左栏收口(主机+加入+两块折叠配置):折叠卡进栏内,跟着本栏紧凑
-             * 堆叠,不再被网格行高顶出大空隙 */
+            /* 将主机、加入和配置折叠卡放入同一列，按本列内容高度紧密排列。 */
             renderFoldCard('identity', '👤 人物标识', function () { return renderIdentityCard() }),
             renderFoldCard('signaling', '📡 信令服务器', function () { return renderSignalingCard() })),
             h('div', { key: 'col-info', className: 'nnk-col nnk-online-diagnostics' },
@@ -2580,7 +2679,7 @@ window.__ModuleLoader__.load({
               e('div', 'nnk-hint',
                 '0.【官方版一次性】设置→通用→打开「自动导入扩展」→重载,否则扩展列表里没有「联机助手」。\n' +
                 '1. 两边都装插件、配好目录;本页点「📦 安装内核」→ 游戏扩展菜单给「联机助手」点「启」→ 重载。\n' +
-                '2. 主机:「创建 P2P 房间」→ 大厅选模式点「载入到游戏」;客人输房号加入,人满自动排队。房号连不上的朋友,主机点「📨 生成邀请码」发他一张——进的是同一个房间,一样等载入。结算后点“返回插件房间”，房主可换模式，再点“载入到游戏”，客人自动跟随，原连接保持。\n' +
+                '2. 主机:「创建 P2P 房间」→ 等客人加入并核对包体检 → 大厅选模式点「载入到游戏」；客人在 DSH 本页「我要加入」输入房号。房号连不上的朋友,主机点「📨 生成邀请码」发他一张——进的是同一个房间,一样等载入。结算后点“返回插件房间”，房主可换模式，再点“载入到游戏”，客人自动跟随，原连接保持。\n' +
                 '3. 主机在游戏里点「开始游戏」。禁将/包/人数在等待房间右上角「房间设置」改,点「启」广播全房。'),
               e('div', 'nnk-hint', '连接信息经加密信令交换,游戏数据点对点直连。个别网络连不上房号门,就用邀请码从另一道门进(同一个房间)。')) }))]
           : null,
@@ -2620,9 +2719,7 @@ window.__ModuleLoader__.load({
       var presetFlipDone = presetFlip[0], setPresetFlipDone = presetFlip[1];
       React.useEffect(function () {
         if (presetFlipDone) return
-        // 「无名杀开发模式」没装时也默认落在「⚙ 设置」页 —— 那页有「♻️ 重装 preset」按钮。
-        // 从 npm 装的用户手里没有插件目录路径(它在 ~/.dsh/profiles/web/node_modules/ 下),
-        // 指望他去命令行跑 install-preset.mjs 是不现实的(实测:陌生人卡在这一步)。
+        // 开发模式尚未安装时默认打开设置页，用户可从该页重装 preset。
         healthBus.refresh().then(function (body) {
           setPresetFlipDone(true)
           var preset = body && body.preset
@@ -2642,9 +2739,7 @@ window.__ModuleLoader__.load({
       };
       if (phase === null) return e('div', 'nnk-hint', '正在检查插件配置…');
 
-      /* 整页保护:DSH 槽位边界一旦接到抛错就把这块渲染成空白(实测:客户机
-       * 出现过「工坊整页空白、连插件自己的页签栏都没了」)——里面任何一处
-       * 抛错都改成把错误文字亮出来,不许静默空白 */
+      /* 在页面边界捕获异常并显示错误内容，防止子页面异常导致整个工坊空白。 */
       try {
         return h('div', { className: 'nnk-wrap' },
           h('div', { className: 'nnk-appearancebar' },
@@ -2876,8 +2971,7 @@ window.__ModuleLoader__.load({
         if (warn.length && !window.confirm('「' + task.id + '」' + warn.join('、') + '。\n确定仍要标记完成并归档吗?')) return;
         fetch('/noname-kit-api/tasks/complete', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          /* notes 一起带上:AI 用 noname_skills_written 攒的引擎级结论要进历史归档,
-           * 此前手动完成只发 taskId/summary,这些结论永远进不了 history.notes(实测) */
+          /* 任务完成时同时提交 notes，将技能写入过程中登记的引擎级注意点保存到 history.notes。 */
           body: JSON.stringify({ taskId: task.id, notes: task.notes || [], summary: task.summary || '手动标记完成' + (skills.length ? '(确认 ' + confirmed + '/' + skills.length + ')' : '') }),
         }).then(function (r) { return r.json() }).then(function (body) {
           if (!body.ok) { setD({ err: body.error || '完成失败' }); return }
@@ -2973,8 +3067,7 @@ window.__ModuleLoader__.load({
           ) : null,
           expanded && task.feedbacks && task.feedbacks.length
             ? task.feedbacks.map(function (fb, i) {
-                // 按提交时间正序编号:第1轮=最初的问题(此前 reverse 后按显示位置编号,
-                // 导致最新的反馈被标成第1轮 —— issue #2)
+                // 反馈按提交时间正序编号，第 1 轮对应首次提交的问题。
                 return e('div', 'nnk-fbrow', '第' + (i + 1) + '轮反馈' + (fb.skill ? '(' + fb.skill + ')' : '') + ': ' + (fb.issue || '').slice(0, 80))
               })
             : null
@@ -2993,9 +3086,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    /** 浮窗位置按当前视口钳制:位置存在 localStorage,换机器/换分辨率/缩放窗口后
-     *  可能落在屏幕外(实测新机上工坊浮窗右侧/上方被截,"上方内容显示不全")——
-     *  渲染时强制收回可视区;双击标题栏可一键复位。 */
+    /** 按当前视口钳制 localStorage 中保存的浮窗位置；双击标题栏可复位。 */
     function usePanelViewport(active) {
       var updateViewport = React.useState(0)[1];
       React.useEffect(function () {
@@ -3100,9 +3191,7 @@ window.__ModuleLoader__.load({
     var healthBus = {
       state: { loaded: false, failed: false, update: null, preset: null, updateCheck: true, installForm: null, installHint: null },
       subs: [],
-      // 注意:通知时必须先把新状态取到局部变量再 forEach —— 回调里的 this 不是
-      // 这个对象(非严格模式下是全局对象),直接写 this.state 会把 undefined 推给
-      // 所有订阅者,把 React 状态设成 undefined(实测踩过:设置页整块渲染崩溃)。
+      // 先将新状态保存到局部变量，再通知订阅者，避免回调中 this 的变化影响状态读取。
       set: function (next) {
         this.state = Object.assign({}, this.state, next);
         var snapshot = this.state;

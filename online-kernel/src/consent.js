@@ -42,7 +42,7 @@
 		}).sort(function(a,b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
 		return { extensions: extensions, total: total, count: count };
 	}
-	function limit() { return Math.min(300, Number(nnk.modules.config && nnk.modules.config.get("transferLimitMB")) || 300) * 1048576; }
+	function limit() { var configured = Number(nnk.modules.config && nnk.modules.config.get("transferLimitMB")); return Math.min(1024, Number.isFinite(configured) && configured > 0 ? configured : 300) * 1048576; }
 	async function digest(batch, p) {
 		pendingDigests++; if (p) { p.pendingDigests++; pending.add(p); }
 		try {

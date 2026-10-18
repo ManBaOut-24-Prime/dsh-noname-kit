@@ -3,16 +3,37 @@
  * 路径安全:文件夹名只允许安全字符,解析后必须仍在 extension 目录内
  * (防路径逃逸)。覆盖前自动备份到 <文件夹>/backup/。
  */
-import { copyFile, mkdir, readFile, readdir, writeFile, unlink, stat, rename } from 'node:fs/promises'
+import { copyFile as copyFileRaw, mkdir as mkdirRaw, readFile, readdir, writeFile as writeFileRaw, unlink as unlinkRaw, stat, rename as renameRaw } from 'node:fs/promises'
+import { lstatSync } from 'node:fs'
 import {withBatchWrite} from './batch.js'
-import { join, resolve, basename, relative, sep, dirname } from 'node:path'
+import { ENTRY_ID_SOURCE, isEntryId } from './entry-id.js'
+import { join, resolve, basename, relative, sep, dirname, parse } from 'node:path'
 import { validateExtensionCode, syntaxCheck, collectDefinedIds } from './validate.js'
-import { scanAnchored, scanBlocks, extractBlock, assembleBlocks, checkFidelity, migrateCode, stripAnchors, findAllSections, sectionProperties, virtualCharacterBlocks, virtualCardBlocks, virtualBlocks, virtualTranslateBlocks, CONTENT_KINDS } from './blocks.js'
+import { scanEffectiveAnchored, scanBlocks, extractBlock, assembleBlocks, checkFidelity, migrateCode, stripAnchors, findAllSections, sectionProperties, virtualCharacterBlocks, virtualCardBlocks, virtualBlocks, virtualTranslateBlocks, CONTENT_KINDS } from './blocks.js'
 
 const FOLDER_RE = /^[\w\u4e00-\u9fff-]{1,64}$/
 
 /** 多文件包扫描时跳过的目录(素材/备份/依赖,绝不会有条目)。 */
 const SKIP_DIRS = new Set(['backup', 'image', 'audio', 'node_modules', '.git'])
+
+/** Reject links in every existing component, including the selected root and leaf.
+ * A lexical path inside extension/ may otherwise follow a Windows junction outside it. */
+function assertNoLinkPath(target) {
+  const full = resolve(target), root = parse(full).root
+  let current = root
+  for (const part of ['', ...full.slice(root.length).split(sep).filter(Boolean)]) {
+    if (part) current = join(current, part)
+    let entry
+    try { entry = lstatSync(current) } catch (error) { if (error.code === 'ENOENT') return; throw error }
+    if (entry.isSymbolicLink()) throw Object.assign(new Error('路径含目录链接或符号链接，拒绝扩展文件操作: ' + current), { code: 'NNK_UNSAFE_PATH' })
+  }
+}
+// Recheck each mutation boundary after awaits; do not follow existing linked targets.
+async function mkdir(target, options) { assertNoLinkPath(target); return mkdirRaw(target, options) }
+async function copyFile(from, to) { assertNoLinkPath(from); assertNoLinkPath(to); return copyFileRaw(from, to) }
+async function writeFile(target, data, options) { assertNoLinkPath(target); return writeFileRaw(target, data, options) }
+async function rename(from, to) { assertNoLinkPath(from); assertNoLinkPath(to); return renameRaw(from, to) }
+async function unlink(target) { assertNoLinkPath(target); return unlinkRaw(target) }
 
 export function extRootOf(nonameDir) {
   return join(resolve(nonameDir), 'extension')
@@ -28,6 +49,7 @@ export function safeFolderPath(nonameDir, folder) {
   if (full !== root && !full.startsWith(root + sep)) {
     throw new Error('路径越界:目标不在 extension 目录内。')
   }
+  assertNoLinkPath(full)
   return { root, full }
 }
 
@@ -47,7 +69,8 @@ export function safeEntryFilePath(nonameDir, folder, file) {
   if (!full.startsWith(folderFull + sep)) {
     throw new Error('路径越界:目标文件不在扩展包目录内。')
   }
-  return { rel, full }
+  assertNoLinkPath(full)
+  return { rel: relative(folderFull, full).split(sep).join('/'), full }
 }
 
 /** 递归枚举扩展包内全部 .js(POSIX 相对路径;跳过 backup/image/audio 等目录)。 */
@@ -64,7 +87,7 @@ export async function listPackageJsFiles(nonameDir, folder) {
         if (SKIP_DIRS.has(e.name)) continue
         await walk(join(dir, e.name), childRel)
       } else if (e.isFile() && /\.js$/i.test(e.name)) {
-        // 历史备份文件(1.5.0 曾误写到包根):extension.<时间戳>.js 命名,不是源码,排除
+        // 排除包根中按 extension.<时间戳>.js 命名的备份文件，不将其作为源模块。
         if (/^[\w.-]+\.(?:pre-rollback\.)?\d{8}-\d{6}(?:-\d{6})?\.js$/i.test(e.name)) continue
         out.push(childRel)
       }
@@ -75,9 +98,7 @@ export async function listPackageJsFiles(nonameDir, folder) {
 }
 
 let lastStampSeq = 0
-/* 备份名时间戳:精确到毫秒 + 进程内递增。此前只到秒——同一秒内连写两次
- * (AI 一轮里"写入→改一处→再写"很常见)备份名完全相同,后一次把前一次的
- * 备份直接覆盖掉,BACKUP_KEEP=3 名不副实、可回滚的历史只剩最后一次。 */
+/* 备份名使用毫秒时间戳与进程内递增值，避免短时间连续写入覆盖备份。 */
 function timestamp() {
   const d = new Date()
   const p = (n) => String(n).padStart(2, '0')
@@ -101,15 +122,9 @@ async function writeFileAtomic(target, content) {
   }
 }
 
-/**
- * 备份滚动清理:backupDir 里只保留最新 BACKUP_KEEP 个 .js 备份,其余删除。
- * 返回被删文件的相对路径(相对 nonameDir,POSIX)——供调用方同步清理
- * history.backups 登记,避免登记指向已不存在的文件。
- * protect: 文件名集合,命中的绝不删(回滚时保护「本次回滚源」——copyFile 会继承
- * 源文件 mtime,回滚最旧那份时它会被刚生成的 pre-rollback 挤掉,紧接着的
- * copyFile(backupPath→target) 就读一个已被删的文件:实测 ENOENT)。
- */
+/** 只保留最新 BACKUP_KEEP 个 .js 备份，返回相对 nonameDir 的 POSIX 删除路径供 history.backups 同步清理。protect 中的文件不删除，确保回滚源在复制完成前保持可用。 */
 async function pruneBackups(backupDir, relBase, protect) {
+  assertNoLinkPath(backupDir)
   let names
   try { names = await readdir(backupDir) } catch { return [] }
   const stats = []
@@ -164,7 +179,7 @@ async function collectBackupDirs(folderFull) {
 
 /** 主动清理整个扩展包的全部 backup/(工坊历史面板按钮):
  *  每目录保留最新 3 个,并同步清除 history 里指向被删文件的登记。 */
-export async function prunePackageBackups(nonameDir, folder) { return withBatchWrite(nonameDir,()=>prunePackageBackupsInner(nonameDir,folder)) }
+export async function prunePackageBackups(nonameDir, folder) { assertNoLinkPath(nonameDir); return withBatchWrite(nonameDir,()=>prunePackageBackupsInner(nonameDir,folder)) }
 async function prunePackageBackupsInner(nonameDir, folder) {
   const { full } = safeFolderPath(nonameDir, folder)
   try { await readdir(full) } catch { return { ok: false, error: '扩展包不存在。' } }
@@ -179,12 +194,14 @@ async function prunePackageBackupsInner(nonameDir, folder) {
   return { ok: true, removedCount: allRemoved.length, dirs: touchedDirs }
 }
 
-export async function writeExtension(nonameDir, args) { return withBatchWrite(nonameDir,()=>writeExtensionInner(nonameDir,args)) }
+export async function writeExtension(nonameDir, args) { assertNoLinkPath(nonameDir); return withBatchWrite(nonameDir,()=>writeExtensionInner(nonameDir,args)) }
 async function writeExtensionInner(nonameDir, { folder, file, code, blocks, edits, deletes, editScope, style, kind, infoJson, idPrefix, writeMode }) {
   const blockMode = Array.isArray(blocks) || Array.isArray(edits) || Array.isArray(deletes)
   const full = safeFolderPath(nonameDir, folder).full
+  assertNoLinkPath(join(full, 'info.json'))
   await mkdir(full, { recursive: true })
   const entryPath = safeEntryFilePath(nonameDir, folder, file)
+  const sourceOptions = { file: entryPath.rel }
   const target = entryPath.full
 
   // 旧文件:两种模式都先读(区块模式组装、全文模式保真/防丢都依赖它)
@@ -204,9 +221,9 @@ async function writeExtensionInner(nonameDir, { folder, file, code, blocks, edit
   const preErrors = []
   if (blockMode) {
     if (oldCode === null) preErrors.push('区块模式用于已有扩展:新包首写请用全文模式(提交 code 参数,骨架模板自带锚点)。')
-    else if (((blocks || []).length || (deletes || []).length) && !scanAnchored(oldCode).length) preErrors.push('该文件尚未建立区块索引:请在工坊点「建立区块索引」;非区块区域可用唯一原文 edits 精确修改。')
+    else if (((blocks || []).length || (deletes || []).length) && !scanEffectiveAnchored(oldCode, sourceOptions).length) preErrors.push('该文件尚未建立区块索引:请在工坊点「建立区块索引」;非区块区域可用唯一原文 edits 精确修改。')
     else {
-      const r = assembleBlocks(oldCode, blocks || [], edits || [], deletes || [])
+      const r = assembleBlocks(oldCode, blocks || [], edits || [], deletes || [], sourceOptions)
       if (r.errors.length) preErrors.push(...r.errors)
       else finalCode = r.code
     }
@@ -216,7 +233,7 @@ async function writeExtensionInner(nonameDir, { folder, file, code, blocks, edit
       return { ok: false, wrote: false, errors: [{ message: '覆盖已有文件必须显式提供 editScope(无内容条目改动时为 []);建议用 blocks 或精确 edits 保留其他原文。' }], warnings: [] }
     }
     // 比较全部未授权文本,不是只检查被识别出的内容块。
-    const f = checkFidelity(oldCode, code, editScope)
+    const f = checkFidelity(oldCode, code, editScope, sourceOptions)
     if (!f.ok) {
       return {
         ok: false, wrote: false,
@@ -228,9 +245,9 @@ async function writeExtensionInner(nonameDir, { folder, file, code, blocks, edit
 
   // 模块文件(多文件包的子目录 .js,如 character/character.js)不是完整扩展,
   // 没有 name/translate,扩展语义规则对它不适用——只做纯语法检查(且强制按
-  // module 剥离 import/export,子目录模块按定义就是 ESM,不信任调用方 style)。
+  // module 静态语法解析,子目录模块按定义就是 ESM,不信任调用方 style)。
   // 判定用归一化后的 rel:AI 显式传 'extension.js' 时仍是入口文件,门禁不降级。
-  const isModuleFile = entryPath.rel !== 'extension.js'
+  const isModuleFile = (process.platform === 'win32' ? entryPath.rel.toLowerCase() : entryPath.rel) !== 'extension.js'
   const verdict = isModuleFile
     ? syntaxCheck(finalCode, 'module')
     : validateExtensionCode({ code: finalCode, style, kind, folder, idPrefix })
@@ -240,11 +257,11 @@ async function writeExtensionInner(nonameDir, { folder, file, code, blocks, edit
   }
 
   // 防丢技能护栏:旧代码里定义、新代码里消失的内部 ID → 拒写。
-  // 比对前剥掉锚点注释行(锚点是纯注释,ID 语义不变,但会隔断 collectDefinedIds 的匹配)。
+  // 比对前剥掉锚点注释行,保持重建索引与内容改动使用相同的 ID 语义。
   // 区块模式下 deletes[] 声明的删除豁免;多技能逐个实现时这是安全网。
   if (oldCode !== null) {
-    const oldIds = collectDefinedIds(stripAnchors(oldCode))
-    const newIds = new Set(collectDefinedIds(stripAnchors(finalCode)))
+    const oldIds = collectDefinedIds(stripAnchors(oldCode, sourceOptions), sourceOptions)
+    const newIds = new Set(collectDefinedIds(stripAnchors(finalCode, sourceOptions), sourceOptions))
     const declared = new Set((deletes || []).map((k) => String(k).split(':')[1] || k))
     const lost = [...oldIds].filter((id) => !newIds.has(id) && !declared.has(id))
     if (lost.length > 0) {
@@ -259,8 +276,7 @@ async function writeExtensionInner(nonameDir, { folder, file, code, blocks, edit
   // 手动复制模式:所有门禁过了之后,返回组装/校验后的代码,不落盘
   if (writeMode === 'manual') return { ...verdict, wrote: false, code: finalCode }
 
-  // 覆盖前备份(路径记成相对 nonameDir 的全相对路径——render 直接展示给 AI/用户,
-  // 只给 "backup/x.js" 的话对方不知道该在哪个目录下找,实测要试错一次)
+  // 覆盖前创建备份，并记录相对 nonameDir 的完整路径，供界面直接定位。
   let backup = ''
   if (oldCode !== null) {
     const backupDir = join(dirname(target), 'backup')
@@ -269,8 +285,7 @@ async function writeExtensionInner(nonameDir, { folder, file, code, blocks, edit
     await copyFile(target, join(backupDir, basename(backup)))
     await pruneHistoryBackups(nonameDir, folder, await pruneBackups(backupDir, relative(nonameDir, backupDir)))
   }
-  /* 原子写(tmp+rename):原地截断写在断电/进程被杀/ENOSPC 时会把 extension.js
-   * 留成半截,游戏加载直接报错,而工具层只会回一句"写入被拒"(实测关注点) */
+  /* 通过同目录临时文件与 rename 原子替换，避免写入中断留下截断的 extension.js。 */
   await writeFileAtomic(target, finalCode)
 
   // 初值必须是 boolean 而非 null/null 省略:info.json 已存在且本次未提交时,
@@ -278,8 +293,7 @@ async function writeExtensionInner(nonameDir, { folder, file, code, blocks, edit
   let infoWritten = false
   if (infoJson && String(infoJson).trim()) {
     const infoPath = join(full, 'info.json')
-    // 解析失败与落盘失败分开报:原先一个 catch 兜住两者,磁盘/权限错误被报成
-    // "info.json 不是合法 JSON",把系统故障误诊成用户写错了 JSON(实测误导点)
+    // 分别报告 JSON 解析错误与文件落盘错误，保留磁盘和权限故障的真实原因。
     let parsed
     try {
       parsed = JSON.parse(infoJson)
@@ -313,8 +327,9 @@ async function writeExtensionInner(nonameDir, { folder, file, code, blocks, edit
  */
 export async function readExtension(nonameDir, folder, opts = {}) {
   const { full } = safeFolderPath(nonameDir, folder)
-  const fileRel = opts.file == null || opts.file === '' ? 'extension.js' : String(opts.file).split('\\').join('/')
-  const target = safeEntryFilePath(nonameDir, folder, fileRel).full
+  const entryPath = safeEntryFilePath(nonameDir, folder, opts.file)
+  const fileRel = entryPath.rel
+  const target = entryPath.full
   const names = await readdir(full)
   const result = { folder, file: fileRel, files: names.filter((n) => !n.startsWith('.')) }
   let code
@@ -328,7 +343,7 @@ export async function readExtension(nonameDir, folder, opts = {}) {
       for (const f of files) {
         let c
         try { c = await readFile(join(full, f), 'utf8') } catch { continue }
-        const sb = scanBlocks(c)
+        const sb = scanBlocks(c, { file: f })
         if (!sb.blocks.length) continue
         fileSummaries.push({ file: f, anchored: sb.anchored, blocks: sb.blocks.length })
         for (const b of sb.blocks) blocks.push({ ...b, file: f })
@@ -336,12 +351,12 @@ export async function readExtension(nonameDir, folder, opts = {}) {
       result.blocks = { anchored: fileSummaries.some((f) => f.anchored), blocks, files: fileSummaries }
     } else {
       result.blocks = code !== undefined
-        ? scanBlocks(code)
+        ? scanBlocks(code, { file: fileRel })
         : { anchored: false, blocks: [] }
     }
   } else if (opts.block) {
-    const m = /^(\w+):([\w-]+)$/.exec(String(opts.block))
-    if (!m) result.error = 'block 参数格式应为 kind:id,例如 skill:cs_tianfa。'
+    const m = new RegExp('^(skill|card|character|translate):(' + ENTRY_ID_SOURCE + ')$', 'u').exec(String(opts.block))
+    if (!m || !isEntryId(m[2])) result.error = 'block 参数格式应为 kind:id,例如 skill:cs_tianfa。'
     else {
       let fileMissing = false
       // 查找范围:指定 file → 只查该文件;未指定 → 先 extension.js,再扫全包
@@ -352,7 +367,7 @@ export async function readExtension(nonameDir, folder, opts = {}) {
       for (const f of tryFiles) {
         let c
         try { c = await readFile(join(full, f), 'utf8') } catch { if (f === fileRel) fileMissing = true; continue }
-        const text = extractBlock(c, m[1], m[2])
+        const text = extractBlock(c, m[1], m[2], { file: f })
         if (text != null) { result.code = text; result.block = { kind: m[1], id: m[2], file: f }; break }
       }
       if (result.code === undefined) result.error = fileMissing ? `文件 ${fileRel} 不存在。` : `未找到区块「${opts.block}」(可用 listBlocks 查看目录)。`
@@ -376,17 +391,17 @@ export async function readExtension(nonameDir, folder, opts = {}) {
  * 锚点注释行,一个代码字符不动;写前跑语法校验(不过不落盘),通过后自动备份再写。
  * file 缺省 = extension.js;多文件包对子目录模块文件逐个迁移。
  */
-export async function migrateAnchors(nonameDir, folder, file) { return withBatchWrite(nonameDir,()=>migrateAnchorsInner(nonameDir,folder,file)) }
+export async function migrateAnchors(nonameDir, folder, file) { assertNoLinkPath(nonameDir); return withBatchWrite(nonameDir,()=>migrateAnchorsInner(nonameDir,folder,file)) }
 async function migrateAnchorsInner(nonameDir, folder, file) {
-  const target = safeEntryFilePath(nonameDir, folder, file).full
+  const entryPath = safeEntryFilePath(nonameDir, folder, file)
+  const target = entryPath.full
   let oldCode
   try { oldCode = await readFile(target, 'utf8') } catch { return { ok: false, error: '该文件不存在。' } }
-  const r = migrateCode(oldCode)
+  const r = migrateCode(oldCode, { file: entryPath.rel })
   if (r.error) return { ok: false, error: r.error }
-  const style = /game\.import\(/.test(r.code) ? 'classic' : 'module'
   // 迁移只加注释行,自检用纯语法检查即可;模块文件没有 name 字段,
   // validateExtensionCode 的语义规则(name 必有等)对它不适用
-  const verdict = syntaxCheck(r.code, style)
+  const verdict = syntaxCheck(r.code)
   if (!verdict.ok) return { ok: false, error: '迁移后语法校验失败(不应发生,已放弃写入): ' + (verdict.message || '未知') }
   const backupDir = join(dirname(target), 'backup')
   await mkdir(backupDir, { recursive: true })
@@ -402,7 +417,7 @@ async function migrateAnchorsInner(nonameDir, folder, file) {
  * 已锚文件剥旧锚重打;无条目的壳文件如 extension.js / index.js 自动跳过)。
  * 返回逐文件明细;全部失败才 ok:false。
  */
-export async function migrateExtension(nonameDir, folder) { return withBatchWrite(nonameDir,()=>migrateExtensionInner(nonameDir,folder)) }
+export async function migrateExtension(nonameDir, folder) { assertNoLinkPath(nonameDir); return withBatchWrite(nonameDir,()=>migrateExtensionInner(nonameDir,folder)) }
 async function migrateExtensionInner(nonameDir, folder) {
   const files = await listPackageJsFiles(nonameDir, folder)
   if (!files.length) return { ok: false, error: '扩展包里没有任何 .js 文件。' }
@@ -410,7 +425,7 @@ async function migrateExtensionInner(nonameDir, folder) {
   for (const file of files) {
     let code
     try { code = await readFile(safeEntryFilePath(nonameDir, folder, file).full, 'utf8') } catch { continue }
-    const virtual = virtualEntryCount(code)
+    const virtual = virtualEntryCount(code, { file })
     if (!virtual) continue // 壳文件/无条目文件:跳过
     const r = await migrateAnchors(nonameDir, folder, file)
     results.push({ file, ...r, entries: virtual })
@@ -433,17 +448,16 @@ async function migrateExtensionInner(nonameDir, folder) {
 }
 
 /** 某文件内全部可锚定条目数(四种 kind 合计,translate 走独立分组)。 */
-function virtualEntryCount(code) {
-  return CONTENT_KINDS.reduce((n, kind) => n + virtualBlocks(code, kind).length, 0)
-    + virtualTranslateBlocks(code).length
+function virtualEntryCount(code, options = {}) {
+  return CONTENT_KINDS.reduce((n, kind) => n + virtualBlocks(code, kind, options).length, 0)
+    + virtualTranslateBlocks(code, options).length
 }
 
 /** 列出某扩展的备份文件(新→旧)。 */
 export async function listBackups(nonameDir, folder) {
   const { full } = safeFolderPath(nonameDir, folder)
   const out = []
-  /* 递归:多文件包的模块文件各自备份在自己的 backup/(character/backup/…),
-   * 只读包根的 backup/ 会让子目录备份"看不见、也回滚不了"(实测)。 */
+  /* 递归收集模块各自的 backup 目录，使多文件扩展的全部备份均可列出与回滚。 */
   const walk = async (dir, prefix) => {
     let entries = []
     try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
@@ -453,8 +467,7 @@ export async function listBackups(nonameDir, folder) {
         if (e.name === 'backup') {
           try {
             for (const n of (await readdir(abs)).filter((x) => x.endsWith('.js')).sort().reverse()) {
-              /* 必须带 backup/ 段:回滚接口按「…/backup/文件名」定位,漏了这段
-               * 它就会说"非法的备份路径"——列表与回滚互相不认(实测) */
+              /* 输出包含 backup 路径分量的备份位置，与回滚接口的定位规则一致。 */
               out.push((prefix ? prefix + '/' : '') + 'backup/' + n)
             }
           } catch { /* 忽略 */ }
@@ -469,7 +482,7 @@ export async function listBackups(nonameDir, folder) {
 }
 
 /** 回滚:把指定备份覆盖回 extension.js。返回旧内容备份名。 */
-export async function rollbackExtension(nonameDir, folder, backupName) { return withBatchWrite(nonameDir,()=>rollbackExtensionInner(nonameDir,folder,backupName)) }
+export async function rollbackExtension(nonameDir, folder, backupName) { assertNoLinkPath(nonameDir); return withBatchWrite(nonameDir,()=>rollbackExtensionInner(nonameDir,folder,backupName)) }
 async function rollbackExtensionInner(nonameDir, folder, backupName) {
   /* 接受两种形态:
    *   "extension.20261007-...js"                —— 包根 backup/ 里的(旧客户端)
@@ -483,9 +496,7 @@ async function rollbackExtensionInner(nonameDir, folder, backupName) {
   let backupPath
   let target
   const segs = rel.split('/')
-  /* 段名/文件名一律与写入侧同口径(safeEntryFilePath):包内相对 .js 路径、不许 ..
-   * 与绝对路径。原先用 /^[\w.-]+$/ 当白名单——\w 不含中文,中文子目录/中文模块名
-   * 的包(写入侧明确放行)回滚必报"非法的备份路径"(实测)。 */
+  /* 回滚路径与写入侧使用相同的 safeEntryFilePath 规则：允许包内相对 .js 路径及中文名称，拒绝 .. 与绝对路径。 */
   const safeSeg = (x) => Boolean(x) && x !== '..' && x !== '.' && !x.includes('\\') && !x.includes(':')
   const safeJsName = (x) => safeSeg(x) && /\.js$/i.test(x)
   if (segs.length === 1) {
@@ -497,9 +508,7 @@ async function rollbackExtensionInner(nonameDir, folder, backupName) {
     target = join(full, (m ? m[1] : 'extension') + '.js')
   } else {
     const backupIdx = segs.lastIndexOf('backup')
-    /* backupIdx === 0 是**包根 backup/** 的正常形态(listBackups 对包根备份输出
-     * "backup/extension.<ts>.js")——原先要求 > 0,于是单文件包(最常见形态)点
-     * 回滚 100% 报"非法的备份路径",恢复通道整体不可用(实测) */
+    /* backupIdx 为 0 表示包根的 backup 目录，与子模块备份路径同样可回滚。 */
     if (backupIdx < 0 || backupIdx === segs.length - 1) throw new Error('非法的备份路径。')
     const dirSegs = segs.slice(0, backupIdx)
     const nameSegs = segs.slice(backupIdx + 1)
@@ -507,15 +516,16 @@ async function rollbackExtensionInner(nonameDir, folder, backupName) {
       throw new Error('非法的备份路径。')
     }
     backupPath = join(full, ...dirSegs, 'backup', ...nameSegs)
-    /* 备份名形如 character.20261008-002610-285001.js / extension.pre-rollback.<ts>.js
-     * ——目标是**源文件**,必须把时间戳段剥掉还原(否则旧内容被写成一个新垃圾文件、
-     * 真源文件纹丝不动,还返回"回滚成功":实测踩过) */
+    /* 从备份名剥离时间戳与 pre-rollback 标记，还原要恢复的源文件名。 */
     const restoredNames = nameSegs.map((n) => {
       const m = /^(.*?)\.(?:pre-rollback\.)?\d{8}-\d{6}(?:-\d{6})?\.js$/i.exec(n)
       return m ? m[1] + '.js' : n
     })
     target = join(full, ...dirSegs, ...restoredNames)
   }
+  assertNoLinkPath(backupPath)
+  assertNoLinkPath(target)
+  assertNoLinkPath(join(dirname(target), 'backup'))
   // 内容先读进内存:后面的 prune 有可能动到备份目录,回滚不应依赖源文件还在盘上
   let backupContent
   try { backupContent = await readFile(backupPath, 'utf8') } catch { throw new Error('备份文件读不到(可能已被清理):' + backupName) }
@@ -529,7 +539,7 @@ async function rollbackExtensionInner(nonameDir, folder, backupName) {
     await copyFile(target, join(backupDir, preName))
     protect = new Set([basename(backupPath), preName])
     await pruneHistoryBackups(nonameDir, folder, await pruneBackups(backupDir, relative(nonameDir, backupDir), protect))
-  } catch { /* 当前不存在 */ }
+  } catch (error) { if (error.code === 'NNK_UNSAFE_PATH') throw error; /* 当前不存在 */ }
   await writeFileAtomic(target, backupContent)
   return { folder, restored: backupName }
 }
@@ -537,17 +547,18 @@ async function rollbackExtensionInner(nonameDir, folder, backupName) {
 /** 尽力从 translate 区段提取条目显示名(工坊「编辑已有条目」下拉的括号注):
  * 对象值找 name 字段,数组值取首元素(老式扩展武将 `cs_x: ['名字','描述']`),
  * 字符串值本身就是名字;x 与 x_info 以先出现者为准。提不到就不入表。 */
-function extractDisplayNames(code, sectionNames = ['translate']) {
+function extractDisplayNames(code, sectionNames = ['translate'], options = {}) {
   const names = new Map()
   for (const secName of sectionNames) {
-    for (const sec of findAllSections(code, secName)) {
-      for (const p of sectionProperties(code, sec.open, sec.close)) {
+    for (const sec of findAllSections(code, secName, options)) {
+      for (const p of sectionProperties(code, sec.open, sec.close, options)) {
         const base = p.name.replace(/_info$/, '')
+        if (!isEntryId(base)) continue
         if (names.has(base)) continue
         const seg = code.slice(p.start, p.end + 1)
         const m = /name\s*:\s*(['"`])((?:\\.|(?!\1).)*?)\1/.exec(seg)
           || /[:[]\s*\[\s*(['"`])((?:\\.|(?!\1).)*?)\1/.exec(seg)
-        let name = m && m[2] ? m[2] : ''
+        let name = typeof p.literalValue === 'string' ? p.literalValue : m && m[2] ? m[2] : ''
         if (!name && (code[p.end] === '"' || code[p.end] === "'")) {
           // 简单字符串值(`cs_a: "甲"`):整段结尾的引号字面量就是名字
           const lit = /(['"])((?:\\.|(?!\1).)*?)\1\s*$/.exec(seg)
@@ -565,7 +576,7 @@ function extractDisplayNames(code, sectionNames = ['translate']) {
  * 聚合全包:单文件条目 + 多文件包子目录模块(const 声明形态)都认;每项带 file 归属。
  * 显示名全包聚合——多文件包的条目与它的 translate 常分处不同文件
  * (如英雄杀:条目在 character/character.js,名字在 character/translate.js)。
- * scanBlocks 锚点优先、无锚自动虚拟划分——未迁移老包(含数组形态武将)同样可用。
+ * scanBlocks 合并有效锚与未锚真实条目——未迁移老包(含数组形态武将)同样可用。
  * 只读,不写任何文件。
  */
 export async function listEntries(nonameDir, folder, kind) {
@@ -581,12 +592,12 @@ export async function listEntries(nonameDir, folder, kind) {
     let code
     try { code = await readFile(join(full, f), 'utf8') } catch { continue }
     codes.push({ f, code })
-    for (const [id, name] of extractDisplayNames(code)) if (!names.has(id)) names.set(id, name)
+    for (const [id, name] of extractDisplayNames(code, ['translate'], { file: f })) if (!names.has(id)) names.set(id, name)
   }
   const entries = []
   const seenIds = new Set()
   for (const { f, code } of codes) {
-    for (const b of scanBlocks(code).blocks) {
+    for (const b of scanBlocks(code, { file: f }).blocks) {
       if (b.kind !== kind) continue
       if (seenIds.has(b.id)) continue // 跨文件同名:保留先见文件(extension.js 优先)
       seenIds.add(b.id)
@@ -600,26 +611,11 @@ export async function listEntries(nonameDir, folder, kind) {
   return { ok: true, kind, entries }
 }
 
-/** 从武将条目源码提取 skills 数组里的技能 id(工坊「编辑已有武将」的技能勾选)。
- * 两种形态:对象 `skills: ["a","b"]`;老式数组 `["male","wei",4,["a","b"],...]`
- * (skills 固定在第 4 个元素)。都认不出就返回空数组。 */
-function entrySkillIds(entryText) {
-  const clean = (raw) => raw.split(',')
-    .map((s) => s.trim().replace(/^['"`]|['"`]$/g, '').replace(/\/\/.*$/, '').trim())
-    .filter(Boolean)
-  const obj = /skills\s*:\s*\[([^\]]*)\]/.exec(entryText)
-  if (obj) return clean(obj[1])
-  // 数组形态的条目 text 以「id: [」开头(非裸数组),匹配 sex,group,hp,[skills] 前缀
-  const arr = /:\s*\[\s*(['"])[\w-]+\1\s*,\s*(['"])[\w-]+\2\s*,\s*\d+\s*,\s*\[([^\]]*)\]/.exec(entryText)
-  if (arr) return clean(arr[3])
-  return []
-}
-
 /** 列出某个条目(武将或卡牌——卡牌也可带 skills 字段)的技能(勾选候选):
  * id + translate 显示名(尽力,全包聚合——技能名常在别的文件里)。只读。 */
 export async function listEntrySkills(nonameDir, folder, entryId) {
-  if (typeof entryId !== 'string' || !entryId.trim()) {
-    return { ok: false, skills: [], error: '缺少条目 id。' }
+  if (!isEntryId(entryId)) {
+    return { ok: false, skills: [], error: '条目 ID 格式无效。' }
   }
   const { full } = safeFolderPath(nonameDir, folder)
   const files = await listPackageJsFiles(nonameDir, folder)
@@ -628,14 +624,14 @@ export async function listEntrySkills(nonameDir, folder, entryId) {
   for (const f of files) {
     let code
     try { code = await readFile(join(full, f), 'utf8') } catch { continue }
-    for (const [id, name] of extractDisplayNames(code)) if (!names.has(id)) names.set(id, name)
+    for (const [id, name] of extractDisplayNames(code, ['translate'], { file: f })) if (!names.has(id)) names.set(id, name)
     if (!entry) {
-      entry = virtualCharacterBlocks(code).find((b) => b.id === entryId.trim())
-        || virtualCardBlocks(code).find((b) => b.id === entryId.trim())
+      entry = virtualCharacterBlocks(code, { file: f }).find((b) => b.id === entryId)
+        || virtualCardBlocks(code, { file: f }).find((b) => b.id === entryId)
     }
   }
   if (!entry) return { ok: true, skills: [] }
-  const skills = entrySkillIds(entry.text).map((id) => ({ id, name: names.get(id) || '' }))
+  const skills = (entry.skillIds || []).filter(isEntryId).map((id) => ({ id, name: names.get(id) || '' }))
   return { ok: true, skills }
 }
 
@@ -678,11 +674,11 @@ export async function listAvatars(nonameDir) {
   for (const abs of await listJsDeepAbs(join(resolve(nonameDir), 'character'))) {
     let code
     try { code = await readFile(abs, 'utf8') } catch { continue }
-    for (const [id, name] of extractDisplayNames(code, ['translate', 'translates'])) if (!names.has(id)) names.set(id, name)
-    for (const sec of findAllSections(code, 'characters')) {
-      for (const p of sectionProperties(code, sec.open, sec.close)) add(p.name)
+    for (const [id, name] of extractDisplayNames(code, ['translate', 'translates'], { file: relative(nonameDir, abs) })) if (!names.has(id)) names.set(id, name)
+    for (const sec of findAllSections(code, 'characters', { file: relative(nonameDir, abs) })) {
+      for (const p of sectionProperties(code, sec.open, sec.close, { file: relative(nonameDir, abs) })) add(p.name)
     }
-    for (const b of virtualCharacterBlocks(code)) add(b.id)
+    for (const b of virtualCharacterBlocks(code, { file: relative(nonameDir, abs) })) add(b.id)
   }
   // 扩展包(extension/<名>/:工坊同款识别;内核自身无武将,跳过省读盘)
   let folders = []

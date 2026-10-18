@@ -1,71 +1,16 @@
-/**
- * Zero-tool bootstrap — keep the FIRST top-level model request on an EMPTY
- * tool surface, free of auto-injected workspace/skill context, then narrow
- * the catalog to a minimal RESIDENT set once the anchor turn has produced its
- * first durable assistant message.
- *
- * noname-kit adaptation: added `residentTools` config — extra tools kept
- * resident after promotion (the noname dev toolchain). Sourced from
- * xiaobright/dsh-anchored-standard (MIT), zero-anchored-standard preset.
- *
- * This is the extra test mode behind `zero-anchored-standard`: the anchor
- * plugin seeds a fixed user message and this filter strips the whole catalog,
- * so the first real request follows the zero-injection "we" trajectory. After
- * that assistant response is durable, later requests see the resident
- * catalog.
- *
- * WHY RESIDENT (local addition, user-measured): the promoted phase does NOT
- * dump the whole Standard catalog at once — that dump pulls the trajectory
- * back to standard-like behavior (measured post-promotion regression: a flood
- * of `let me` first-lines). Instead the catalog narrows to the shells +
- * `str_replace_editor` + the three discovery tools (`dev_tool_search`,
- * `skill_search`, `skill_load`) plus whatever the model explicitly unlocked
- * via `dev_tool_search`. Heavier Standard tools (web_search, subagent,
- * workflow, …) are one `dev_tool_search` call away; unlocked names are
- * derived from durable `tool/call` events, so resume and reload keep them.
- *
- * COMPACTION (local addition): a compaction rewrites the whole surface, so the
- * first post-compaction request is a "second first request". Promotion is
- * epoch-aware (see compaction-epoch.mjs): after `compaction/end` the
- * session falls back to a controlled phase — the shells plus `compactionTools`
- * (a core work set, default none) — until a NEW durable assistant message
- * exists past that boundary. The zero-tool anchor applies ONLY to the very
- * first request: after a compaction the model is mid-task and needs to keep
- * working, but still faces a small catalog instead of the full Standard set.
- *
- * Injected reminders (the AGENTS.md digest and the `<available_skills>`
- * catalog, source kinds `agent-instructions` / `skill-catalog`) are stripped
- * during the controlled phase — same reasoning as the anchored variant
- * (issue #6: with the skill catalog present the anchor did not reproduce at
- * all, 0/9). `suppressedContextSources` is configurable; an empty array
- * disables the context filter while keeping the tool bootstrap.
- *
- * Robustness:
- *  - Promotion decisions are memoized per session id for this process; the
- *    durable event scan runs once per session per process, then O(1).
- *  - By default subagents are treated as already promoted so their first
- *    request can use tools. Set `includeSubagents: true` to make subagents
- *    follow the same zero-tool anchor phase as top-level sessions.
- *  - A filter failure degrades to the full catalog with a one-time warning,
- *    so a bug can never brick every request of a session.
- */
+/** Keep the first top-level request on an empty tool catalog, then expose configured resident tools and names unlocked by dev_tool_search. Promotion is reconstructed from durable session events. After compaction, expose shells and compactionTools until a new promotion signal appears. Filter configured context sources during controlled requests. Subagents start promoted unless includeSubagents is enabled; filter failures retain the full catalog. Adapted from xiaobright/dsh-anchored-standard (MIT). */
 
 import { createEpochPromotion } from './compaction-epoch.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'zero-tool-bootstrap'
 
-/**
- * Deliberately NO inject list: the listeners only touch services at event
- * time, and the pre-step strip below registers with `prepend: true` so it
- * stays the OUTERMOST waterfall transform (see the anchored copy for the full
- * registration-order reasoning).
- */
+/** Listeners access services at event time. prepend keeps the pre-step context filter outermost. */
 
-/** Same automatic injections the anchored variant strips by default. */
+/** Context source kinds suppressed during controlled requests by default. */
 const DEFAULT_SUPPRESSED_SOURCES = ['skill-catalog', 'agent-instructions']
 
-/** Shell candidates (the anchored preset's custom-bash registers `bash`; pwsh is Windows standard). */
+/** Shell tool candidates: custom-bash registers bash; pwsh is available on Windows. */
 const SHELLS = ['bash', 'pwsh']
 
 /** Discovery tools always resident after promotion (the tool-search pattern). */
@@ -184,9 +129,7 @@ export function apply(ctx, config) {
     }
   })
 
-  // Strip injected reminders (skill catalog, AGENTS.md) during the controlled
-  // phase. Same registration discipline as the anchored variant: `prepend`
-  // keeps the strip the OUTERMOST transform of the agent/pre-step waterfall.
+  // Register the context filter with prepend so it runs as the outermost pre-step transform.
   ctx.on('agent/pre-step', async ({ agent }, next) => {
     const decision = await next()
     if (decision.kind === 'reject') return decision

@@ -1,6 +1,4 @@
-/* Compatibility guard only. The filesystem namespace is the execution gate.
- * Rejected config-only prototype is retained in scripts/official/b7-config-candidate.js.
- */
+/* Compatibility guard. Filesystem namespace isolation controls whether extensions may execute. */
 (function() {
     var nnk=window.__nnk__;
     function blocked(name) {

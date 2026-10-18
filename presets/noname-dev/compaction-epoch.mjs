@@ -1,26 +1,4 @@
-/**
- * Epoch-aware promotion tracker shared by the bootstrap and baseline-gate
- * plugins of the anchored presets.
- *
- * A compaction rewrites the model-visible surface: the pre-compaction
- * conversation collapses into one synthetic summary message, and the
- * workspace-instruction baseline is re-injected from scratch. The first
- * post-compaction request is therefore a "second first request" — the same
- * first-token conditions the anchored presets exist to control. Promotion is
- * epoch-aware: only a durable promotion signal (`tool/call` and/or
- * `assistant/message`, per the caller's `promoteEvents`) recorded AFTER the
- * last `compaction/end` boundary counts as promoted. Before any compaction
- * the boundary is -1, which preserves the original one-shot semantics.
- *
- * State is memoized per session id and maintained incrementally through
- * `observe()`; a cold session scans its durable log once (so resume and
- * reload reconstruct the same phase), then O(1).
- *
- * By default subagents (`delegationDepth > 0`) are treated as already
- * promoted so their first request can use tools. Set `includeSubagents: true`
- * to make subagents follow the same bootstrap/anchor phase as top-level
- * sessions.
- */
+/** Track tool-bootstrap promotion per session and compaction boundary. A durable tool/call or assistant/message after compaction/end promotes the current epoch. State is rebuilt once from the durable log and updated incrementally. Subagents start promoted unless includeSubagents is enabled. */
 
 /** Build one epoch-aware promotion tracker. */
 export function createEpochPromotion(promoteEvents, options = {}) {

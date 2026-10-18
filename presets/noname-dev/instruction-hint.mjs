@@ -1,34 +1,4 @@
-/**
- * instruction-hint — replace `dsh-agent-instructions`' full AGENTS.md/CLAUDE.md
- * injection with a minimal "these files exist" hint.
- *
- * WHY: the full workspace-instruction digest is a large injected block. After
- * the anchored bootstrap promotes, we want the model to KNOW the instruction
- * files exist (so it reads them before acting) without dumping their content
- * into every request. The model reads the files itself via the filesystem
- * tools when it needs them.
- *
- * Behavior:
- *  - After the session records its first durable promotion signal
- *    (`promoteOn`, default `either`), ONE hint message is injected (once per
- *    session — durable event scan, resume-safe), listing which instruction
- *    files were found:
- *      - user-global: `$DSH_HOME/AGENTS.md`
- *      - project chain: AGENTS.md / CLAUDE.md / AGENTS.local.md / CLAUDE.local.md
- *        walking up from the session cwd to the project root (a directory
- *        containing `.git`, or the cwd itself).
- *  - The hint instructs the model to READ the files before acting when
- *    relevant, without embedding their content.
- *  - Files are probed via `ctx.fs` (the host filesystem seam); a missing fs
- *    service or an unreadable probe degrades to no hint (never throws).
- *  - Pre-promotion requests get NO hint (matches the anchored bootstrap).
- *
- * ROW ORDER: this plugin registers its `agent/pre-step` handler with
- * `prepend: true` and after `tool-bootstrap`, so it runs inside the
- * bootstrap's outermost strip — but it emits AFTER promotion, when the strip
- * is inactive. The hint source kind is `instruction-hint`, which is NOT in
- * `suppressedContextSources`, so it is never stripped.
- */
+/** After durable bootstrap promotion, inject one instruction-file hint per session. Probe user-global AGENTS.md and project AGENTS.md, CLAUDE.md and local variants through ctx.fs; list paths without embedding their contents. Register after tool-bootstrap with prepend so the promoted hint is retained. Unavailable or unreadable files produce no hint. */
 
 import { createEpochPromotion } from './compaction-epoch.mjs'
 import { ensureWorkingDirectory } from './working-directory.mjs'

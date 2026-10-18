@@ -1,13 +1,4 @@
-/**
- * noname-kit 自动探测:在本机常见位置扫描无名杀游戏本体目录。
- * 策略:从盘符根/用户目录出发,前两层无条件深入(游戏可能套在任意名字的
- * 文件夹里),更深层只沿"名字像无名杀(noname|无名)"的目录、
- * 以及它们下面的 resources/app/www/src 这类壳目录往下走;
- * 判定标准:目录下同时存在 extension/ 子目录与 noname.js(或 noname/、game/)。
- * 深度:名字匹配的链路放宽到 8 层(实测 decade 整合包为
- * D:\games\noname\decade\resources\app\src,目标在第 6 层),非匹配路径仍剪到 4 层
- * 防全盘乱扫。这样新机器上用户不用手找路径,工坊向导里点一下就行。
- */
+/** 在本机常见位置探测无名杀本体目录。前两层允许任意目录名，更深层沿 noname、无名及 resources/app/www/src 等壳目录搜索。匹配路径最大深度为 8，其他路径限制为 4；候选目录须包含 extension 与 noname.js、noname 或 game 标记。 */
 import { readdir } from 'node:fs/promises'
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -36,10 +27,7 @@ async function scan(dir, depth, matched, out) {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     const name = entry.name
-    // SKIP 注意:清单里的 'noname'/'game' 本意是跳过游戏根下的引擎子目录,但会误伤
-    // 安装路径中间出现同名文件夹的场景(B 站用户实测 games\noname\... 被整体跳过)
-    // ——壳目录(src/resources 等)与名字明确匹配 noname|无名 的目录不跳过,
-    // 交给 SHELL_DIRS 递归条件与 looksLikeGameRoot 正常判定。
+    // 壳目录及名字匹配 noname 或无名的目录不受 SKIP 剪枝限制，交由递归条件和游戏根标记判断。
     if (SKIP_DIRS.has(name) && !SHELL_DIRS.has(name.toLowerCase()) && !NAME_RE.test(name)) continue
     const full = join(dir, name)
     const nameMatched = matched || NAME_RE.test(name)

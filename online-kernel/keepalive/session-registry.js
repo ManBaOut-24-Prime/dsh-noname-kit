@@ -65,6 +65,8 @@ export class SessionRegistry {
  }
  closeOnlyNeverEntered(reason){const ids=[];for(const r of [...this.records.values()])if(!r.wasEverEntered){
   ids.push(r.peerId);r.owner.stopTransport(reason);this.transportStopped(r.owner,reason);}return ids;}
+ stopAll(reason='user-leave'){const ids=[];for(const r of [...this.records.values()]){
+  ids.push(r.peerId);r.owner.stopTransport(reason);this.transportStopped(r.owner,reason);}return ids;}
  sendControl(id,type,data){const r=this.records.get(id);if(!r||!this.isLive(id))throw Error('Actual registered peer is unavailable');return r.owner.sendControl(type,clone(data));}
  resourceSnapshot(){return {liveOwners:this.records.size,sessionMappings:this.bySession.size,history:this.history.length,
   entered:[...this.records.values()].filter(r=>r.entered).length,everEntered:[...this.records.values()].filter(r=>r.wasEverEntered).length,maxLive:this.maxLive};}

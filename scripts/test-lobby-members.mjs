@@ -8,13 +8,19 @@ import {createEngineOperationPort} from '../online-kernel/keepalive/engine-opera
 globalThis.require=createRequire(import.meta.url);
 const source=fs.readFileSync(new URL('../client.js',import.meta.url),'utf8');
 const support=source.slice(source.indexOf('function onlinePickEvent('),source.indexOf('    function OnlinePanel('));
+const modal=source.slice(source.indexOf('function ModalFrame('),source.indexOf('    function renderRadioGroup('));
+const batchStart=source.indexOf('function renderBatchProposals('),batchEnd=source.indexOf('function renderManifestCard(',batchStart);
+assert.ok(batchStart>=0&&batchEnd>batchStart,'the actual shared transfer renderer must be extracted');
+const batch=source.slice(batchStart,batchEnd);
+const manifest=source.slice(source.indexOf('function renderManifestCard('),source.indexOf('function leaveRoom('));
 const room=source.slice(source.indexOf('function roomBrief()'),source.indexOf('      function renderOnlinePanel()'));
-const render=new Function('bridge','evs','isRoomHost','roomMode','onlineRound','onlineNext','onlineRoom','roomCode','MODE_MAX','ONLINE_MODES','SEAT_COLORS','h','e','sendCmd','setRoomMode','setRoomPopupOpen','setNote','copyText','leaveRoom','renderInviteCard',support+room+';return renderRoomModal();');
+const render=new Function('bridge','evs','isRoomHost','roomMode','onlineRound','onlineNext','onlineRoom','roomCode','MODE_MAX','ONLINE_MODES','SEAT_COLORS','h','e','sendCmd','setRoomMode','setRoomPopupOpen','setNote','copyText','leaveRoom','renderInviteCard','ModalFrame','roomOpenerRef','onlineScope','note','bridgeOnline','batchUi','setBatchUi','window',support+batch+manifest+room+';return renderRoomModal();');
 const caps={identity:8,guozhan:8,versus:8,doudizhu:3,single:2},modes=Object.keys(caps).map(id=>({id,name:id}));
-const h=(tag,props,...children)=>({tag,props:props||{},children:children.flat(Infinity)}),e=(tag,className,...children)=>h(tag,{className},...children);
+const h=(tag,props,...children)=>typeof tag==='function'?tag({...props,children:children.flat(Infinity)}):({tag,props:props||{},children:children.flat(Infinity)}),e=(tag,className,...children)=>h(tag,{className},...children);
+const ModalFrame=new Function('React','h',modal+';return ModalFrame;')({useRef:value=>({current:value}),useEffect(){}},h);
 const nodes=x=>x&&typeof x==='object'?[x,...x.children.flatMap(nodes)]:[],text=x=>x&&typeof x==='object'?x.children.map(text).join(''):String(x??'');
 const latest=k=>k.bridge.events.findLast(e=>e.type==='room_members')?.data;
-function draw(data,host=true){return render({},[{type:'room_members',data}],host,data.mode,null,null,null,data.roomCode,caps,modes,['red'],h,e,()=>{throw Error('Rendering must not send a command');},()=>{},()=>{},()=>{},()=>{},()=>{},()=>null);}
+function draw(data,host=true){return render({},[{type:'room_members',data}],host,data.mode,null,null,null,data.roomCode,caps,modes,['red'],h,e,()=>{throw Error('Rendering must not send a command');},()=>{},()=>{},()=>{},()=>{},()=>{},()=>null,ModalFrame,{current:null},'lobby-members-room','',true,{},()=>{},{});}
 async function connected(mode,profiles={}){
  const f=fixture(),runtimes=[];
  function make(name){const bridge=f.bridge(),native={onInvalidated:()=>()=>{},snapshot:async()=>({})},ipc={on(){},removeListener(){}},nnk={state:{},modules:{rtc:f.rtc,signaling:f.signaling,bridge}};
@@ -26,7 +32,7 @@ async function connected(mode,profiles={}){
  return {f,host,guest,join,close};
 }
 // Real carrier/coordinator/operation-port code; native documents and settlement
-// observations below are deterministic fixtures, never native/P4 proof.
+// observations below are deterministic fixtures, not native or physical two-machine coverage.
 function simulatedDocuments(f){
  const adapters=[];for(const [side,role]of [[f.host,'host'],[f.guest,'guest']]){
   const runtime=side.runtime,manager=runtime.engines,db=new Map([['nnk_onlineName',role==='host'?'Host':'Guest'],['nnk_onlineAvatar','caocao']]),bindings=[];let generation=0;
@@ -169,18 +175,18 @@ cases.push(['late rejected old coordinator cleanup cannot clear a newer cleanup 
 }]);
 // Exercise the complete production OnlinePanel, including its real hooks,
 // derived role/state, event handlers and main cards. Only React scheduling,
-// polling and HTTP are fixtures; no browser/game/native/P4 claim is made.
+// polling and HTTP are fixtures; no browser, game, native or physical two-machine coverage.
 function onlinePanelFixture(){
  const section=source.slice(source.indexOf('    var ONLINE_MODES = ['),source.indexOf('    // ── 工坊页('));
  assert.ok(section.includes('function OnlinePanel()'));
- const state=[],commands=[];let cursor=0,dirty=false,effects=[],current,tree;
- const React={useState(initial){const index=cursor++;if(!(index in state))state[index]=typeof initial==='function'?initial():initial;return [state[index],value=>{const next=typeof value==='function'?value(state[index]):value;if(!Object.is(next,state[index])){state[index]=next;dirty=true;}}];},
+ const state=[],refs=[],commands=[];let cursor=0,refCursor=0,dirty=false,effects=[],current,tree;
+ const React={useId:()=> 'lobby-members-panel',useRef(initial){const index=refCursor++;if(!(index in refs))refs[index]={current:initial};return refs[index];},useState(initial){const index=cursor++;if(!(index in state))state[index]=typeof initial==='function'?initial():initial;return [state[index],value=>{const next=typeof value==='function'?value(state[index]):value;if(!Object.is(next,state[index])){state[index]=next;dirty=true;}}];},
   // Supplied status snapshots replace only the two mount-time network polls.
   // Ordinary dependency-free effects run to convergence on every render.
   useEffect(callback,deps){if(deps===undefined)effects.push(callback);}};
  const request=async(url,options)=>{assert.equal(url,'/noname-kit-api/online/command','renderer fixture must not access a real endpoint');commands.push(JSON.parse(options.body));return {json:async()=>({ok:true})};};
- const Panel=new Function('React','h','e','fetch','location','navigator','window',section+';return OnlinePanel;')(React,h,e,request,{port:'0'},{},{confirm:()=>true});
- function drawStatus(status=current){current=status;state[0]=status;for(let i=0;i<30;i++){cursor=0;dirty=false;effects=[];tree=Panel();for(const effect of effects)effect();if(!dirty){assert.equal(nodes(tree).some(n=>n.props.className==='nnk-err'&&text(n).includes('联机页渲染出错')),false,'production renderer must not hide a fixture error');return tree;}}throw Error('OnlinePanel fixture did not settle');}
+ const Panel=new Function('React','h','e','fetch','location','navigator','window','ModalFrame',section+';return OnlinePanel;')(React,h,e,request,{port:'0'},{},{confirm:()=>true},ModalFrame);
+ function drawStatus(status=current){current=status;state[0]=status;for(let i=0;i<30;i++){cursor=0;refCursor=0;dirty=false;effects=[];tree=Panel();for(const effect of effects)effect();if(!dirty){assert.equal(nodes(tree).some(n=>n.props.className==='nnk-err'&&text(n).includes('联机页渲染出错')),false,'production renderer must not hide a fixture error');return tree;}}throw Error('OnlinePanel fixture did not settle');}
  function click(match){const found=nodes(tree).filter(n=>n.tag==='button'&&match(text(n)));assert.equal(found.length,1,'one actual rendered button required');assert.notEqual(found[0].props.disabled,true);found[0].props.onClick();return drawStatus();}
  return {draw:drawStatus,click,commands,get tree(){return tree;}};
 }
@@ -189,7 +195,8 @@ function panelStatus({role='guest',phase='lobby_waiting',roomCode='ABC234',conti
  return {active:true,kernel:{state:'ok'},bridge:{online:true,role,state:{phase,roomCode,continuation},events:events||[{type:'room_members',data}],cfg:{}}};
 }
 const roomButtons=tree=>nodes(tree).filter(n=>n.tag==='button'&&/^🏛 插件房间\(/.test(text(n)));
-const hostControls=tree=>nodes(tree).filter(n=>n.tag==='input'&&n.props.name==='nnk-room-mode'||n.tag==='button'&&/解散|载入到游戏|生成邀请码|换一个房号/.test(text(n)));
+const isRoomModeInput=n=>n.tag==='input'&&typeof n.props.name==='string'&&n.props.name.endsWith('-room-mode');
+const hostControls=tree=>nodes(tree).filter(n=>isRoomModeInput(n)||n.tag==='button'&&/解散|载入到游戏|生成邀请码|换一个房号/.test(text(n)));
 const roomModals=tree=>nodes(tree).filter(n=>n.props.className==='nnk-modal'&&text(n).includes('🏛 NONAME-KIT 插件房间'));
 async function rejoinSameGuest(f,method){
  const h=f.host.runtime,g=f.guest.runtime;
@@ -215,9 +222,13 @@ for(const method of ['room','invite'])cases.push(['same unentered Guest can expl
   const before=structuredClone(g.coordinator.remoteLobby),events=f.guest.bridge.events.filter(e=>e.type==='room_members').length;frame.data.mode='doudizhu';frame.data.nextMode='doudizhu';frame.data.roomCode='XYZ234';assert.notEqual(g.coordinator.validate(old,frame),true);late({data:JSON.stringify(frame)});await drain();g.update();assert.deepEqual(g.coordinator.remoteLobby,before);assert.equal(f.guest.bridge.events.filter(e=>e.type==='room_members').length,events);assert.deepEqual(latest(f.guest).list,latest(f.host).list);assert.equal(old.stopped,true);assert.equal(f.guest.bridge.phases.at(-1).phase,'lobby_waiting');
  }finally{await f.close();}
 }]);
-cases.push(['Guest cancel preserves an already entered original transport and its current Host association',async()=>{
- const f=await connected('single');try{const h=f.host.runtime,g=f.guest.runtime,hp=h.sessions.snapshot()[0],gp=g.sessions.snapshot()[0],ho=h.sessions.getOwner(hp.peerId),go=g.sessions.getOwner(gp.peerId);enter(h.sessions,hp,ho,{local:1,remote:1});enter(g.sessions,gp,go,{local:1,remote:1});const before=go.actualIdentity(),remote=structuredClone(g.coordinator.remoteLobby);await g.cancelAll();await drain();g.update();assert.equal(go.stopped,false);assert.equal(g.coordinator.guestPeer,gp.peerId);assert.deepEqual(g.coordinator.remoteLobby,remote);assert.deepEqual(go.actualIdentity(),before);assert.equal(g.sessions.wasEverEntered(gp.peerId),true);assert.equal(g.sessions.snapshot().length,1);assert.equal(h.sessions.snapshot().length,1);assert.equal(go.snapshot().negotiations,1);assert.notEqual(f.guest.bridge.phases.at(-1).data.roomCode,null);
- }finally{await f.close();}
+cases.push(['Guest explicit exit after a completed round closes the original transport and clears its Host association',async()=>{
+ const f=await connected('single'),docs=simulatedDocuments(f);try{await docs.start();await docs.returnRoom();const h=f.host.runtime,g=f.guest.runtime,peer=g.coordinator.guestPeer,owner=g.sessions.getOwner(peer),before=owner.actualIdentity(),oldCoordinator=g.coordinator;assert.equal(g.sessions.wasEverEntered(peer),true);await g.cancelAll();await drain();g.update();assert.equal(owner.stopped,true);assert.equal(before.pc.connectionState,'closed');assert.equal(before.link.readyState,'closed');assert.equal(before.ping.readyState,'closed');assert.notEqual(g.coordinator,oldCoordinator);assert.equal(g.coordinator.guestPeer,null);assert.equal(g.coordinator.remoteLobby??null,null);assert.equal(g.sessions.snapshot().length,0);assert.equal(h.sessions.snapshot().length,0);assert.equal(h.lobby.snapshot().lobbyOpen,true);assert.equal(owner.snapshot().negotiations,1);assert.equal(f.guest.bridge.phases.at(-1).phase,'idle');assert.equal(f.guest.bridge.phases.at(-1).data.roomCode,null);
+ }finally{docs.close();await f.close();}
+}]);
+cases.push(['Guest explicit exit during active gameplay is rejected and preserves original P2P transports',async()=>{
+ const f=await connected('single'),docs=simulatedDocuments(f);try{await docs.start();const h=f.host.runtime,g=f.guest.runtime,oldCoordinator=g.coordinator,owners=[h.sessions.getOwner(h.sessions.snapshot()[0].peerId),g.sessions.getOwner(g.coordinator.guestPeer)],before=owners.map(owner=>owner.actualIdentity());for(const runtime of [h,g]){runtime.coordinator.round.phase='playing';runtime.engines.current.status.playing=true;}await assert.rejects(g.cancelAll(),/对局|尚未结束/);assert.equal(g.coordinator,oldCoordinator);assert.equal(g.leaving,false);assert.equal(g.coordinator.round.phase,'playing');assert.deepEqual(owners.map(owner=>owner.actualIdentity()),before);assert.ok(owners.every(owner=>!owner.stopped));assert.equal(h.sessions.snapshot().length,1);assert.equal(g.sessions.snapshot().length,1);
+ }finally{docs.close();await f.close();}
 }]);
 cases.push(['complete OnlinePanel respects explicit Guest role even during a Host-like phase',async()=>{
  const ui=onlinePanelFixture();ui.draw(panelStatus());ui.click(t=>/^🏛 插件房间\(/.test(t));assert.equal(roomModals(ui.tree).length,1);
@@ -227,11 +238,11 @@ cases.push(['complete OnlinePanel drops an idle stale room and modal while old r
  for(const role of ['guest','host']){const ui=onlinePanelFixture(),active=panelStatus({role,phase:role==='guest'?'lobby_waiting':'room_open'});ui.draw(active);ui.click(t=>/^🏛 插件房间\(/.test(t));assert.equal(roomModals(ui.tree).length,1);const idle={...active,bridge:{...active.bridge,state:{phase:'idle',roomCode:'ABC234',continuation:null}}},tree=ui.draw(idle);assert.equal(roomModals(tree).length,0,role+' idle stale room must not remain open');assert.equal(roomButtons(tree).length,0,role+' stale room must not offer re-entry');assert.equal(hostControls(tree).length,0,role+' idle stale room must not offer destructive Host controls');assert.equal(ui.commands.length,0);}
 }]);
 cases.push(['complete OnlinePanel actual Guest exit handler sends cancel and removes later stale room affordances',async()=>{
- const ui=onlinePanelFixture(),active=panelStatus();ui.draw(active);ui.click(t=>/^🏛 插件房间\(/.test(t));ui.click(t=>t==='🚪 退出房间');assert.deepEqual(ui.commands,[{action:'cancel',args:{}}]);assert.equal(roomModals(ui.tree).length,0);const idle={...active,bridge:{...active.bridge,state:{phase:'idle',roomCode:'ABC234',continuation:null}}};ui.draw(idle);assert.equal(roomButtons(ui.tree).length,0);assert.equal(hostControls(ui.tree).length,0);assert.equal(roomModals(ui.tree).length,0);
+ const ui=onlinePanelFixture(),active=panelStatus();ui.draw(active);ui.click(t=>/^🏛 插件房间\(/.test(t));ui.click(t=>t==='🚪 退出房间');assert.deepEqual(ui.commands,[{action:'cancel',args:{}}]);assert.equal(roomModals(ui.tree).length,1,'exit must wait for kernel acknowledgement');assert.ok(text(ui.tree).includes('正在退出，等待内核确认'));const idle={...active,bridge:{...active.bridge,role:'',state:{phase:'idle',roomCode:null,continuation:null}}};ui.draw(idle);assert.equal(roomButtons(ui.tree).length,0);assert.equal(hostControls(ui.tree).length,0);assert.equal(roomModals(ui.tree).length,0);
 }]);
 cases.push(['complete OnlinePanel preserves legal Host, Guest and original-connection continuation controls',async()=>{
- for(const role of ['host','guest'])for(const continuation of [false,true]){const ui=onlinePanelFixture(),status=panelStatus({role,phase:role==='host'?'room_open':continuation?'connected':'lobby_waiting',roomCode:continuation?null:'ABC234',continuation:continuation?{room:{complete:true},next:{retryAvailable:false}}:null});ui.draw(status);assert.equal(roomButtons(ui.tree).length,1);ui.click(t=>/^🏛 插件房间\(/.test(t));assert.equal(roomModals(ui.tree).length,1);if(role==='host'){assert.equal(nodes(ui.tree).filter(n=>n.tag==='input'&&n.props.name==='nnk-room-mode').length,5);assert.ok(nodes(ui.tree).some(n=>n.tag==='button'&&/载入到游戏/.test(text(n))));assert.ok(nodes(ui.tree).some(n=>n.tag==='button'&&text(n)==='🗑 解散房间'));}else{assert.equal(hostControls(ui.tree).length,0);assert.ok(nodes(ui.tree).some(n=>n.tag==='button'&&text(n)==='🚪 退出房间'));}assert.equal(ui.commands.length,0);}
- const legacy=onlinePanelFixture();legacy.draw(panelStatus({role:'',phase:'room_open'}));legacy.click(t=>/^🏛 插件房间\(/.test(t));assert.equal(nodes(legacy.tree).filter(n=>n.tag==='input'&&n.props.name==='nnk-room-mode').length,5,'legacy missing-role Host phase remains supported');
+ for(const role of ['host','guest'])for(const continuation of [false,true]){const ui=onlinePanelFixture(),status=panelStatus({role,phase:role==='host'?'room_open':continuation?'connected':'lobby_waiting',roomCode:continuation?null:'ABC234',continuation:continuation?{room:{complete:true},next:{retryAvailable:false}}:null});ui.draw(status);assert.equal(roomButtons(ui.tree).length,1);ui.click(t=>/^🏛 插件房间\(/.test(t));assert.equal(roomModals(ui.tree).length,1);if(role==='host'){assert.equal(nodes(ui.tree).filter(isRoomModeInput).length,5);assert.ok(nodes(ui.tree).some(n=>n.tag==='button'&&/载入到游戏/.test(text(n))));assert.ok(nodes(ui.tree).some(n=>n.tag==='button'&&text(n)==='🗑 解散房间'));}else{assert.equal(hostControls(ui.tree).length,0);assert.ok(nodes(ui.tree).some(n=>n.tag==='button'&&text(n)==='🚪 退出房间'));}assert.equal(ui.commands.length,0);}
+ const legacy=onlinePanelFixture();legacy.draw(panelStatus({role:'',phase:'room_open'}));legacy.click(t=>/^🏛 插件房间\(/.test(t));assert.equal(nodes(legacy.tree).filter(isRoomModeInput).length,5,'legacy missing-role Host phase remains supported');
 }]);
 cases.push(['complete OnlinePanel only offers public invitations while open, including an automatically returned room modal',async()=>{
  const ui=onlinePanelFixture(),active=panelStatus({role:'host',phase:'room_open',continuation:{room:{complete:true,returnId:'fixture-return'},next:{retryAvailable:false}}});active.bridge.state.lobbyOpen=true;

@@ -1,21 +1,4 @@
-/**
- * 守卫:尽力拦截通用工具(AI 的 bash / pwsh / write / edit)对游戏 extension/ 的直接改写。
- *
- * 为什么需要:扩展代码必须走 noname_write_extension(校验门禁 + 覆盖前备份 +
- * 防丢护栏)。历史教训:早期版本是纯字符串包含比对,四类写法全部绕过(正斜杠 /
- * git-bash 盘符 / cd 后相对写 / 会话 cwd 与进程 cwd 不一致的相对路径)。
- *
- * 本模块是静态命令检查,不是 OS 级隔离;优先保守拦截可识别的路径/写法。
- * 覆盖范围(bash 侧):
- *   - 重定向写入 `>` / `>>` / `2>`(带不带空格都算);
- *   - 改文件命令 rm/mv/cp/tee/truncate/dd/install/touch/mkdir…(允许 sudo/xargs 前缀);
- *   - sed -i / perl -i 就地改;git checkout|restore|reset;
- *   - 解释器一行式(node -e / python -c / pwsh -Command …):命令里出现保护路径即拦;
- *   - 先 cd/pushd 进保护目录后,命令行里出现任何写动作(含子壳 `bash -c "cd … && echo > f"`)。
- *
- * 已知边界:8.3 短名、链接别名、变量/动态拼接路径、被调用脚本无法全面静态解析。
- * UNC 与 `\\?\` 形态保守拦截;只检查 GUARDED_TOOLS 中的工具,其它写盘工具不在覆盖内。
- */
+/** 静态检查通用 bash、pwsh、write 与 edit 工具对游戏 extension 目录的可识别改写，引导扩展写入经过 noname_write_extension 的校验与备份。覆盖路径归一、重定向、文件操作、就地编辑、解释器命令以及 cd 后的相对写入。8.3 短名、链接别名、动态路径和脚本内容不保证全面识别；只检查 GUARDED_TOOLS，不能替代操作系统隔离。 */
 
 import { isAbsolute, normalize, resolve } from 'node:path'
 
@@ -47,8 +30,7 @@ export function msysToNative(p) {
   return p
 }
 
-/** Win32 分量归一:尾部的点与空格在 Win32 解析时被忽略(「extension.」==「extension」),
- *  不归一的话「写 …\extension.\包\x.js」这类写法就能绕过写保护(实测 PowerShell 可解析)。 */
+/** 按 Win32 规则去除路径分量尾部的点与空格，使 extension. 等等价写法命中相同保护根。 */
 function stripWin32Tail(seg) {
   const noSpaces = seg.replace(/ +$/, '')
   if (!seg || noSpaces === '.' || noSpaces === '..') return noSpaces
@@ -252,9 +234,7 @@ export function bashGuardReason(command, protectRoot, baseDirs) {
     }
   }
 
-  /* 6) cd/pushd 进保护目录:其后的**相对路径**按该目录解析(这正是本分支的意义)。
-   * 写目标全是绝对路径且都不在保护根内(拷去 /tmp、输出重定向到 /tmp)则放行——
-   * 旧版只看"命令里有写动作",把取证式分析也拦了(实测误伤)。 */
+  /* 进入保护目录后按该目录解析相对写入；所有写目标均为保护根外的绝对路径时放行。 */
   {
     let lastDir = null
     const re = new RegExp(CD_CMD_RE.source, 'gi')

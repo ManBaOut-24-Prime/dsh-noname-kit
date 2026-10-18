@@ -1,6 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const cache=new Map(),MAX=300*1048576,FILES=4096;
+const {MAX_BYTES:MAX}=require('./transfer-policy.cjs');
+const cache=new Map(),FILES=4096;
 const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
 function stamp(s){return [s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':')}
 /** Bounded content observations on join/recheck, never on bridge heartbeat.

@@ -1,16 +1,4 @@
-/**
- * 更新检查:本插件版本 vs 远端最新版本,以及本插件是"怎么装上的"。
- *
- * 设计边界(来自对生态的调研):
- * - 只做「检测 + 明确告知」,不做一键自更新。生态里 Airmetro/dsh-update-checker
- *   那类插件已把检查+一键更新+备份回滚+重启看门狗做完了,重复造没有意义;而且
- *   更新器自身是明确的攻击面(ComfyUI-Manager 连续两个 CVE 都出在它上面)。
- * - 来源:npm registry 优先(国内可达,发布 npm 后最稳),GitHub tags 回退。
- * - 网络失败一律降级成一句"检查失败",绝不抛错、不阻塞界面(ComfyUI/Claude Code/
- *   lazy.nvim 全这么做)。
- * - 本地 link 安装(开发者自己那套)一律跳过检查 —— 代码就是源码目录,没有
- *   "更新"这回事。参考 lazy.nvim 把本地插件当一等公民而不是"坏掉的更新"。
- */
+/** 检查插件安装来源与远端最新版本。优先查询 npm registry，失败时回退 GitHub tags；仅提供检查结果与升级指引，不自动更新。网络失败返回检查失败且不阻塞界面，本地 link 安装跳过检查。 */
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { formatVersion, isNewer, maxVersion, parseVersion } from './version.js'
@@ -93,11 +81,7 @@ export function detectInstall({ dshHome, packageName = PACKAGE_NAME }) {
   return { form: primary.form, spec: primary.spec, profile: primary.profile, profiles: found }
 }
 
-/** 升级命令:link 安装没有可执行的更新动作,返回 null。
- *  用 add <包>@<精确版本> 而非 update:update 会受发布冷却期(minimumReleaseAge)约束,
- *  对刚发的新版静默留在旧版("Already up to date",0.1.6~0.2.0 的 dsh plugin 都是
- *  pnpm 直通,行为一致);add 指名版本会触发 pnpm 自动补冷却期豁免并安装(实测)。
- *  latest 缺省(检测失败兜底)时退回 @latest,冷却期内同样可能不动,仅作占位。 */
+/** 为非 link 安装生成 add <包>@<精确版本> 升级命令，以明确目标版本并适配 pnpm 发布冷却期；未取得版本时退回 @latest。本地 link 安装返回 null。 */
 export function installHint({ form, profile, packageName = PACKAGE_NAME, latest }) {
   if (form === 'git' || form === 'registry') {
     return `dsh plugin --profile ${profile} add ${packageName}@${latest || 'latest'}`
@@ -155,10 +139,7 @@ export async function checkForUpdate({
   force = false,
 } = {}) {
   const install = detectInstall({ dshHome, packageName })
-  /* installHint 刻意不在 base 里算:命令要带**精确版本号**(带 @latest 的 add 遇上
-   * pnpm 冷却期会静默留在旧版,本模块开头即此坑),而 latest 要等探测回来才知道。
-   * 原先先算一份不带 latest 的塞进 base,启动日志(与 check.installHint 载荷)照它
-   * 提示,用户执行后版本纹丝不动、也无报错。现在各分支按需补,缓存那份是带 latest 的 */
+  /* 在取得远端版本后生成 installHint，使升级指引携带精确版本；各返回分支与缓存均保留对应指引。 */
   const base = {
     current: currentVersion,
     installForm: install.form,

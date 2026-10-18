@@ -1,18 +1,4 @@
-/*
- * 房号信令:公共 MQTT broker 上的加密信令通道。
- *
- * 主题结构(nnk2/room/<房号指纹>/…):房号本身**不进主题**(公共 broker 上
- * 任何人都能通配符订阅;房号明文曾等于把密钥一起送出去——密文+房号即可解密),
- * 主题里用的是 FNV-1a 指纹(定宽、单向)。
- *   host            —— 主机在线心跳(retained,10s 一跳,客人用于判房主是否在线)
- *   offer           —— 客人发布连接提议 {guestId, sdp}(房主订阅)
- *   answer/<guestId>—— 主机按 guestId 定向回应答 {sdp}
- *
- * 载荷一律 AES-GCM 加密,密钥 = SHA-256("nnk-room|<房号>")。
- * ⚠️ 诚实口径:房号只有 6 位(≈31 bit),拿到指纹也解不开,但指纹可枚举——
- * 真正的防线是"房号只在两端私下交换";要更强需上 HMAC 挑战握手(待办)。
- * ICE 候选随 SDP 一次性交换(非 trickle),一条 offer / 一条 answer 完成牵线。
- */
+/* 房号信令通过公共 MQTT broker 交换 AES-GCM 加密载荷。主题使用房号的 FNV-1a 指纹，不包含房号明文；密钥为 SHA-256("nnk-room|<房号>")。host 主题发布 retained 心跳，offer 提交客人 SDP，answer/<guestId> 定向回应。ICE 候选随完整 SDP 一次性交换。六位房号及其指纹可被枚举，房号须由双方私下交换。 */
 (function() {
 	var nnk = window.__nnk__;
 
@@ -68,14 +54,7 @@
 		return s;
 	}
 
-	/*
-	 * 打开一个房号信令会话:连接 broker、订阅 topics、消息先解密再回调。
-	 * resolve 出 {publish(topic, obj, retained), end()};publish 自动加密。
-	 * 本层的一切失败都打上 nnkSignal 标记——客人侧自动重回循环靠它区分
-	 * 「信令服务器连不上」(不扣重试预算)与「房主不在」(扣)。此前只认文案
-	 * 里的"信令服务器"四字,mqtt 库自己的报错(connack timeout/ECONNREFUSED)
-	 * 全被误判成房主不在,8 次扣完就误报"房主可能已关闭游戏"。
-	 */
+	/* 连接 broker 并订阅主题，解密成功后调用消息回调；返回 publish 与 end，publish 自动加密。连接失败标记 nnkSignal，使重试循环区分信令故障与房主不在线。 */
 	function signalFailure(err) {
 		var e2 = err instanceof Error ? err : new Error(String(err || "信令失败"));
 		try { e2.nnkSignal = true; } catch (e3) { /* 极端情况(冻结对象):不强求 */ }
@@ -114,11 +93,7 @@
 					clientId: "nnk2-" + role + "-" + randomId(),
 					keepalive: 30,
 					reconnectPeriod: 4000,
-					/* 连接超时压到 6 秒:公共 broker 偶发抽风时,房号门的自动重回
-					 * 循环是"每 4 秒复查一次"——单次连接失败原要 12 秒才放弃,循环被
-					 * 拖成一分钟只走两三次(实测:客户机从"重组房间"到"已进入房间"
-					 * 花了约 2 分钟,大头就是这个超时)。健康连接 1~3 秒完成,压短
-					 * 只影响"连不上"的场景:更快失败、更快交给循环重试 */
+					/* 单次 broker 连接超时为 6 秒，失败后交由每 4 秒检查的自动重试循环继续处理。 */
 					connectTimeout: 6000,
 					clean: true
 				});
@@ -166,9 +141,7 @@
 				if (closed) return;
 				var originalCiphertext = String(payload);
 				trace("ciphertext-received", { topic: topic, ciphertext: originalCiphertext });
-				/* unseal 是异步的:必须先等解密完成再把明文对象交给回调,
-				 * 直接把 Promise 传过去会让调用方判定 msg.guestId/msg.sdp 恒为
-				 * undefined,提议/应答被静默丢弃(与 mqttSession 作用域坑同族) */
+				/* 等待异步 unseal 完成，再将解密对象交给回调，保证调用方能读取 guestId 与 sdp。 */
 				unseal(key, originalCiphertext).then(function(msg) {
 					if (closed) { trace("decryption-result-after-closed", { topic: topic }); return; }
 					trace("decrypted-received", { topic: topic, ciphertext: originalCiphertext, plaintext: msg });

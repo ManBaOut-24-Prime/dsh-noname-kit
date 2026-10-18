@@ -189,8 +189,7 @@ async function getIndex(nonameDir) {
  */
 export async function searchReference(nonameDir, { query, type = 'any', limit = 5 }) {
   if (!nonameDir) {
-    // 报错必须给 AI 指明出路,否则它会退回 bash 自己找 —— 实测会从系统根目录开始
-    // 全盘检索,用户等几分钟都没结果(issue #1)
+    // 游戏目录未配置时返回工坊设置页的配置指引，不触发无范围的文件系统搜索。
     return { ok: false, error: '未配置 nonameDir(游戏本体目录),noname_search_reference 无法搜索。请让用户在工坊「⚙ 设置」页配置游戏本体目录;配置之前不要用 bash 在磁盘/系统目录里检索源码——那会全盘扫描,耗时极长。' }
   }
   const raw = String(query || '').trim()
@@ -204,7 +203,7 @@ export async function searchReference(nonameDir, { query, type = 'any', limit = 
   const matches = []
   let simHitsTruncated = 0
 
-  // ── 阶段 1:目录索引命中(中文名/描述/ID)→ 提取完整定义块 ──
+  // 按目录索引匹配中文名、描述与 ID，并提取完整定义块。
   const candidates = []
   for (const [id, entry] of index.byId) {
     if (!entry.name && !entry.info) continue
@@ -258,7 +257,7 @@ export async function searchReference(nonameDir, { query, type = 'any', limit = 
     })
   }
 
-  // ── 阶段 2:目录未命中时,退回全文关键词评分(老行为) ──
+  // 目录未命中时，使用全文关键词评分查找参考内容。
   if (matches.length === 0) {
     for (const file of index.loaded) {
       const lower = file.text.toLowerCase()
@@ -286,14 +285,12 @@ export async function searchReference(nonameDir, { query, type = 'any', limit = 
     }
   }
 
-  // ── 阶段 3:描述相似度匹配(≥50% 全部列出,按相似度降序,与已有结果去重) ──
+  // 按描述相似度匹配，保留至少 50% 的结果，降序排列并与已有结果去重。
   const qClean = cleanForSimilarity(raw)
   const qGrams = bigramsOf(qClean)
   if (qGrams.size >= 3) {
     const existIds = new Set(matches.map((m) => m.id).filter(Boolean))
-    /* 必须 let:下面按 limit 截断会整体重赋值(原写成 const,任何 ≥4 字的查询
-     * 进这一阶段即 TypeError「Assignment to constant variable」——搜索主路径全崩,
-     * AI 只能退化去 bash 搜,所以一直没被人察觉;行为复现脚本抓出) */
+    /* 结果列表使用 let，允许后续按 limit 截断时重新赋值。 */
     let simHits = []
     for (const [id, entry] of index.byId) {
       if (!entry.name && !entry.info) continue
@@ -303,9 +300,7 @@ export async function searchReference(nonameDir, { query, type = 'any', limit = 
       if (ratio >= 0.5) simHits.push({ id, entry, ratio })
     }
     simHits.sort((a, b) => b.ratio - a.ratio)
-    /* 按 limit 截断:相似度阶段此前整段列出(实测 limit:1 仍回 6 条、整句查询可能
-     * 回几百行紧凑结果 → 撑爆上下文)。精确命中(前两阶段)优先占额度,
-     * 这里补满到 limit 为止;确实被截掉时在结果里说清楚,便于 AI 收窄查询。 */
+    /* 精确命中优先占用 limit，剩余额度用于相似度结果；发生截断时说明结果不完整，便于收窄查询。 */
     const room = Math.max(0, maxMatches - matches.length)
     if (room > 0) {
       simHitsTruncated = Math.max(0, simHits.length - room)

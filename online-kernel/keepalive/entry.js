@@ -38,8 +38,9 @@ function profile(nnk,lease){
   const config={};for(const key of Object.keys(nnk.modules.config.defaults))config[key]=nnk.modules.config.get(key);
   const file=path.join(lease.info.root,'extension','联机助手','nnk-bridge.json');
   const bridge=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):null;
-  return {version:nnk.env.lib.version,build:nnk.build||null,root:lease.info.root,origin:lease.info.origin,config,
-    identity:{connectNickname:nnk.env.lib.config.connect_nickname,connectAvatar:nnk.env.lib.config.connect_avatar},bridge};
+  return {version:nnk.env.lib.version,build:nnk.build||null,root:lease.info.root,origin:lease.info.origin,config,configStorage:{prefix:nnk.env.lib.configprefix,useDB:!!nnk.env.lib.db},
+    identity:{connectNickname:nnk.env.lib.config.connect_nickname,connectAvatar:nnk.env.lib.config.connect_avatar},
+    inventory:nnk.modules.manifest?.collect?.()||null,stockExtensions:[...(nnk.env.lib.config.all?.stockextension||[])],stockPlays:[...(nnk.env.lib.config.all?.plays||[])],bridge};
 }
 export async function install(nnk,lease){
   const {native,info}=lease;let transition=null;

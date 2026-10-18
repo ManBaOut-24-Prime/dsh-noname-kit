@@ -1,27 +1,4 @@
-/**
- * Seed ONE anchor turn ahead of the user's very first real message.
- *
- * The anchor is PREPENDED to the `next-turn` inbox queue ahead of the real
- * message, and dsh claims exactly ONE `next-turn` message per turn, so the
- * first real model request is the fixed anchor prompt on an EMPTY tool
- * surface (see zero-tool-bootstrap.mjs) — either the zero-anchored test
- * notice (default text) or the whoami self-introduction round (`text`
- * configured to "你是谁") — while the user's actual message stays queued and
- * is claimed by the NEXT turn; by then the bootstrap has promoted and the
- * full Standard catalog is unlocked.
- *
- * Anchoring on the first user message — instead of at session creation — keeps
- * the blank-session preset switcher usable before the user types anything.
- *
- * By default subagents are skipped so their first request can use tools
- * immediately. Set `includeSubagents: true` to make subagents also take the
- * anchor turn.
- *
- * Durability is free: the prepend goes through `agent/inbox/spliced` event
- * persistence, so a crash between the anchor and the real message resumes the
- * queue in order, and the inbox replay does not fire `inserted` notifications,
- * so the anchor is never re-injected.
- */
+/** Prepend one anchor message before the first real user message. The durable inbox preserves their order across resume. Subagents skip the anchor unless includeSubagents is enabled; the queued user message runs after tool bootstrap promotion. */
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'anchor-turn'

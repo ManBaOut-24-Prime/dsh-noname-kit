@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** B2 behavioral probes. Legacy transfer is unpaused only in this isolated VM copy. */
+/** Legacy transfer behavior probes. Transfer is unpaused only in this isolated VM copy. */
 import assert from 'node:assert/strict'
 import * as fs from 'node:fs'
 import * as path from 'node:path'

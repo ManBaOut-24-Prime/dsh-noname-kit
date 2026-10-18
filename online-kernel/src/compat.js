@@ -1,13 +1,4 @@
-/*
- * 联机兼容层:垫片 + 开闸 + 隔离。
- *
- * 思路:联机与离线的结构性差异是引擎级的、可数的。针对每个已知差异在引擎
- * API 上打一块小垫片,所有踩中该差异的第三方扩展一起被治好——不改任何扩展
- * 文件(公开插件,不知道对面装了什么)。未知的扩展错误由隔离层接住:记日志、
- * 报工坊、对局继续。
- *
- * 总开关:config autoUnlockExtensions(默认开),关掉即回到引擎原生行为。
- */
+/* 联机兼容层：在引擎 API 上适配已知的联机与离线差异，不改写第三方扩展文件；异常交给隔离层记录。autoUnlockExtensions 关闭时采用引擎原生行为。 */
 (function() {
 	var nnk = window.__nnk__;
 	var KERNEL_NAME = "联机助手";
@@ -113,18 +104,13 @@
 		}
 	}
 
-	/* 隔离名单:名单内的扩展不再开闸(回退引擎原生行为=不加载其 content)。
-	 * 0.3.5 起**不再自动写名单**——链式包装下按堆栈帧定罪必然误伤(真机
-	 * 实证:十周年UI 被连坐),当前策略=只熔断降级+上报;名单保留给手动
-	 * 清理(工坊重置按钮)与未来更准的定罪策略。本内核永不入名单。 */
+	/* 隔离名单中的扩展保持引擎原生的不加载行为；不自动根据堆栈写入名单，仅熔断、降级和上报。名单支持手动清理，联机助手自身不加入名单。 */
 	function blocklist() {
 		var list = nnk.modules.config.get("unlockBlock");
 		return Array.isArray(list) ? list.filter(function(n) { return n !== KERNEL_NAME; }) : [];
 	}
 
-	/* 注:自动隔离(quarantine 函数与 ext_quarantined 事件)已删除——
-	 * 0.3.5 起就不再自动写名单,这函数全仓无调用点,留着只会让人以为还有
-	 * 自动隔离链路。手动名单(clearQuarantine/blocklist)照常保留 */
+	/* 通过 clearQuarantine 与 blocklist 管理手动隔离名单，不提供自动隔离链路。 */
 
 	function clearQuarantine() {
 		try {
@@ -164,10 +150,7 @@
 		}
 		var env = nnk.env;
 		var blocked = blocklist();
-		/* 裁决一条扩展的联机开关:本内核恒开(联机模式靠它自举,不能被分类
-		 * 规则误伤);隔离名单内=关;内容扩展=开(哪怕作者没声明);
-		 * 美化类=关(哪怕作者声明了 connect:true——真机实证:美化族普遍自带
-		 * connect 声明,只拨亮不拨灭的话它们照样加载,开闸形同虚设) */
+		/* 裁决扩展联机开关：本内核保持开启，隔离名单中的扩展关闭，内容扩展开启，美化扩展关闭；分类结果优先于扩展自报的 connect 标志。 */
 		function decide(name, obj) {
 			if (nnk.modules.isolation && nnk.modules.isolation.blocked(name)) return false;
 			if (name === KERNEL_NAME) {
@@ -253,11 +236,7 @@
 			return;
 		}
 		var lib = nnk.env.lib;
-		/* 自定义包要进房间设置,需要三处注册(真机逐层实证):
-		 * 1. connectCharacterPack/connectCardPack——联机资格池;
-		 * 2. config.all.characters/cards——总注册表,房间设置菜单的数据源
-		 *    (用户当年手改游戏本体文件注册的就是这个数组);
-		 * 3. config.characters/cards——启用列表,菜单开关默认打开。 */
+		/* 自定义包分别注册到联机资格池 connectCharacterPack/connectCardPack、菜单数据源 config.all.characters/cards 和启用列表 config.characters/cards。 */
 		[
 			["characterPack", "connectCharacterPack", "characters"],
 			["cardPack", "connectCardPack", "cards"]
@@ -279,9 +258,7 @@
 				if (enabledList && enabledList.indexOf(name) < 0) {
 					enabledList.push(name);
 				}
-				/* 官方 translate 无兜底:扩展没配「包名_character_config」翻译时,
-				 * 房间设置里的标签渲染成空白,看起来像"没加载"(真机实证)——
-				 * 内核代填,用扩展名当标签 */
+				/* 扩展未提供包名_character_config 翻译时，以扩展名补足房间设置标签。 */
 				try {
 					if (lib.translate[name + "_character_config"] === undefined) {
 						lib.translate[name + "_character_config"] = name;
@@ -294,13 +271,7 @@
 		});
 	}
 
-	/*
-	 * 垫片(首块):无懈可击信息表挂点。离线:表挂在"是否使用无懈可击"询问
-	 * 事件的父事件上(_info_map);联机:引擎把表随消息发给客人,挂在询问事件
-	 * 自己身上(info_map)。读父事件的扩展在联机下必炸(十周年UI 实证)。
-	 * 垫片在事件创建时发现身上带 info_map 而父事件没挂,就补一份引用过去,
-	 * 事件收尾时清掉防串味。离线路径父事件本来就有表,垫片自动空转。
-	 */
+	/* 将联机询问事件上的 info_map 引用补到缺少 _info_map 的父事件，兼容按父事件取表的扩展；事件结束时清理引用。 */
 	function shimInfoMap() {
 		var lib = nnk.env.lib;
 		var proto = lib.element && lib.element.Player && lib.element.Player.prototype;
@@ -459,12 +430,7 @@
 	 * 设置页姿势一致。留空 = 完全不动,游戏内自己的设置照常生效。
 	 */
 	function applyIdentity() {
-		/* 口径:工坊值 = 唯一真源,但**不覆盖用户在游戏内的改动**。
-		 * 判据(两值都比较引擎当前生效值):
-		 *   - 工坊值和上次内核写下去的值一样 → 用户没在工坊改过:只在引擎值仍等于
-		 *     上次内核写的值(说明用户也没在游戏里改)时才重写;
-		 *   - 工坊值和上次写的不一样 → 工坊改过了:直接写入并记录新值。
-		 * 此前是无条件双写,用户在游戏里改的昵称/头像下次开机被悄悄改回去。 */
+		/* 以工坊配置的变化判断是否覆盖昵称和头像：工坊值未变时，仅在引擎值仍等于上次同步值时写入；工坊值变化时更新并记录，保留用户在游戏内的修改。 */
 		try {
 			var game = nnk.env.game;
 			var lib = nnk.env.lib;
@@ -519,11 +485,7 @@
 		install: function() {
 			applyIdentity();
 			unlockExtensions();
-			/* 包池解锁的三个时机,层层兜底(真机实证:联机菜单页在 connect 启动
-			 * 时一次性构建,晚于包解析、早于 switchMode——必须赶在菜单构建前):
-			 * 时机一 arenaReady——arena 建好、联机菜单未构建(主时机);
-			 * 时机二 switchMode——房间配置快照前;
-			 * 时机三 createServer——软服务器启动(兜底)。 */
+			/* 在 arenaReady、switchMode 和 createServer 三处解锁包池：分别覆盖联机菜单构建前、房间配置快照前和软服务器启动时的注册需求。 */
 			try {
 				if (Array.isArray(nnk.env.lib.arenaReady)) {
 					nnk.env.lib.arenaReady.push(function() {
@@ -533,9 +495,7 @@
 					});
 				}
 			} catch (e) { /* 忽略 */ }
-			/* 包池解锁必须赶在引擎快照之前:switchMode 组装房间配置时会把
-			 * connectCharacterPack slice 成 configOL.characterPack(真机实证:
-			 * 解锁挂在 createServer 里晚于快照,自定义武将/卡牌进不了房间) */
+			/* 在 switchMode 创建 configOL.characterPack 快照前解锁包池，使自定义武将与卡牌进入房间配置。 */
 			var env = nnk.env;
 			if (typeof env.game.switchMode === "function" && !env.game.switchMode.__nnkPackUnlock) {
 				var origSwitchMode = env.game.switchMode;

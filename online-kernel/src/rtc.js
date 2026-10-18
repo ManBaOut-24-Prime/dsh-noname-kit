@@ -45,10 +45,7 @@
 			hosts: hosts && hosts.length ? hosts : undefined
 		}));
 	}
-	/* 从粘贴内容里**摘出**码本体:聊天软件常给码加前后文(「邀请码:」/引号/表情)、
-	 * 换行、或把整条消息一起复制进来——原先要求整串恰好等于 NNK1.<base64url>,
-	 * 于是"码明明是对的却说无效"(群友报障"邀请码没用"的一大来源)。
-	 * 做法:去掉所有空白,再在全串里找第一段 NNK1.<base64url> */
+	/* 移除粘贴内容中的空白，再提取第一段 NNK1.<base64url> 邀请码，允许聊天附文、引号及换行。 */
 	function decodeCode(str) {
 		var clean = String(str || "").replace(/\s+/g, "");
 		var all = clean.match(/NNK1\./g);
@@ -85,16 +82,7 @@
 		return { iceServers: stun.map(function(u) { return { urls: u }; }) };
 	}
 
-	/* 专用心跳("nnk-ping" 通道,与游戏数据线完全分开、不经过引擎):
-	 * 每 2.5 秒发一拍,收到任意来包算活;约 20 秒(8 拍)全无来包才判死并回调
-	 * onDead——秒级判死,不用干等 ICE consent 超时(~25 秒)才发现断线;
-	 * 持续的微量流量还能防止空闲 P2P 链路被 NAT/UDP 映射超时悄悄回收。
-	 * 判活的证据有三路(缺一不可,全是实测踩出来的):
-	 *  ①心跳线来包;②自己发送缓冲在推进(对端 SCTP 层在 ACK——对端主线程
-	 *  忙时心跳断供但 ACK 照常);③peerTraffic() 报的主通道来包时间(对端
-	 *  开局时主通道正狂发数据,而它那侧的心跳定时器饿死——只看心跳必误杀,
-	 *  实测:房主点开始游戏客人机必掉线)。
-	 * 返回 { stop() }:主动关闭通道前先 stop(),避免把自己的关闭当成对端掉线。 */
+	/* 专用 nnk-ping 通道每 2.5 秒发送心跳；结合心跳来包、发送缓冲推进和主通道来包判断活跃度。网络连接状态用于区分主线程繁忙与真实断连；主动关闭前先 stop。 */
 	function startPing(channel, onDead, peerTraffic, pcState) {
 		var stopped = false;
 		var lastSeen = Date.now();
@@ -145,12 +133,7 @@
 			if (peerTraffic) {
 				try { trafficAt = peerTraffic() || 0; } catch (eT) { trafficAt = 0; }
 			}
-			/* 三路 JS 证据全静默 ≠ 对端死了:选将框重渲染(大武将池)或 5~6 秒高延迟下,
-			 * 双方可能整段不产生 JS 流量——旧逻辑 20 秒到点就杀,实测把活着的客人误杀,
-			 * 客机引擎随即自毁重载(用户看到"一到选将框就卡退")。
-			 * 判死前先问传输层:connectionState 由 Chromium 网络线程按 ICE consent 维护,
-			 * **不依赖对端 JS**(SCTP ACK/STUN 都由网络进程收发,渲染线程卡住也照常),
-			 * 正是纪律里"必须留一条不依赖对端 JS 的活证"。 */
+			/* JS 流量静默时继续检查 Chromium 维护的 connectionState；SCTP ACK 与 STUN 不依赖对端渲染线程，避免将选将或高延迟期间的忙碌判断为断线。 */
 			if (Date.now() - Math.max(lastSeen, trafficAt) > 20000) {
 				if (st === "connected" || st === "new" || st === "connecting") {
 					lastSeen = Date.now();   /* 传输层说链路活着:重置计时继续等(对端只是忙) */
@@ -208,10 +191,7 @@
 			if (signal && signal.aborted) { abort(); return; }
 			pc.addEventListener("icegatheringstatechange", changed);
 			if (signal) signal.addEventListener("abort", abort, { once: true });
-			/* 兜底 4→8 秒:这是**非 trickle** 的一次性交换,码一发出去就不再补候选,
-			 * 4 秒内没集齐的 srflx 就永久丢了(默认 STUN 里 google 那条国内大概率不可达,
-			 * 其超时会拖住整个 gathering)——慢网上表现为「双方网络没打通」。只在
-			 * 集齐偏慢时才多等几秒;STUN 配空/全部秒回时行为不变 */
+			/* 非 trickle 模式最多等待 8 秒收集候选，再一次性交换 SDP；候选提前集齐时立即继续。 */
 			timer = setTimeout(finish, 8000);
 		});
 	}
@@ -383,11 +363,7 @@
 		this._downHooks.push(fn);
 	};
 
-	/* ---- 虚拟网卡直连(Radmin/ZeroTier/Hamachi/Tailscale 等异地组网工具)----
-	 * 浏览器把局域网候选地址打码成 <uuid>.local,对方解析它要靠组播 mDNS——
-	 * 虚拟局域网转发组播并不可靠,直连可能永远建不起来。这里把虚拟网卡的真实
-	 * IP + 本机 ICE 端口作为额外直连地址随信令带给对方,对方直接朝它发检查,
-	 * 不依赖组播。没有虚拟网卡时处处为空,行为与从前完全一致(零影响)。 */
+	/* 虚拟网卡直连：将真实虚拟网卡 IP 与本机 ICE 端口作为附加候选随信令发送，避免依赖跨网段 mDNS 组播；没有虚拟网卡时不添加候选。 */
 	var VIRTUAL_NIC_RE = /radmin|zerotier|hamachi|tailscale|vpn|虚拟|tap|tun|wireguard/i;
 	/* 公网 IPv6(2000::/3)也注入:校园网/教育网普遍给每台机器公网 v6,两端都有时
 	 * **不需要打洞**(没有 NAT)就能直连——而浏览器自己的 v6 候选被打码成 .local,
@@ -536,10 +512,7 @@
 		return n;
 	}
 
-	/* ── 当前线路观测(工坊「内核卡」显示:直连/中继 + 往返延迟)──
-	 * 用户报障"延迟 5~6 秒"时,第一件事是分清"走错路了(中继)"还是"路本身就慢"。
-	 * getStats 的 selectedCandidatePair 给出对端候选类型(host/srflx/relay)与 RTT。
-	 * 5 秒一轮,结果 15 秒内有效(断了就不显示陈旧值)。 */
+	/* 每 5 秒读取 selectedCandidatePair，获取对端候选类型与 RTT；观测结果在 15 秒内有效，断连时不展示陈旧值。 */
 	var lastLink = null;
 	var linkWatchTimer = null;
 	var linkWatchedPc = null;

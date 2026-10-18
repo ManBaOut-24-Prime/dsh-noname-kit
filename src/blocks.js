@@ -6,15 +6,18 @@
  *   cs_tianfa: { ... },        ← 区块内文(含结尾逗号)
  *   //#noname-kit-end skill:cs_tianfa
  *
- * 无锚存量文件支持「虚拟区块」:用字符串感知花括号配对现场划分
- * skill/translate 区段,只读使用(目录/按块读/保真校验);
+ * 无锚存量文件支持「虚拟区块」:静态解析内容表的真实属性位置,
+ * 用于目录、按块读取与保真校验;
  * 区块化写入仍需真实锚点(由骨架模板在首写时产生,或走迁移)。
  */
 
 // 行尾允许 \r:CRLF 文件里锚点行可能带回车(编辑器/git autocrlf 会把整个文件转 CRLF),
 // 行尾锚漏了 \r 就会认不出锚点、以为文件没锚过
-const BEGIN_RE = /^[ \t]*\/\/#noname-kit-begin\s+([\w]+):([\w-]+)[ \t\r]*$/
-const END_RE = /^[ \t]*\/\/#noname-kit-end\s+([\w]+):([\w-]+)[ \t\r]*$/
+import { sourceSections, sourceProperties, sourceStructure, commentTrivia } from './module-parser.js'
+import { ENTRY_ID_SOURCE, isEntryId } from './entry-id.js'
+
+const BEGIN_RE = new RegExp('^[ \\t]*//#noname-kit-begin\\s+([\\w]+):(' + ENTRY_ID_SOURCE + ')[ \\t\\r]*$', 'u')
+const END_RE = new RegExp('^[ \\t]*//#noname-kit-end\\s+([\\w]+):(' + ENTRY_ID_SOURCE + ')[ \\t\\r]*$', 'u')
 const ANCHOR_LINE_RE = /^[ \t]*\/\/#noname-kit-(begin|end)\s+/
 
 function anchorBegin(kind, id) { return `//#noname-kit-begin ${kind}:${id}` }
@@ -66,77 +69,8 @@ function skipBlockComment(text, i) {
   return end >= 0 ? end + 1 : text.length
 }
 
-/**
- * 字符串/注释区间掩码:返回 [[start, end], …](线性扫描,区间含端点)。
- * findAllSections 用它排除字符串字面量与注释里的「幻影区段」命中
- * (如示例代码字符串里的 `const character = {`)。
- */
-function stringAndCommentRanges(code) {
-  const ranges = []
-  let i = 0
-  const n = code.length
-  while (i < n) {
-    const c = code[i]
-    if (c === "'" || c === '"' || c === '`') {
-      const start = i
-      i = skipString(code, i) + 1 // skipString 返回闭引号下标,+1 跳过它,否则闭引号会被再当成新字符串起点
-      ranges.push([start, i])
-    } else if (c === '/' && code[i + 1] === '/') {
-      const start = i
-      i = skipLineComment(code, i)
-      ranges.push([start, i])
-    } else if (c === '/' && code[i + 1] === '*') {
-      const start = i
-      i = skipBlockComment(code, i)
-      ranges.push([start, i])
-    } else i++
-  }
-  return ranges
-}
-
-function insideRanges(ranges, index) {
-  for (const r of ranges) if (index >= r[0] && index < r[1]) return true
-  return false
-}
-
-/**
- * 找出所有同名区段(含嵌套,如 package.skill 与 package.skill.skill)。
- * 虚拟划分用:无名杀扩展的布局不止一种,技能/翻译可能藏在任意层级。
- * 导出给 validate.js 的 ID 收集共用(字符串感知,兼容裸键/引号键/任意嵌套)。
- *
- * 认两种形态:
- * 1. 键区段 `name: { … }`——老式 game.import 内联、package 嵌套、ESM 单文件 package 均此形态;
- * 2. 变量声明 `(export)? const|let|var name = { … }`——ES Module 多文件包
- *    (英雄杀/杀海拾遗等的 character/character.js:`const character = { … }`)。
- *    名字精确等于 kind 才认;识别出的条目形态与老式包完全一致,下游链路通用。
- * 字符串/注释内的命中一律丢弃(掩码排除幻影区段)。
- */
-export function findAllSections(code, name) {
-  const out = []
-  const seen = new Set()
-  const push = (open) => {
-    if (open < 0 || seen.has(open)) return
-    const close = matchBrace(code, open)
-    if (close < 0) return
-    seen.add(open)
-    out.push({ open, close })
-  }
-  const mask = stringAndCommentRanges(code)
-  const patterns = [
-    '(?:^|[\\n{,;])\\s*' + name + '\\s*:\\s*\\{',
-    '(?:^|[\\n;}])\\s*(?:export\\s+)?(?:const|let|var)\\s+' + name + '\\s*=\\s*\\{',
-  ]
-  for (const src of patterns) {
-    const re = new RegExp(src, 'g')
-    let m
-    while ((m = re.exec(code))) {
-      const open = code.indexOf('{', m.index + m[0].length - 1)
-      if (insideRanges(mask, open)) continue
-      push(open)
-    }
-  }
-  return out.sort((a, b) => a.open - b.open)
-}
+/** Enumerate static descriptor sections and top-level singular/plural tables. */
+export function findAllSections(code, name, options = {}) { return sourceSections(code, name, options) }
 
 /** 结构键黑名单:这些名字是布局骨架,不是内容 ID,绝不当作区块。
  * 导出给 validate.js 的 ID 收集共用(容器套容器如 package.card.card 会让
@@ -147,81 +81,8 @@ export const STRUCTURAL_NAMES = new Set([
   'editable', 'connect', 'type', 'list',
 ])
 
-/** 枚举区段内 depth-1 的属性:[{name, start(名字起点), end(配对}下标)}]。
- * 导出给 validate.js 的 ID 收集共用。 */
-export function sectionProperties(code, open, close) {
-  const props = []
-  let i = open + 1
-  let depth = 0
-  while (i < close) {
-    const c = code[i]
-    if (depth > 0) {
-      // 区块内部:字符串/注释不构成新属性,括号计深度
-      if (c === "'" || c === '"' || c === '`') { i = skipString(code, i); continue }
-      if (c === '/' && code[i + 1] === '/') { i = skipLineComment(code, i); continue }
-      if (c === '/' && code[i + 1] === '*') { i = skipBlockComment(code, i); continue }
-      if (c === '{' || c === '[' || c === '(') { depth++; i++; continue }
-      if (c === '}' || c === ']' || c === ')') { depth--; i++; continue }
-      i++
-      continue
-    }
-    // depth 0:注释跳过;属性起点(裸名或带引号名)+ 冒号
-    if (c === '/' && code[i + 1] === '/') { i = skipLineComment(code, i); continue }
-    if (c === '/' && code[i + 1] === '*') { i = skipBlockComment(code, i); continue }
-    if (/[A-Za-z_$"']/.test(c)) {
-      const nm = /^(["'])([\w-]+)\1\s*:|^([A-Za-z_$][\w$]*)\s*:/.exec(code.slice(i, close + 1))
-      if (!nm) { i++; continue }
-      const nameStart = i
-      const name = nm[2] || nm[3]
-      let j = i + nm[0].length
-      while (j < close && /\s/.test(code[j])) j++
-      let end
-      if (code[j] === '{') end = matchBrace(code, j)
-      else if (code[j] === '[') end = matchBracket(code, j)
-      else {
-        // 字面量值:扫到 depth-1 的逗号或区段收口为止,再回退尾随空白/逗号
-        // (修复:最后一个条目没有逗号时,值扫描曾越过区段收口导致块尾定位越界)
-        let d = 0
-        let k = j
-        for (; k < close; k++) {
-          const ch = code[k]
-          if (ch === "'" || ch === '"' || ch === '`') { k = skipString(code, k); continue }
-          if (ch === '/' && code[k + 1] === '/') { k = skipLineComment(code, k); continue }
-          if (ch === '/' && code[k + 1] === '*') { k = skipBlockComment(code, k); continue }
-          if (d === 0 && ch === ',') break
-          if (ch === '{' || ch === '[' || ch === '(') d++
-          else if (ch === '}' || ch === ']' || ch === ')') {
-            if (d === 0) break
-            d--
-          }
-        }
-        let e2 = k - 1
-        while (e2 > j && /[\s,]/.test(code[e2])) e2--
-        end = e2
-      }
-      if (end < 0 || end > close) { i++; continue }
-      props.push({ name, start: nameStart, end })
-      i = end + 1
-      continue
-    }
-    i++
-  }
-  return props
-}
-
-function matchBracket(text, openIndex) {
-  if (text[openIndex] !== '[') return -1
-  let depth = 0
-  for (let i = openIndex; i < text.length; i++) {
-    const c = text[i]
-    if (c === '[') depth++
-    else if (c === ']') { depth--; if (depth === 0) return i }
-    else if (c === "'" || c === '"' || c === '`') i = skipString(text, i)
-    else if (c === '/' && text[i + 1] === '/') i = skipLineComment(text, i)
-    else if (c === '/' && text[i + 1] === '*') i = skipBlockComment(text, i)
-  }
-  return -1
-}
+/** Direct, static properties with exact source offsets. */
+export function sectionProperties(code, open, close, options = {}) { return sourceProperties(code, open, close, options) }
 
 /** 扫描锚点区块(按文本顺序):[{key, kind, id, start, end, innerStart, innerEnd, text}]。 */
 export function scanAnchored(code) {
@@ -233,7 +94,7 @@ export function scanAnchored(code) {
     const line = lines[li]
     if (cur === null) {
       const m = BEGIN_RE.exec(line)
-      if (m) {
+      if (m && isEntryId(m[2])) {
         cur = { key: m[1] + ':' + m[2], kind: m[1], id: m[2], start: offset, innerStart: offset + line.length + 1 }
       }
     } else {
@@ -251,30 +112,42 @@ export function scanAnchored(code) {
   return out
 }
 
-/** 区块目录:锚点优先;无锚时虚拟划分(skill/card/character 区段属性 + translate 条目分组)。 */
-export function scanBlocks(code) {
-  const anchored = scanAnchored(code)
-  if (anchored.length) {
-    return {
-      anchored: true,
-      blocks: anchored.map((b) => ({ key: b.key, kind: b.kind, id: b.id, lines: b.text.split('\n').length, virtual: false })),
-    }
-  }
-  const blocks = []
-  for (const kind of [...CONTENT_KINDS, 'translate']) {
-    for (const b of virtualBlocks(code, kind)) {
-      blocks.push({ key: b.key, kind: b.kind, id: b.id, lines: b.text.split('\n').length, virtual: true })
-    }
-  }
-  return { anchored: false, blocks }
+/** Only unique real entries bounded by genuine comment markers are writable. */
+export function scanEffectiveAnchored(code, options = {}) {
+  const raw = scanAnchored(code)
+  const comments = new Set(sourceStructure(code, options).comments.filter(c => c.type === 'Line').map(c => c.start))
+  const commentAt = at => comments.has(at + (code.slice(at).match(/^[ \t]*/)?.[0].length || 0))
+  const entries = [...CONTENT_KINDS, 'translate'].flatMap(kind => virtualCandidates(code, kind, options))
+  return raw.filter(b => {
+    const hits = entries.filter(x => x.key === b.key)
+    if (hits.length !== 1 || raw.filter(x => x.key === b.key).length !== 1) return false
+    const entry = hits[0]
+    if (entry.readOnly || entry.contiguous === false || entry.start < b.innerStart || entry.end >= b.innerEnd) return false
+    if (!commentAt(b.start) || !commentAt(b.innerEnd) || b.text.split('\n').some(l => ANCHOR_LINE_RE.test(l))) return false
+    return commentTrivia(code, b.innerStart, entry.start, false, options)
+      && commentTrivia(code, entry.end + 1, b.innerEnd, true, options)
+  })
 }
 
-/** 按块取内文:key 形如 'skill:cs_tianfa'。锚点优先,退回虚拟。 */
-export function extractBlock(code, kind, id) {
+/** Merge validated anchors and remaining real entries, including partially indexed files. */
+export function scanBlocks(code, options = {}) {
+  const anchored = new Map(scanEffectiveAnchored(code, options).map(b => [b.key, b]))
+  const blocks = []
+  for (const kind of [...CONTENT_KINDS, 'translate']) {
+    for (const b of virtualBlocks(code, kind, options)) {
+      const hit = anchored.get(b.key)
+      blocks.push({ key: b.key, kind: b.kind, id: b.id, lines: (hit?.text || b.text).split('\n').length, virtual: !hit })
+    }
+  }
+  return { anchored: anchored.size > 0, blocks }
+}
+
+/** Read true entries; invalid legacy marker keys cannot expose nested configuration. */
+export function extractBlock(code, kind, id, options = {}) {
   const key = kind + ':' + id
-  const hit = scanAnchored(code).find((b) => b.key === key)
+  const hit = scanEffectiveAnchored(code, options).find(b => b.key === key)
   if (hit) return hit.text
-  const b = virtualBlocks(code, kind).find((x) => x.id === id)
+  const b = virtualBlocks(code, kind, options).find(x => x.id === id)
   return b ? b.text : null
 }
 
@@ -282,58 +155,46 @@ export function extractBlock(code, kind, id) {
  *  translate 有 name+desc 合并逻辑、单独处理。 */
 export const CONTENT_KINDS = ['skill', 'card', 'character']
 
-/**
- * 无锚文件:某个区段的 depth-1 条目逐个成块(含嵌套区段的并集)。
- * closers = 允许的"条目值结尾字符":skill 只认对象 `{}`;card/character 还认数组 `[]`
- * —— 老式扩展的武将最常用数组形态(`Miku: ["Miku", ["cs_x"], ...]`),那是正文不是噪声,
- * 不认数组就等于把整包武将排除在区块管理之外(实测真实扩展 70 个武将全军覆没)。
- */
-function virtualObjectBlocks(code, kind, closers = '}') {
+function virtualCandidates(code, kind, options = {}) {
   const out = []
-  const seen = new Set()
-  for (const sec of findAllSections(code, kind)) {
-    for (const p of sectionProperties(code, sec.open, sec.close)) {
-      if (!closers.includes(code[p.end])) continue
-      if (STRUCTURAL_NAMES.has(p.name)) continue
-      if (seen.has(p.name)) continue
-      seen.add(p.name)
-      out.push({ key: kind + ':' + p.name, kind, id: p.name, start: p.start, end: p.end, text: code.slice(p.start, p.end + 1) })
+  for (const sec of findAllSections(code, kind, options)) {
+    const props = sectionProperties(code, sec.open, sec.close, options)
+    if (kind !== 'translate') {
+      for (const p of props) {
+        const types = kind === 'skill' ? ['ObjectExpression'] : ['ObjectExpression', 'ArrayExpression', 'NewExpression']
+        if (!isEntryId(p.name) || STRUCTURAL_NAMES.has(p.name) || !types.includes(p.valueType)) continue
+        if (p.valueType === 'NewExpression' && !(kind === 'character' && p.readOnly && p.characterConstructor)) continue
+        out.push({ key: kind + ':' + p.name, kind, id: p.name, start: p.start, end: p.end, readOnly: !!(p.readOnly || p.indirect), skillIds: p.skillIds, skillsDynamic: p.skillsDynamic, text: code.slice(p.start, p.end + 1) })
+      }
+      continue
     }
-  }
-  return out
-}
-
-export function virtualSkillBlocks(code) { return virtualObjectBlocks(code, 'skill') }
-export function virtualCardBlocks(code) { return virtualObjectBlocks(code, 'card', '}]') }
-export function virtualCharacterBlocks(code) { return virtualObjectBlocks(code, 'character', '}]') }
-
-/** 按种类取虚拟块(translate 走它自己的分组逻辑)。 */
-export function virtualBlocks(code, kind) {
-  if (kind === 'translate') return virtualTranslateBlocks(code)
-  return virtualObjectBlocks(code, kind, kind === 'skill' ? '}' : '}]')
-}
-
-/** 无锚文件:所有 translate 区段的条目按基础 ID 分组(x 与 x_info 同块),按区段去重。 */
-export function virtualTranslateBlocks(code) {
-  const out = []
-  const seen = new Set()
-  for (const sec of findAllSections(code, 'translate')) {
     const groups = new Map()
-    for (const p of sectionProperties(code, sec.open, sec.close)) {
-      if (code[p.end] === '}') continue
-      const base = p.name.replace(/_info$/, '')
-      const g = groups.get(base)
-      if (g) { g.end = p.end; g.text = code.slice(g.start, p.end + 1) }
-      else groups.set(base, { key: 'translate:' + base, kind: 'translate', id: base, start: p.start, end: p.end, text: code.slice(p.start, p.end + 1) })
+    for (const [index, p] of props.entries()) {
+      if (!isEntryId(p.name) || p.valueType === 'ObjectExpression') continue
+      const id = p.name.replace(/_info$/, '')
+      if (!isEntryId(id)) continue
+      if (!groups.has(id)) groups.set(id, [])
+      groups.get(id).push({ ...p, index })
     }
-    for (const b of groups.values()) {
-      if (seen.has(b.id)) continue
-      seen.add(b.id)
-      out.push(b)
+    for (const [id, parts] of groups) {
+      const start = parts[0].start, end = parts[parts.length - 1].end
+      const contiguous = parts.every((p, i) => i === 0 || p.index === parts[i - 1].index + 1)
+      out.push({ key: 'translate:' + id, kind, id, start, end, contiguous, readOnly: parts.some(p => p.readOnly || p.indirect),
+        text: contiguous ? code.slice(start, end + 1) : parts.map(p => code.slice(p.start, p.end + 1)).join(',\n') })
     }
   }
   return out
 }
+
+function uniqueVirtual(code, kind, options = {}) {
+  const seen = new Set()
+  return virtualCandidates(code, kind, options).filter(b => !seen.has(b.key) && seen.add(b.key))
+}
+export function virtualSkillBlocks(code, options = {}) { return uniqueVirtual(code, 'skill', options) }
+export function virtualCardBlocks(code, options = {}) { return uniqueVirtual(code, 'card', options) }
+export function virtualCharacterBlocks(code, options = {}) { return uniqueVirtual(code, 'character', options) }
+export function virtualTranslateBlocks(code, options = {}) { return uniqueVirtual(code, 'translate', options) }
+export function virtualBlocks(code, kind, options = {}) { return uniqueVirtual(code, kind, options) }
 
 function normalizeBlockCode(kind, raw) {
   let code = String(raw || '').replace(/\s+$/, '')
@@ -348,18 +209,14 @@ function anchorWrap(key, body) {
   return anchorBegin(kind, id) + '\n' + body + '\n' + anchorEnd(kind, id)
 }
 
-function insertPoint(code, kind) {
-  const all = scanAnchored(code).filter((b) => b.kind === kind)
+function insertPoint(code, kind, options = {}) {
+  const all = scanEffectiveAnchored(code, options).filter((b) => b.kind === kind)
   if (all.length) {
-    // 同 kind 的块可能分布在多个同名区段(最典型:translate 分散在 character/card/
-    // skill 各自的 translate 子对象)。直接取「文件最后一个」会把新块追加进错误的
-    // 区段(实测:测试包的 translate:ts_mujia 在 card.translate,新技能翻译被插进
-    // card 区)。改为按区段归属分组,取锚点最多的区段的最后一个锚点之后——多数
-    // 区段即该 kind 的主体所在;都归不了区段时退回旧的「最后一个」。
-    const secs = findAllSections(code, kind)
+    // 按区段归属统计同 kind 的锚点，将新块插到锚点最多的主体区段末尾；无法定位区段时使用该 kind 的最后一个锚点。
+    const secs = findAllSections(code, kind, options)
     const bySec = new Map()
     for (const b of all) {
-      const sec = secs.find((s) => b.start > s.open && b.start < s.close)
+      const sec = secs.filter((s) => b.start > s.open && b.start < s.close).sort((a, b) => (a.close - a.open) - (b.close - b.open))[0]
       if (!sec) continue
       if (!bySec.has(sec)) bySec.set(sec, [])
       bySec.get(sec).push(b)
@@ -369,8 +226,9 @@ function insertPoint(code, kind) {
       let bestCount = -1
       for (const blocks of bySec.values()) {
         if (blocks.length > bestCount) { bestBlocks = blocks; bestCount = blocks.length }
+        else if (blocks.length === bestCount) bestBlocks = null
       }
-      return bestBlocks[bestBlocks.length - 1].end
+      return bestBlocks ? bestBlocks[bestBlocks.length - 1].end : null
     }
     return all[all.length - 1].end
   }
@@ -379,13 +237,16 @@ function insertPoint(code, kind) {
   // 会让新条目挂到错误的对象层级上。
   let best = null
   let bestCount = -1
-  for (const sec of findAllSections(code, kind)) {
-    const count = sectionProperties(code, sec.open, sec.close).filter((p) => !STRUCTURAL_NAMES.has(p.name)).length
+  const secs = findAllSections(code, kind, options)
+  for (const sec of secs) {
+    if (secs.some(inner => inner.open > sec.open && inner.close < sec.close)) continue
+    const count = sectionProperties(code, sec.open, sec.close, options).filter((p) => !STRUCTURAL_NAMES.has(p.name)).length
     if (count > bestCount) { best = sec; bestCount = count }
+    else if (count === bestCount) best = null
   }
   if (!best) return null
   const nl = code.indexOf('\n', best.open)
-  return nl >= 0 ? nl + 1 : null
+  return nl >= 0 && nl < best.close && commentTrivia(code, best.open + 1, nl, false, options) ? nl + 1 : null
 }
 
 /**
@@ -393,14 +254,37 @@ function insertPoint(code, kind) {
  * 纯文本操作;任何错误整单拒绝并返回原码。
  * @returns {{code:string, applied:string[], deleted:string[], errors:string[]}}
  */
-export function assembleBlocks(oldCode, blocks = [], edits = [], deletes = []) {
+export function assembleBlocks(oldCode, blocks = [], edits = [], deletes = [], options = {}) {
   const errors = []
   const applied = []
   const deleted = []
   let code = oldCode
 
+  const raw = scanAnchored(oldCode)
+  const effective = scanEffectiveAnchored(oldCode, options)
+  const real = [...CONTENT_KINDS, 'translate'].flatMap(kind => virtualCandidates(oldCode, kind, options))
+  const invalid = raw.filter(b => !effective.some(x => x.start === b.start && x.end === b.end))
+  for (const item of blocks) {
+    if (!item || ![...CONTENT_KINDS, 'translate'].includes(item.kind) || !isEntryId(item.id)) errors.push('区块种类或 ID 格式无效')
+  }
+  for (const key of deletes) {
+    const parts = typeof key === 'string' ? key.split(':') : []
+    if (parts.length !== 2 || ![...CONTENT_KINDS, 'translate'].includes(parts[0]) || !isEntryId(parts[1])) errors.push('删除区块键格式无效')
+  }
+  if (errors.length) return { code: oldCode, applied, deleted, errors }
+  const targets = [...deletes, ...blocks.map(item => item.kind + ':' + item.id)]
+  for (const key of targets) {
+    const hit = effective.find(b => b.key === key)
+    const entries = real.filter(b => b.key === key)
+    if (invalid.some(b => b.key === key || entries.some(e => b.start <= e.end && b.end > e.start))) {
+      errors.push('区块「' + key + '」涉及无效旧索引,请先重新建立区块索引')
+    } else if (!hit && entries.length) {
+      errors.push('区块「' + key + '」已存在但没有唯一有效索引,请先重新建立区块索引')
+    }
+  }
+
   // 1) 删除声明必须存在
-  const presentKeys = new Set(scanAnchored(code).map((b) => b.key))
+  const presentKeys = new Set(scanEffectiveAnchored(code, options).map((b) => b.key))
   for (const key of deletes) {
     if (!presentKeys.has(key)) errors.push(`要删除的区块「${key}」不存在(现存区块可用 listBlocks 查看)`)
   }
@@ -414,14 +298,14 @@ export function assembleBlocks(oldCode, blocks = [], edits = [], deletes = []) {
   if (errors.length) return { code: oldCode, applied, deleted, errors }
 
   // 3) 删除区块(从后往前,偏移不失效)
-  const delRegions = scanAnchored(code).filter((b) => deletes.includes(b.key)).sort((a, b) => b.start - a.start)
+  const delRegions = scanEffectiveAnchored(code, options).filter((b) => deletes.includes(b.key)).sort((a, b) => b.start - a.start)
   for (const r of delRegions) {
     code = code.slice(0, r.start) + code.slice(r.end)
     deleted.push(r.key)
   }
 
   // 4) 替换已有块(从后往前)
-  const cur = new Map(scanAnchored(code).map((b) => [b.key, b]))
+  const cur = new Map(scanEffectiveAnchored(code, options).map((b) => [b.key, b]))
   const replacing = []
   const inserting = []
   for (const item of blocks) {
@@ -441,8 +325,8 @@ export function assembleBlocks(oldCode, blocks = [], edits = [], deletes = []) {
   for (const kind of [...CONTENT_KINDS, 'translate']) {
     const list = inserting.filter((x) => x.kind === kind)
     if (!list.length) continue
-    const at = insertPoint(code, kind)
-    if (at == null) { errors.push(`文件中找不到 ${kind}: { 区段,无法插入新块——请用全文模式补充骨架后重试`); continue }
+    const at = insertPoint(code, kind, options)
+    if (at == null) { errors.push(`文件中找不到唯一安全的 ${kind} 插入位置,请核对目标文件和区块索引,或使用唯一原文 edits`); continue }
     code = code.slice(0, at) + list.map((x) => x.wrapped).join('\n') + '\n' + code.slice(at)
     for (const x of list) applied.push(x.key)
   }
@@ -461,7 +345,14 @@ export function assembleBlocks(oldCode, blocks = [], edits = [], deletes = []) {
     else if (count > 1) errors.push(`edits:目标文本出现 ${count} 次,无法唯一定位:「${e.find.slice(0, 60)}」`)
     else code = code.slice(0, idx) + e.replace + code.slice(idx + e.find.length)
   }
-  if (errors.length) return { code: oldCode, applied, deleted, errors }
+  if (blocks.length) {
+    const indexed = new Set(scanEffectiveAnchored(code, options).map(b => b.key))
+    for (const item of blocks) {
+      const key = item.kind + ':' + item.id
+      if (!indexed.has(key)) errors.push('区块「' + key + '」未形成唯一有效索引,已放弃写入')
+    }
+  }
+  if (errors.length) return { code: oldCode, applied: [], deleted: [], errors }
   return { code, applied, deleted, errors }
 }
 
@@ -470,11 +361,16 @@ export function assembleBlocks(oldCode, blocks = [], edits = [], deletes = []) {
  * 骨架、注释及行尾)原样比较。不把非连续翻译条目之间的文本纳入授权范围。
  * bare ID 兼容旧调用;kind:id 可缩小到单种条目。添加/删除/歧义使用区块或精确 edits。
  */
-export function checkFidelity(oldCode, newCode, scopeIds = []) {
-  if (!Array.isArray(scopeIds) || scopeIds.some((id) => typeof id !== 'string' || !/^(?:(?:skill|card|character|translate):)?[\w-]+$/.test(id))) {
+export function checkFidelity(oldCode, newCode, scopeIds = [], options = {}) {
+  if (!Array.isArray(scopeIds) || scopeIds.some((id) => {
+    if (typeof id !== 'string') return true
+    const parts = id.split(':')
+    return parts.length === 1 ? !isEntryId(id)
+      : parts.length !== 2 || ![...CONTENT_KINDS, 'translate'].includes(parts[0]) || !isEntryId(parts[1])
+  })) {
     return { ok: false, changed: ['editScope 格式无效'] }
   }
-  // 轻量区间扫描不是完整 JS parser。含正则/除法或模板插值时不授予推测区间,
+  // 全文覆盖保留既有保守边界:含正则/除法或模板插值时不授予覆盖区间,
   // 仍允许原文不变,否则要求精确 edits(直接在旧文本组装,无需推断授权范围)。
   const uncertain = (text) => {
     for (let i = 0; i < text.length; i++) {
@@ -496,8 +392,9 @@ export function checkFidelity(oldCode, newCode, scopeIds = []) {
   const collect = (code) => {
     const items = []
     for (const kind of [...CONTENT_KINDS, 'translate']) {
-      for (const sec of findAllSections(code, kind)) {
-        for (const p of sectionProperties(code, sec.open, sec.close)) {
+      for (const sec of findAllSections(code, kind, options)) {
+        for (const p of sectionProperties(code, sec.open, sec.close, options)) {
+          if (!isEntryId(p.name) || p.readOnly || p.indirect) continue
           if (kind === 'translate' ? code[p.end] === '}' : STRUCTURAL_NAMES.has(p.name) || !(kind === 'skill' ? '}' : '}]').includes(code[p.end])) continue
           const id = kind === 'translate' ? p.name.replace(/_info$/, '') : p.name
           items.push({ ...p, id, kind, key: kind + ':' + p.name, text: code.slice(p.start, p.end + 1) })
@@ -548,25 +445,33 @@ function normalizeForCompare(code) {
  * 锚点化迁移:对无锚老文件插入锚点注释行,一个代码字符不动。
  * 自检:剥掉锚点行后必须与原文逐行一致,否则放弃。
  */
-export function migrateCode(oldCode) {
+export function migrateCode(oldCode, options = {}) {
   // 幂等:已锚点文件先剥旧锚再重扫(锚点规范升级后直接重新建立索引即可)
-  const base = scanAnchored(oldCode).length ? stripAnchors(oldCode) : oldCode
+  const base = scanAnchored(oldCode).length ? stripAnchors(oldCode, options) : oldCode
   const items = []
-  for (const kind of [...CONTENT_KINDS, 'translate']) items.push(...virtualBlocks(base, kind))
-  /* 必须按位置重排:上面按 kind 分组收集(skill/card/character/translate),与文件里的
-   * 实际顺序无关。两个不同 kind 的区块落在相邻行(紧凑写法:`character: { a: {...} },`
-   * 下一行就是 `card: { c1: [1] },`)时共用同一个边界偏移,插入顺序由收集顺序决定——
-   * 位置在后、kind 在前的块会把它的 begin 锚排到另一块的 end 锚之前,扫描器按同名配对,
-   * 前块于是吞掉后块的 begin 锚、后块从区块目录里消失(实测:迁移"成功"却写坏索引) */
+  for (const kind of [...CONTENT_KINDS, 'translate']) items.push(...virtualCandidates(base, kind, options))
+  /* 按源码位置排序区块，使共享插入偏移处的 begin/end 锚保持原文顺序，避免不同 kind 的相邻区块交叉。 */
   items.sort((a, b) => (a.start - b.start) || (a.end - b.end))
   if (!items.length) {
     // 新式 ES Module 多文件包(如懒人包预装的英雄杀):extension.js 只是入口壳,
     // 条目在子目录模块(const character = {...} + export)。锚点化与全文写入的
     // 目标都是 extension.js,对壳文件动手毫无意义——必须给专属文案,不能引导"走全文模式"。
     if (/(^|\n)\s*import\s+[\w{*\s"']/.test(base) || /(^|\n)\s*export\s+(default|let|const|var|\{)/.test(base)) {
-      return { error: '该扩展是新式 ES Module 多文件结构(extension.js 只是入口壳,武将/技能/翻译定义在子目录的模块文件里)——工具当前版本的锚点化与写入仅支持单文件扩展,暂不支持此类包。' }
+      return { error: '该文件未发现可锚定的内容条目;ES Module 多文件结构请指定实际定义武将、技能或翻译的模块文件,也可在工坊建立全包索引。' }
     }
     return { error: '未能识别出可锚定的区块(skill/card/character/translate 区段)——该文件可能是非常规格式,请走全文模式处理。' }
+  }
+  if (items.some(b => b.readOnly)) return { error: '该文件包含只读或间接内容定义,不能安全建立可写索引;请使用唯一原文 edits 精确修改。' }
+  if (items.some(b => b.contiguous === false || items.filter(x => x.key === b.key).length !== 1)) {
+    return { error: '条目重复或翻译条目不连续,无法安全建立区块索引;请使用唯一原文 edits 精确修改。' }
+  }
+  for (const b of items) {
+    const ls = base.lastIndexOf('\n', b.start) + 1
+    let le = base.indexOf('\n', b.end + 1)
+    if (le < 0) le = base.length
+    if (!commentTrivia(base, ls, b.start, false, options) || !commentTrivia(base, b.end + 1, le, true, options)) {
+      return { error: '条目与容器或其他条目位于同一行,无法安全插入索引注释;请使用唯一原文 edits 精确修改。' }
+    }
   }
   // 按位置聚合插入(同一边界:前块 end 锚先于后块 begin 锚),再从后往前落位
   const byAt = new Map()
@@ -586,17 +491,10 @@ export function migrateCode(oldCode) {
     addAt(ls, anchorBegin(b.kind, b.id) + '\n')
     addAt(le, anchorEnd(b.kind, b.id) + '\n')
     inserted += 2
-    // 区块收尾补逗号:end 锚前最后一个内容行若不以 , 结尾则补上,
-    // 保证后续往该位置之后插入新区块不会产生语法错误。
-    // 跳过空白时必须带上 \r —— CRLF 文件行尾是 ",\r",漏了 \r 就会把回车当成
-    // "最后一个字符",于是给每一行都误补一个逗号(实测:真实 CRLF 扩展 523 个区块
-    // 全被误补,逗号落到下一行行首 → Unexpected token ',')
+    // 在 end 锚前补齐缺少的条目逗号，便于后续插入。跳过尾部空白时包含 CRLF 中的回车，确保逗号位于内容行末。
     let last = le - 1
     while (last > ls && /[ \t\r\n]/.test(base[last])) last--
-    /* 只有"区块结束就是这一行最后一个有效字符"时才补逗号:紧凑写法里行尾可能是
-     * 区段/语句的收尾 `}`(如 `const character = { Miku: [...] }`),在它后面补逗号会
-     * 拼出 `const character = {...},` —— 轻则迁移后语法校验失败(用户看到一句
-     * "不应发生"),重则下一行的隐式全局赋值被并进同一个 const 声明,静默改语义(实测) */
+    /* 仅当区块结束位置也是该行最后一个有效字符时补逗号，避免修改外层对象或语句的结束符。 */
     if (base[last] !== ',' && last === b.end) { addAt(last + 1, ','); commas++ }
   }
   let code = base
@@ -605,8 +503,12 @@ export function migrateCode(oldCode) {
   }
   // 自检:剥锚点 + 行尾逗号归一后,必须与原文件一致
   // (锚点行与收尾逗号是迁移仅有的两类合法差异;代码被移动/改写都会在此暴露)
-  if (normalizeForCompare(stripEolCommas(stripAnchors(code))) !== normalizeForCompare(stripEolCommas(base))) {
+  if (normalizeForCompare(stripEolCommas(stripAnchors(code, options))) !== normalizeForCompare(stripEolCommas(base))) {
     return { error: '锚点插入自检失败(除锚点行与收尾逗号外内容发生变化),已放弃写入。' }
+  }
+  const verified = scanEffectiveAnchored(code, options)
+  if (verified.length !== items.length || items.some(b => !verified.some(x => x.key === b.key))) {
+    return { error: '锚点有效性自检失败,已放弃写入。' }
   }
   return { code, inserted, commas, blocks: items.length }
 }
@@ -617,6 +519,12 @@ function stripEolCommas(code) {
 }
 
 /** 剥掉全部锚点注释行(迁移自检用)。 */
-export function stripAnchors(code) {
-  return code.split('\n').filter((l) => !ANCHOR_LINE_RE.test(l)).join('\n')
+export function stripAnchors(code, options = {}) {
+  const comments = new Set(sourceStructure(code, options).comments.filter(c => c.type === 'Line').map(c => c.start))
+  let offset = 0
+  return code.split('\n').filter(line => {
+    const slash = offset + (line.match(/^[ \t]*/)?.[0].length || 0)
+    offset += line.length + 1
+    return !(ANCHOR_LINE_RE.test(line) && comments.has(slash))
+  }).join('\n')
 }

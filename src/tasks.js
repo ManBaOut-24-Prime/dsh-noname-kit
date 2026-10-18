@@ -42,9 +42,7 @@ export function emptyRegistry() {
 }
 
 export async function readRegistry(dshHome) {
-  /* 安全读(损坏留档,不静默清零)+ 形状兜底:tasks 必须是数组。此前
-   * `{"tasks":null}` 会让 listTasks/createTask 直接 TypeError → 所有任务接口
-   * 永久 500,且下一次保存把整个登记处覆盖成空(实测数据丢失面)。 */
+  /* 安全读取任务登记：损坏内容先留档，tasks 字段校验为数组，异常形状回退为空列表。 */
   const parsed = await readJsonSafe(tasksPath(dshHome), emptyRegistry())
   const registry = { ...emptyRegistry(), ...parsed }
   if (!Array.isArray(registry.tasks)) registry.tasks = []
@@ -77,12 +75,7 @@ function newSkill(item) {
 
 function touch(task) { task.updatedAt = Date.now() }
 
-/** 是否满足自动完成:全部技能 confirmed 且图片/配音就位。
- * 编辑已有条目任务(target 非空)豁免图片条件:立绘通常早已存在,用户没登记
- * 图片 = 本次不涉及图——实测测试包-03 全确认后因没填图片永远卡在进行中。
- * (编辑+换图场景用户会填图片路径,登记后照旧走 copy_images/补图链路。)
- * 配音门禁:按登记计量——技能登记了 N 条源路径,就要交付 ≥N 个目标文件
- * (audioFiles/dieAudioFiles);没登记配音的任务完全不受影响。 */
+/** 全部技能 confirmed 且登记的图片与配音交付完整时自动完成。编辑已有条目的任务豁免图片条件；登记 N 条配音源路径时要求至少交付 N 个目标文件，未登记配音时不增加完成条件。 */
 function isCompletable(task) {
   // 🎲 mode 任务:无预登记图片(模式扩展无立绘/卡图需求),图片条件豁免(同 target 编辑任务)
   const imageOk = task.target || task.type === 'mode' ? true : Boolean(task.image)
@@ -245,9 +238,7 @@ export async function markSkillsWritten(dshHome, { taskId, skills, notes }) {
   const task = registry.tasks.find((t) => t.id === taskId)
   if (!task) return { ok: false, error: `找不到任务「${taskId}」` }
   const dynamic = task.dynamicSkills === true
-  /* 已归档(done)的任务又被 AI 标记写入:说明它其实还在改。此前 status 留在 done,
-   * 后续用户确认技能时 autoCompleted 恒 false → 永远不触发归档,历史摘要停在旧值,
-   * 界面上毫无提示(实测死角)。这里自动重开,并让返回里带 reopened 供调用方提醒。 */
+  /* 已完成任务再次标记技能写入时自动重开，并返回 reopened，便于后续确认与归档更新。 */
   let reopened = false
   if (task.status === 'done') {
     task.status = 'open'

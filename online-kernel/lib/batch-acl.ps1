@@ -7,6 +7,41 @@ $everyone = [Security.Principal.SecurityIdentifier]::new('S-1-1-0')
 $section = [Security.AccessControl.AccessControlSections]::Access -bor [Security.AccessControl.AccessControlSections]::Owner -bor [Security.AccessControl.AccessControlSections]::Group
 $accessOnly = [Security.AccessControl.AccessControlSections]::Access
 $result = @()
+if ($request.mode -eq 'preflight') {
+    # Request only access rights: opening a handle does not alter ACLs or ownership.
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Globalization;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+public static class NNKBatchAclPreflight {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Information {
+        public uint Attributes, CreationLow, CreationHigh, AccessLow, AccessHigh;
+        public uint WriteLow, WriteHigh, Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+    }
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    private static extern SafeFileHandle CreateFile(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(SafeFileHandle file, out Information information);
+    public static void Check(string path, string expected, bool directory) {
+        ulong identity;
+        if (!UInt64.TryParse(expected, NumberStyles.None, CultureInfo.InvariantCulture, out identity)) throw new InvalidOperationException("Invalid preflight identity");
+        // READ_CONTROL | WRITE_DAC, all sharing, OPEN_EXISTING,
+        // FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT.
+        using (SafeFileHandle file=CreateFile(path, 0x00060000, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)) {
+            if (file.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Publication preflight requires READ_CONTROL | WRITE_DAC: "+path);
+            Information actual;
+            if (!GetFileInformationByHandle(file, out actual)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            ulong index=((ulong)actual.IndexHigh << 32) | actual.IndexLow;
+            if ((actual.Attributes & 0x400)!=0 || ((actual.Attributes & 0x10)!=0)!=directory || index!=identity || (!directory && actual.Links!=1)) throw new InvalidOperationException("Publication preflight identity or file type changed: "+path);
+        }
+    }
+}
+'@
+}
 function InvokeOperations {
 $result = @()
 $completed = 0
@@ -14,6 +49,18 @@ foreach ($entry in $request.entries) {
     $file = [IO.Path]::GetFullPath($entry.path)
     if ($file -ne $root -and -not $file.StartsWith($root+'\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Path escape' }
     if ((Get-Item -LiteralPath $file -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse point' }
+    if ($request.mode -eq 'preflight') {
+        # OPEN_REPARSE_POINT checks the leaf; reject linked ancestors as well.
+        $ancestor = $file
+        while ($true) {
+            if ((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse ancestor' }
+            if ($ancestor -eq $root) { break }
+            $ancestor = [IO.Path]::GetDirectoryName($ancestor)
+            if (-not $ancestor) { throw 'Path escape' }
+        }
+        [NNKBatchAclPreflight]::Check($file, [string]$entry.ino, [bool]$entry.isDirectory)
+        continue
+    }
     $acl = if ($entry.isDirectory) { [IO.Directory]::GetAccessControl($file,$section) } else { [IO.File]::GetAccessControl($file,$section) }
     if ($request.mode -eq 'capture') {
         $result += @{path=$file; isDirectory=[bool]$entry.isDirectory; isRoot=[bool]$entry.isRoot; sddl=$acl.GetSecurityDescriptorSddlForm($section)}

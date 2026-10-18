@@ -62,9 +62,13 @@ export function createEngineOperationPort(nnk,{isCurrent,scope=null,onEvent=()=>
     guard(op);const config=nnk.modules.config, compat=nnk.modules.compat, manifest=nnk.modules.manifest;
     if(action==='get_config'||action==='config.get'||action==='profile')return profile();
     if(action==='set_config'||action==='config.set'){
-      const allowed={unlockUIExtensions:'boolean',autoUnlockExtensions:'boolean',mqttUrl:'string'};
+      const allowed={unlockUIExtensions:'boolean',autoUnlockExtensions:'boolean',mqttUrl:'string',transferLimitMB:'number'};
       if(!Object.hasOwn(allowed,args.key))throw Error('不允许修改的配置: '+args.key);
       let value=args.value===true;
+      if(allowed[args.key]==='number'){
+        if(!Number.isSafeInteger(args.value)||args.value<1||args.value>1024)throw Error('补传容量须为 1 至 1024 MiB 的整数');
+        value=args.value;
+      }
       if(allowed[args.key]==='string'){
         value=String(args.value??'').slice(0,200);
         if(value&&!/^wss?:\/\//i.test(value))throw Error('信令地址必须是 ws:// 或 wss:// 开头的 WebSocket 地址');

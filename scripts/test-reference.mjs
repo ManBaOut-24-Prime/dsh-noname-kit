@@ -39,7 +39,7 @@ try {
     '}',
   ].join('\n'))
 
-  // ── 1) 长查询(≥4 字,必然进入相似度阶段)——曾整段抛 TypeError ──
+  // ── 1) 长查询(≥4 字):相似度匹配的异常处理与返回结构 ──
   let long = null
   let longErr = null
   try { long = await searchReference(game, { query: '摸牌阶段多摸', type: 'any', limit: 5 }) } catch (e) { longErr = e }
@@ -52,7 +52,7 @@ try {
   const byName = await searchReference(game, { query: '曹操', type: 'any', limit: 5 })
   ok(byName.ok && byName.matches.some((m) => m.id === 'caocao'), '按中文显示名命中武将')
 
-  // ── 3) limit 截断:被截时要有说明字段(截断那一笔改动的本意) ──
+  // ── 3) limit 截断:限制结果数量并返回截断说明 ──
   const small = await searchReference(game, { query: 'jianxiong', type: 'any', limit: 1 })
   ok(small.matches.length <= 1, 'limit=1 时结果被截断到 1 条')
   const wide = await searchReference(game, { query: '摸牌', type: 'any', limit: 10 })

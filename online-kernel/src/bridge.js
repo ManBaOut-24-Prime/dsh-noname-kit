@@ -11,16 +11,14 @@
 	var failures = 0;
 	var seq = 0;
 	var events = [];
-	var backlog = [];   /* 上一轮没送达的事件(HTTP 失败/应答异常):下一轮带上重发。
-	                     * 此前是"发出前就从队列移除",桥断一拍(比如 dsh 重启窗口)
-	                     * 正好赶上生成邀请码/回执码,码正文事件就永久丢了。
-	                     * 重发的重复风险:插件端按 seq 是追加渲染,极端情况动态里
-	                     * 重复一行——比丢码轻得多 */
+	var backlog = [];   /* 保存尚未确认送达的事件，下次心跳继续发送；应答异常时保留队列，确保邀请码等内容可重试送达。 */
 	var stopped = false, epoch = 0, controller = null, commandOverride = null, ordinaryOperations = null;
+	var confirmedTransferLimitMB = nnk.modules.config && nnk.modules.config.get("transferLimitMB");
 	var polling = false;   /* 串行化:0.7 秒一拍比一次请求快时,不让两轮并发 */
 	var state = { phase: "idle", ts: Date.now() };
 
 	function emit(type, data) {
+		if (type === "config_applied" && data && data.key === "transferLimitMB" && Number.isSafeInteger(data.value) && data.value >= 1 && data.value <= 1024) confirmedTransferLimitMB = data.value;
 		seq++;
 		events.push({ seq: seq, type: type, data: data || null, ts: Date.now() });
 		if (events.length > 100) {
@@ -41,6 +39,7 @@
 
 	async function dispatch(cmd) {
 		if (commandOverride) return await commandOverride(cmd);
+		if (cmd.action === "batch_request") throw Error("请在双方连接的插件房间中重新申请补传。");
 		if (nnk.keepaliveEntry && ["create_room", "join_room", "join_invite"].indexOf(cmd.action) >= 0) return await nnk.keepaliveEntry.beginCarrier(cmd);
 		if (["set_config", "set_identity", "clear_quarantine", "manifest_recheck", "transfer_pack", "batch_decision", "batch_cancel", "batch_reload", "batch_retry"].indexOf(cmd.action) >= 0 && nnk.keepaliveEntry) {
 			if (!ordinaryOperations) {
@@ -105,6 +104,15 @@
 				}
 				break;
 			case "set_config": {
+				if (args.key === "transferLimitMB") {
+					if (!Number.isSafeInteger(args.value) || args.value < 1 || args.value > 1024) throw Error("补传容量须为 1 至 1024 MiB 的整数");
+					if (!ordinaryOperations) {
+						var limitOperations = await import("../keepalive/engine-operation-port.js");
+						if (stopped) throw Error("旧文档操作已失效");
+						ordinaryOperations = limitOperations.createEngineOperationPort(nnk, { isCurrent: function () { return !stopped; }, scope: null, onEvent: emit });
+					}
+					return await ordinaryOperations.execute("set_config", { key: "transferLimitMB", value: args.value });
+				}
 				/* 只放行允许工坊改的内核配置键,值按类型强转 */
 				var allowed = { unlockUIExtensions: "boolean", autoUnlockExtensions: "boolean", mqttUrl: "string" };
 				if (allowed.hasOwnProperty(args.key)) {
@@ -195,15 +203,15 @@
 								role = "host";
 							}
 						} catch (e2) { /* 忽略 */ }
-						return { version: nnk.version, build: nnk.build || null, transferPaused: nnk.state.transferPaused === true, stage: nnk.state.bootStage || "booting", role: role };
+						return { version: nnk.version, build: nnk.build || null, transferPaused: nnk.state.transferPaused === true, transferProtocol: nnk.state.transferProtocol || null, stage: nnk.state.bootStage || "booting", role: role };
 					})(),
 					/* 邀请码列表的元数据(id/状态/生成时刻/客人名,不含码正文——正文走
 					 * 事件流,不给 0.7 秒一轮的心跳塞几 KB 的 SDP)。并进 state 下发:
 					 * 工坊读 bridge.state.*,并跟着房间状态一起过期(30 秒宽限) */
 					state: Object.assign({}, state, {
-						batchProposals: nnk.modules.consent ? nnk.modules.consent.summaries() : [],
-						fileBatches: nnk.modules.batch ? nnk.modules.batch.snapshot() : [],
-						batchFilesPaused: !nnk.modules.batch || nnk.modules.batch.paused,
+						batchProposals: nnk.modules.carrierTransfer ? nnk.modules.carrierTransfer.snapshot().proposals : nnk.modules.consent ? nnk.modules.consent.summaries() : [],
+						fileBatches: nnk.modules.carrierTransfer ? nnk.modules.carrierTransfer.snapshot().files : nnk.modules.batch ? nnk.modules.batch.snapshot() : [],
+						batchFilesPaused: nnk.modules.carrierTransfer ? nnk.state.transferPaused === true : !nnk.modules.batch || nnk.modules.batch.paused,
 						invites: (function() {
 							try {
 								var hs = nnk.state.host;
@@ -216,6 +224,7 @@
 						})()
 					}),
 					cfg: {
+						transferLimitMB: confirmedTransferLimitMB,
 						unlockUIExtensions: !!nnk.modules.config.get("unlockUIExtensions"),
 						autoUnlockExtensions: !!nnk.modules.config.get("autoUnlockExtensions"),
 						root: !!(nnk.networkProfile ? nnk.networkProfile.root : nnk.modules.compat && nnk.modules.compat.gameRoot()),
@@ -228,9 +237,7 @@
 								return [];
 							}
 						})(),
-						/* 当前线路观测:对端候选类型(host=局域网直连/srflx=公网打洞/relay=中继)
-						 * + 往返延迟,工坊显示「🔗 线路:直连 · 往返 42ms」——
-						 * 用户报"延迟几秒"时第一眼就能分清"走错路了"还是"路本身慢" */
+						/* 上报对端候选类型及往返延迟：host 为局域网直连，srflx 为公网打洞，relay 为中继。 */
 						link: (function() {
 							try {
 								return (nnk.modules.rtc && nnk.modules.rtc.currentLink) ? nnk.modules.rtc.currentLink() : null;
@@ -261,7 +268,7 @@
 			return r.json();
 		}).then(async function(body) {
 			if (stopped || capturedEpoch !== epoch) return;
-			backlog = [];   /* 送达确认:清掉欠账(含本轮新事件与上轮重发) */
+			backlog = [];   /* 收到送达确认后清空本次发送的事件积压。 */
 			var cmds = body && body.commands || [];
 			for (var i = 0; i < cmds.length; i++) {
 				if (stopped || capturedEpoch !== epoch) break;

@@ -1,19 +1,4 @@
-/**
- * 「无名杀开发模式」preset 的自检与安装。
- *
- * 为什么需要:preset 是插件行为的第二份手抄,装在 ~/.dsh/.agent-presets/noname-dev/,
- * 里面有 persona 正文、residentTools 工具名白名单、skills/SKILL.md 的参数文档。
- * 它和插件代码之间没有任何引用关系 —— install-preset.mjs 复制完就冻结了,插件
- * 运行时也不读它。所以代码更新后若没重装 preset,新会话会拿到自相矛盾的指令
- * (工具名对不上 → 工具在会话里静默消失;参数文档对不上 → AI 写出的调用被校验
- * 挡下),而且不报错。历史上已经踩过一次(noname_complete_task 改名残留 8 处)。
- *
- * 曾想用目录链接让漂移不可能发生,实测否决:DSH 的 preset discovery 用
- * readdir(withFileTypes).isDirectory() 判定(packages/preset/agent-presets/
- * src/discovery.ts:303),而 node 22 对 junction 和 symlink 一律报 isLink=true
- * —— 链接进去的 preset 会在界面上凭空消失(悬空链接同样静默消失,连报错都没有)。
- * 所以只能走「复制 + 盖章(内容哈希)+ 比对 + 一键重装」。
- */
+/** 检查并安装无名杀开发模式 preset。支持声明式宿主注册；旧宿主采用实体目录副本，通过内容哈希检测差异并支持重装，满足 DSH discovery 的 isDirectory 检查。 */
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -87,13 +72,7 @@ function collectFiles(dir, prefix, out) {
   return out
 }
 
-/**
- * 目录内容哈希:按相对路径排序后逐个把「路径 + 内容」喂给 sha256。
- * 与文件系统返回顺序、绝对路径、时间戳无关,只反映内容;目录不存在返回 null。
- * 行尾统一成 LF 再哈希:同一个文件在 Windows 上检出(git autocrlf 会转 CRLF)和
- * 打包产物里可能行尾不同(实测 pnpm 装 git 依赖时 clone+checkout 就转了 CRLF),
- * 但行为完全一样 —— 不归一化就会把"完全相同的两份"误报成不一致。
- */
+/** 按相对路径排序，将路径与内容依次写入 SHA-256。计算时将行尾归一为 LF，使哈希不受检出换行形式、绝对位置或时间戳影响；目录不存在时返回 null。 */
 export function hashDir(dir) {
   if (!existsSync(dir)) return null
   const files = collectFiles(dir, '', []).sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
@@ -210,10 +189,7 @@ export function installPreset({ presetDir, bundledDir }) {
     mkdirSync(dirname(presetDir), { recursive: true })
     cpSync(bundledDir, presetDir, { recursive: true })
   } catch (error) {
-    /* 此刻旧 preset 已被删除、新的只留"不存在或半份"——半份会被 DSH discovery 当正常
-     * preset 列出来(agent.cordis.yml 已复制的那种),新会话拿到缺文件的坏 preset 且
-     * 不报错。尽力恢复:先清掉半份,再把备份整体搬回去;并把备份路径写进文案,
-     * 恢复也失败时用户知道去哪手动找(原先只说一句"复制失败",备份路径只留在返回值里) */
+    /* 复制失败时清除不完整 preset 并尝试整体恢复备份；在错误说明中提供备份路径，供恢复失败时手动处理。 */
     let restored = false
     try {
       rmSync(presetDir, { recursive: true, force: true })
